@@ -1,0 +1,264 @@
+from datetime import date, datetime
+from typing import Literal
+
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.db import Base
+from app.core.types import EmbeddingVector
+
+UserRole = Literal["user", "admin"]
+YoutubeSourceType = Literal["official_channel", "fan_channel", "curated_video"]
+
+
+class TimestampMixin:
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class User(Base, TimestampMixin):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), default="user", nullable=False)
+
+    posts: Mapped[list["Post"]] = relationship(back_populates="author")
+    comments: Mapped[list["Comment"]] = relationship(back_populates="author")
+
+
+class Artist(Base, TimestampMixin):
+    __tablename__ = "artists"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slug: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+
+    posts: Mapped[list["Post"]] = relationship(back_populates="artist")
+    members: Mapped[list["Member"]] = relationship(
+        back_populates="artist", cascade="all, delete-orphan"
+    )
+    keywords: Mapped[list["ArtistKeyword"]] = relationship(
+        back_populates="artist", cascade="all, delete-orphan"
+    )
+
+
+class Member(Base, TimestampMixin):
+    __tablename__ = "members"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    position: Mapped[str] = mapped_column(String(80), default="", nullable=False)
+
+    artist: Mapped[Artist] = relationship(back_populates="members")
+
+
+class ArtistKeyword(Base, TimestampMixin):
+    __tablename__ = "artist_keywords"
+    __table_args__ = (UniqueConstraint("artist_id", "keyword", name="uq_artist_keyword"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), index=True)
+    keyword: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    artist: Mapped[Artist] = relationship(back_populates="keywords")
+
+
+class Post(Base, TimestampMixin):
+    __tablename__ = "posts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), index=True)
+
+    author: Mapped[User] = relationship(back_populates="posts")
+    artist: Mapped[Artist] = relationship(back_populates="posts")
+    comments: Mapped[list["Comment"]] = relationship(
+        back_populates="post", cascade="all, delete-orphan"
+    )
+    tags: Mapped[list["PostTag"]] = relationship(back_populates="post", cascade="all, delete-orphan")
+    rag_chunks: Mapped[list["RagChunk"]] = relationship(
+        back_populates="post", cascade="all, delete-orphan"
+    )
+
+
+class Comment(Base, TimestampMixin):
+    __tablename__ = "comments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    post_id: Mapped[int] = mapped_column(ForeignKey("posts.id", ondelete="CASCADE"), index=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+
+    post: Mapped[Post] = relationship(back_populates="comments")
+    author: Mapped[User] = relationship(back_populates="comments")
+
+
+class Tag(Base, TimestampMixin):
+    __tablename__ = "tags"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(60), unique=True, nullable=False)
+
+    posts: Mapped[list["PostTag"]] = relationship(back_populates="tag", cascade="all, delete-orphan")
+
+
+class PostTag(Base):
+    __tablename__ = "post_tags"
+    __table_args__ = (UniqueConstraint("post_id", "tag_id", name="uq_post_tag"),)
+
+    post_id: Mapped[int] = mapped_column(
+        ForeignKey("posts.id", ondelete="CASCADE"), primary_key=True
+    )
+    tag_id: Mapped[int] = mapped_column(ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
+
+    post: Mapped[Post] = relationship(back_populates="tags")
+    tag: Mapped[Tag] = relationship(back_populates="posts")
+
+
+class YoutubeSource(Base, TimestampMixin):
+    __tablename__ = "youtube_sources"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), index=True)
+    source_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_value: Mapped[str] = mapped_column(String(255), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    enabled: Mapped[bool] = mapped_column(default=True, nullable=False)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    videos: Mapped[list["YoutubeVideoSource"]] = relationship(
+        back_populates="source", cascade="all, delete-orphan"
+    )
+
+
+class YoutubeVideo(Base, TimestampMixin):
+    __tablename__ = "youtube_videos"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    channel_title: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    thumbnail_url: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    url: Mapped[str] = mapped_column(String(500), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    sources: Mapped[list["YoutubeVideoSource"]] = relationship(
+        back_populates="video", cascade="all, delete-orphan"
+    )
+    rag_chunks: Mapped[list["RagChunk"]] = relationship(
+        back_populates="youtube_video", cascade="all, delete-orphan"
+    )
+
+
+class YoutubeVideoSource(Base):
+    __tablename__ = "youtube_video_sources"
+
+    video_id: Mapped[str] = mapped_column(
+        ForeignKey("youtube_videos.id", ondelete="CASCADE"), primary_key=True
+    )
+    source_id: Mapped[int] = mapped_column(
+        ForeignKey("youtube_sources.id", ondelete="CASCADE"), primary_key=True
+    )
+
+    video: Mapped[YoutubeVideo] = relationship(back_populates="sources")
+    source: Mapped[YoutubeSource] = relationship(back_populates="videos")
+
+
+class RagChunk(Base, TimestampMixin):
+    __tablename__ = "rag_chunks"
+    __table_args__ = (
+        CheckConstraint(
+            "(post_id IS NOT NULL AND youtube_video_id IS NULL) OR "
+            "(post_id IS NULL AND youtube_video_id IS NOT NULL)",
+            name="ck_rag_chunk_exactly_one_source",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), index=True)
+    post_id: Mapped[int | None] = mapped_column(
+        ForeignKey("posts.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    youtube_video_id: Mapped[str | None] = mapped_column(
+        ForeignKey("youtube_videos.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(EmbeddingVector(1536), nullable=False)
+
+    post: Mapped[Post | None] = relationship(back_populates="rag_chunks")
+    youtube_video: Mapped[YoutubeVideo | None] = relationship(back_populates="rag_chunks")
+
+
+class AiUsageCounter(Base):
+    __tablename__ = "ai_usage_counters"
+    __table_args__ = (UniqueConstraint("scope", "scope_id", "feature", "day", name="uq_ai_usage"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(20), nullable=False)
+    scope_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    feature: Mapped[str] = mapped_column(String(60), nullable=False)
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class AgentRun(Base, TimestampMixin):
+    __tablename__ = "agent_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    briefing_type: Mapped[str] = mapped_column(String(40), default="daily", nullable=False)
+    briefing_date: Mapped[date] = mapped_column(Date, nullable=False)
+    preview_markdown: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_post_id: Mapped[int | None] = mapped_column(
+        ForeignKey("posts.id", ondelete="SET NULL"), nullable=True
+    )
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Briefing(Base, TimestampMixin):
+    __tablename__ = "briefings"
+    __table_args__ = (
+        UniqueConstraint("artist_id", "briefing_date", "briefing_type", name="uq_briefing_once"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), index=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"), index=True)
+    post_id: Mapped[int] = mapped_column(ForeignKey("posts.id", ondelete="CASCADE"), index=True)
+    briefing_date: Mapped[date] = mapped_column(Date, nullable=False)
+    briefing_type: Mapped[str] = mapped_column(String(40), default="daily", nullable=False)
+
+
+class McpCallLog(Base, TimestampMixin):
+    __tablename__ = "mcp_call_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tool_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    input_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    output_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
