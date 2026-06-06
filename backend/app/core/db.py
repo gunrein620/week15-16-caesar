@@ -1,5 +1,8 @@
 from collections.abc import Generator
+from pathlib import Path
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
@@ -51,6 +54,12 @@ def is_postgres() -> bool:
     return get_engine().dialect.name == "postgresql"
 
 
+def _alembic_head() -> str:
+    backend_root = Path(__file__).resolve().parents[2]
+    config = Config(str(backend_root / "alembic.ini"))
+    return ScriptDirectory.from_config(config).get_current_head()
+
+
 def check_db_ready() -> dict[str, bool | str]:
     engine = get_engine()
     with engine.connect() as conn:
@@ -69,12 +78,19 @@ def check_db_ready() -> dict[str, bool | str]:
         installed = conn.execute(
             text("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector')")
         ).scalar_one()
-        migrations = conn.execute(
-            text("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users')")
+        has_alembic_table = conn.execute(
+            text("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'alembic_version')")
         ).scalar_one()
+        migration_current = ""
+        if has_alembic_table:
+            migration_current = conn.execute(text("SELECT version_num FROM alembic_version")).scalar() or ""
+        migration_head = _alembic_head()
+        migrations = migration_current == migration_head
         return {
             "database": True,
             "pgvector_available": bool(available),
             "pgvector_installed": bool(installed),
             "migrations": bool(migrations),
+            "migration_current": migration_current or "",
+            "migration_head": migration_head,
         }

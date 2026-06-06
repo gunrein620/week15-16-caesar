@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.security import hash_password
 from app.models import Artist, ArtistKeyword, Member, Post, Tag, User
+from app.services.rag import refresh_post_chunks
 
 
 def ensure_rescene_seed(db: Session) -> Artist:
@@ -43,8 +44,9 @@ def ensure_admin_user(db: Session) -> User:
         )
         db.add(user)
         db.flush()
-    elif user.role != "admin":
+    else:
         user.role = "admin"
+        user.hashed_password = hash_password(settings.seed_admin_password)
     return user
 
 
@@ -57,9 +59,13 @@ def ensure_minimal_rag_seed(db: Session) -> None:
         "팬 커뮤니티 이용 안내": "이 게시판은 리센느 소식과 팬 반응을 모아 RAG 답변의 근거로 사용합니다.",
     }
     for title, content in titles.items():
-        exists = db.scalar(select(Post).where(Post.title == title))
-        if exists is None:
-            db.add(Post(title=title, content=content, author_id=admin.id, artist_id=artist.id))
+        post = db.scalar(select(Post).where(Post.title == title))
+        if post is None:
+            post = Post(title=title, content=content, author_id=admin.id, artist_id=artist.id)
+            db.add(post)
+            db.flush()
+        if not post.rag_chunks:
+            refresh_post_chunks(db, post)
     for tag_name in ["rescene", "stage", "notice"]:
         if db.scalar(select(Tag).where(Tag.name == tag_name)) is None:
             db.add(Tag(name=tag_name))

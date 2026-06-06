@@ -1,16 +1,41 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.core.rate_limit import limiter
 from app.dependencies import require_admin
 from app.models import Artist, ArtistKeyword, Member, User, YoutubeSource, YoutubeVideo, YoutubeVideoSource
-from app.schemas import ArtistRead, YoutubeSourceCreate, YoutubeSourceRead, YoutubeVideoRead
+from app.schemas import (
+    ArtistKeywordCreate,
+    ArtistKeywordRead,
+    ArtistRead,
+    MemberCreate,
+    MemberRead,
+    YoutubeSourceCreate,
+    YoutubeSourceRead,
+    YoutubeVideoRead,
+)
+from app.services.quota import consume_ai_quota
 from app.services.youtube import sync_artist_videos
 
 router = APIRouter(tags=["artists"])
+YOUTUBE_SOURCE_TYPES = {"official_channel", "fan_channel", "curated_video"}
+
+
+def _validated_source_payload(payload: YoutubeSourceCreate) -> tuple[str, str, str]:
+    source_type = payload.source_type.strip()
+    source_value = payload.source_value.strip()
+    title = payload.title.strip()
+    if source_type not in YOUTUBE_SOURCE_TYPES:
+        raise HTTPException(status_code=422, detail="Invalid source_type")
+    if not source_value:
+        raise HTTPException(status_code=422, detail="source_value is required")
+    if not title:
+        raise HTTPException(status_code=422, detail="title is required")
+    return source_type, source_value, title
 
 
 @router.get("/artists", response_model=list[ArtistRead])
@@ -32,13 +57,16 @@ def list_videos(artist_id: int, db: Annotated[Session, Depends(get_db)]) -> list
 
 
 @router.post("/artists/{artist_id}/sync")
+@limiter.limit("10/day")
 def sync_videos(
+    request: Request,
     artist_id: int,
-    _: Annotated[User, Depends(require_admin)],
+    user: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, int]:
     if db.get(Artist, artist_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    consume_ai_quota(db, user, "youtube_sync")
     return sync_artist_videos(db, artist_id)
 
 
@@ -58,15 +86,14 @@ def create_source(
     _: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ) -> YoutubeSource:
-    if payload.source_type not in {"official_channel", "fan_channel", "curated_video"}:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid source_type")
+    source_type, source_value, title = _validated_source_payload(payload)
     if db.get(Artist, artist_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
     source = YoutubeSource(
         artist_id=artist_id,
-        source_type=payload.source_type,
-        source_value=payload.source_value,
-        title=payload.title,
+        source_type=source_type,
+        source_value=source_value,
+        title=title,
     )
     db.add(source)
     db.commit()
@@ -84,11 +111,10 @@ def update_source(
     source = db.get(YoutubeSource, source_id)
     if source is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
-    if payload.source_type not in {"official_channel", "fan_channel", "curated_video"}:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid source_type")
-    source.source_type = payload.source_type
-    source.source_value = payload.source_value
-    source.title = payload.title
+    source_type, source_value, title = _validated_source_payload(payload)
+    source.source_type = source_type
+    source.source_value = source_value
+    source.title = title
     db.commit()
     db.refresh(source)
     return source
@@ -107,31 +133,85 @@ def delete_source(
     db.commit()
 
 
-@router.get("/artists/{artist_id}/keywords")
-def list_keywords(artist_id: int, db: Annotated[Session, Depends(get_db)]) -> list[str]:
-    return [
-        item.keyword
-        for item in db.scalars(select(ArtistKeyword).where(ArtistKeyword.artist_id == artist_id)).all()
-    ]
+def _require_artist(db: Session, artist_id: int) -> Artist:
+    artist = db.get(Artist, artist_id)
+    if artist is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    return artist
 
 
-@router.post("/artists/{artist_id}/keywords", status_code=status.HTTP_201_CREATED)
+@router.get("/artists/{artist_id}/keywords", response_model=list[ArtistKeywordRead])
+def list_keywords(artist_id: int, db: Annotated[Session, Depends(get_db)]) -> list[ArtistKeyword]:
+    _require_artist(db, artist_id)
+    return db.scalars(
+        select(ArtistKeyword)
+        .where(ArtistKeyword.artist_id == artist_id)
+        .order_by(ArtistKeyword.keyword.asc())
+    ).all()
+
+
+@router.post(
+    "/artists/{artist_id}/keywords",
+    response_model=ArtistKeywordRead,
+    status_code=status.HTTP_201_CREATED,
+)
 def add_keyword(
     artist_id: int,
-    keyword: str,
+    payload: ArtistKeywordCreate,
     _: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
-) -> dict[str, str]:
-    if db.get(Artist, artist_id) is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
-    db.add(ArtistKeyword(artist_id=artist_id, keyword=keyword))
+) -> ArtistKeywordRead:
+    _require_artist(db, artist_id)
+    keyword = payload.keyword.strip()
+    if not keyword:
+        raise HTTPException(status_code=422, detail="keyword is required")
+    existing = db.scalar(
+        select(ArtistKeyword).where(
+            ArtistKeyword.artist_id == artist_id,
+            ArtistKeyword.keyword == keyword,
+        )
+    )
+    if existing is not None:
+        return ArtistKeywordRead.model_validate(existing)
+    item = ArtistKeyword(artist_id=artist_id, keyword=keyword)
+    db.add(item)
     db.commit()
-    return {"keyword": keyword}
+    db.refresh(item)
+    return ArtistKeywordRead.model_validate(item)
 
 
-@router.get("/artists/{artist_id}/members")
-def list_members(artist_id: int, db: Annotated[Session, Depends(get_db)]) -> list[dict[str, str]]:
-    return [
-        {"name": item.name, "position": item.position}
-        for item in db.scalars(select(Member).where(Member.artist_id == artist_id)).all()
-    ]
+@router.get("/artists/{artist_id}/members", response_model=list[MemberRead])
+def list_members(artist_id: int, db: Annotated[Session, Depends(get_db)]) -> list[Member]:
+    _require_artist(db, artist_id)
+    return db.scalars(
+        select(Member).where(Member.artist_id == artist_id).order_by(Member.id.asc())
+    ).all()
+
+
+@router.post(
+    "/artists/{artist_id}/members",
+    response_model=MemberRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_member(
+    artist_id: int,
+    payload: MemberCreate,
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Member:
+    _require_artist(db, artist_id)
+    name = payload.name.strip()
+    position = payload.position.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="name is required")
+    existing = db.scalar(select(Member).where(Member.artist_id == artist_id, Member.name == name))
+    if existing is not None:
+        existing.position = position
+        db.commit()
+        db.refresh(existing)
+        return existing
+    member = Member(artist_id=artist_id, name=name, position=position)
+    db.add(member)
+    db.commit()
+    db.refresh(member)
+    return member

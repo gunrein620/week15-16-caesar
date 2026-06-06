@@ -4,10 +4,18 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from app.api import agent, ai, artists, auth, posts
+from app.api import admin, agent, ai, artists, auth, posts
 from app.core.config import get_settings
-from app.core.db import check_db_ready, get_engine
+from app.core.db import check_db_ready, get_engine, get_session_factory
 from app.core.rate_limit import limiter
+from app.services.infra_budget import infra_hard_stop_active
+
+
+def _infra_budget_safe_path(path: str) -> bool:
+    return (
+        path in {"/health", "/ready", "/auth/login", "/auth/me", "/auth/signup-status"}
+        or path.startswith("/admin/settings/infra-cost")
+    )
 
 
 def create_app() -> FastAPI:
@@ -28,6 +36,21 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def infra_budget_hard_stop(request, call_next):
+        if request.method == "OPTIONS" or _infra_budget_safe_path(request.url.path):
+            return await call_next(request)
+        try:
+            with get_session_factory()() as db:
+                if infra_hard_stop_active(db):
+                    return JSONResponse(
+                        status_code=503,
+                        content={"detail": "Infrastructure budget hard stop"},
+                    )
+        except Exception:
+            return await call_next(request)
+        return await call_next(request)
+
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -43,6 +66,7 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=status_code, content={"ready": is_ready, **state})
 
     app.include_router(auth.router)
+    app.include_router(admin.router)
     app.include_router(posts.router)
     app.include_router(ai.router)
     app.include_router(artists.router)

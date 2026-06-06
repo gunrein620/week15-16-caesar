@@ -40,6 +40,11 @@ export type Comment = {
   created_at: string
 }
 
+export type Tag = {
+  id: number
+  name: string
+}
+
 export type YoutubeSource = {
   id: number
   artist_id: number
@@ -54,14 +59,52 @@ export type YoutubeVideo = {
   title: string
   description: string
   channel_title: string
+  published_at: string | null
   thumbnail_url: string
   url: string
+  view_count: number | null
+  like_count: number | null
+  comment_count: number | null
+}
+
+export type QaSource = {
+  chunk_id: number
+  post_id: number | null
+  youtube_video_id: string | null
+  source_type: 'post' | 'youtube'
+  title: string
+  url: string
+  thumbnail_url: string
+  channel_title: string
+  published_at: string | null
+  view_count: number | null
+  content: string
 }
 
 export type AuthResponse = {
   access_token: string
   token_type: string
   user: User
+}
+
+export type SignupSettings = {
+  public_signup_enabled: boolean
+}
+
+export type InfraCostSettings = {
+  hard_stop_enabled: boolean
+  manual_hard_stop: boolean
+  hard_stopped: boolean
+  monthly_budget_usd: number
+  estimated_monthly_usd: number
+  elapsed_estimated_usd: number
+  budget_ratio: number
+  railway_subscription_monthly_usd: number
+  railway_backend_estimated_monthly_usd: number
+  railway_db_estimated_monthly_usd: number
+  vercel_estimated_monthly_usd: number
+  period_start: string
+  next_reset: string
 }
 
 export type BriefingPreview = {

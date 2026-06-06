@@ -21,11 +21,12 @@ def refresh_post_chunks(db: Session, post: Post) -> None:
     db.execute(delete(RagChunk).where(RagChunk.post_id == post.id))
     body = f"{post.title}\n\n{post.content}"
     hashed = content_hash(body)
-    for chunk in chunk_text(body):
+    for index, chunk in enumerate(chunk_text(body)):
         db.add(
             RagChunk(
                 artist_id=post.artist_id,
                 post_id=post.id,
+                chunk_index=index,
                 content=chunk,
                 content_hash=hashed,
                 embedding=embed_text(chunk),
@@ -37,11 +38,12 @@ def refresh_video_chunks(db: Session, video: YoutubeVideo, artist_id: int) -> No
     db.execute(delete(RagChunk).where(RagChunk.youtube_video_id == video.id))
     body = f"{video.title}\n\n{video.description}"
     hashed = content_hash(body)
-    for chunk in chunk_text(body):
+    for index, chunk in enumerate(chunk_text(body)):
         db.add(
             RagChunk(
                 artist_id=artist_id,
                 youtube_video_id=video.id,
+                chunk_index=index,
                 content=chunk,
                 content_hash=hashed,
                 embedding=embed_text(chunk),
@@ -60,17 +62,41 @@ def search_chunks(db: Session, question: str, artist_id: int, limit: int = 5) ->
     return ranked[:limit]
 
 
+def _chunk_source_payload(db: Session, chunk: RagChunk) -> dict:
+    base = {
+        "chunk_id": chunk.id,
+        "post_id": chunk.post_id,
+        "youtube_video_id": chunk.youtube_video_id,
+        "content": chunk.content,
+    }
+    if chunk.youtube_video_id:
+        video = chunk.youtube_video or db.get(YoutubeVideo, chunk.youtube_video_id)
+        return {
+            **base,
+            "source_type": "youtube",
+            "title": video.title if video else "YouTube video",
+            "url": video.url if video else "",
+            "thumbnail_url": video.thumbnail_url if video else "",
+            "channel_title": video.channel_title if video else "",
+            "published_at": video.published_at.isoformat() if video and video.published_at else None,
+            "view_count": video.view_count if video else None,
+        }
+    post = chunk.post or (db.get(Post, chunk.post_id) if chunk.post_id else None)
+    return {
+        **base,
+        "source_type": "post",
+        "title": post.title if post else "Board post",
+        "url": f"/posts/{post.id}" if post else "",
+        "thumbnail_url": "",
+        "channel_title": "",
+        "published_at": post.created_at.isoformat() if post and post.created_at else None,
+        "view_count": None,
+    }
+
+
 def answer_question(db: Session, question: str, artist_id: int) -> tuple[str, list[dict]]:
     chunks = search_chunks(db, question, artist_id)
-    sources = [
-        {
-            "chunk_id": chunk.id,
-            "post_id": chunk.post_id,
-            "youtube_video_id": chunk.youtube_video_id,
-            "content": chunk.content,
-        }
-        for chunk in chunks
-    ]
+    sources = [_chunk_source_payload(db, chunk) for chunk in chunks]
     if not chunks:
         return "아직 참고할 게시글이나 영상 데이터가 없습니다.", sources
 

@@ -6,6 +6,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     JSON,
     String,
@@ -31,17 +32,56 @@ class TimestampMixin:
     )
 
 
+class AppSetting(Base, TimestampMixin):
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(120), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class User(Base, TimestampMixin):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
-    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     display_name: Mapped[str] = mapped_column(String(80), nullable=False)
     role: Mapped[str] = mapped_column(String(20), default="user", nullable=False)
 
     posts: Mapped[list["Post"]] = relationship(back_populates="author")
     comments: Mapped[list["Comment"]] = relationship(back_populates="author")
+    auth_identities: Mapped[list["AuthIdentity"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class AuthIdentity(Base, TimestampMixin):
+    __tablename__ = "auth_identities"
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_subject", name="uq_auth_identity_provider_subject"),
+        UniqueConstraint("provider", "user_id", name="uq_auth_identity_provider_user"),
+        CheckConstraint("length(trim(provider)) > 0", name="ck_auth_identity_provider"),
+        CheckConstraint("length(trim(provider_subject)) > 0", name="ck_auth_identity_subject"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    provider: Mapped[str] = mapped_column(String(40), nullable=False)
+    provider_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    user: Mapped[User] = relationship(back_populates="auth_identities")
+
+
+class AuthLoginAttempt(Base, TimestampMixin):
+    __tablename__ = "auth_login_attempts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    identifier: Mapped[str] = mapped_column(String(320), unique=True, index=True, nullable=False)
+    failed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Artist(Base, TimestampMixin):
@@ -63,6 +103,10 @@ class Artist(Base, TimestampMixin):
 
 class Member(Base, TimestampMixin):
     __tablename__ = "members"
+    __table_args__ = (
+        UniqueConstraint("artist_id", "name", name="uq_member_artist_name"),
+        CheckConstraint("length(trim(name)) > 0", name="ck_member_name"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), index=True)
@@ -74,7 +118,10 @@ class Member(Base, TimestampMixin):
 
 class ArtistKeyword(Base, TimestampMixin):
     __tablename__ = "artist_keywords"
-    __table_args__ = (UniqueConstraint("artist_id", "keyword", name="uq_artist_keyword"),)
+    __table_args__ = (
+        UniqueConstraint("artist_id", "keyword", name="uq_artist_keyword"),
+        CheckConstraint("length(trim(keyword)) > 0", name="ck_artist_keyword"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), index=True)
@@ -139,6 +186,14 @@ class PostTag(Base):
 
 class YoutubeSource(Base, TimestampMixin):
     __tablename__ = "youtube_sources"
+    __table_args__ = (
+        CheckConstraint(
+            "source_type IN ('official_channel', 'fan_channel', 'curated_video')",
+            name="ck_youtube_source_type",
+        ),
+        CheckConstraint("length(trim(source_value)) > 0", name="ck_youtube_source_value"),
+        CheckConstraint("length(trim(title)) > 0", name="ck_youtube_source_title"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), index=True)
@@ -163,6 +218,9 @@ class YoutubeVideo(Base, TimestampMixin):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     thumbnail_url: Mapped[str] = mapped_column(String(500), default="", nullable=False)
     url: Mapped[str] = mapped_column(String(500), nullable=False)
+    view_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    like_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    comment_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
     sources: Mapped[list["YoutubeVideoSource"]] = relationship(
@@ -195,6 +253,8 @@ class RagChunk(Base, TimestampMixin):
             "(post_id IS NULL AND youtube_video_id IS NOT NULL)",
             name="ck_rag_chunk_exactly_one_source",
         ),
+        Index("ux_rag_chunk_post_index", "post_id", "chunk_index", unique=True),
+        Index("ux_rag_chunk_youtube_index", "youtube_video_id", "chunk_index", unique=True),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -205,6 +265,7 @@ class RagChunk(Base, TimestampMixin):
     youtube_video_id: Mapped[str | None] = mapped_column(
         ForeignKey("youtube_videos.id", ondelete="CASCADE"), nullable=True, index=True
     )
+    chunk_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     embedding: Mapped[list[float]] = mapped_column(EmbeddingVector(1536), nullable=False)
@@ -259,6 +320,9 @@ class McpCallLog(Base, TimestampMixin):
     __tablename__ = "mcp_call_logs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    agent_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     tool_name: Mapped[str] = mapped_column(String(80), nullable=False)
     input_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     output_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)

@@ -48,6 +48,9 @@ Required backend variables:
 
 - `DATABASE_URL`
 - `JWT_SECRET_KEY`
+- `LOGIN_LOCKOUT_MAX_ATTEMPTS`
+- `LOGIN_LOCKOUT_WINDOW_MINUTES`
+- `LOGIN_LOCKOUT_MINUTES`
 - `FRONTEND_ORIGIN`
 - `CORS_ALLOWED_ORIGINS`
 - `CORS_ALLOW_ORIGIN_REGEX`
@@ -57,6 +60,13 @@ Required backend variables:
 - `NAVER_CLIENT_SECRET`
 - `AI_DAILY_USER_LIMIT`
 - `AI_DAILY_GLOBAL_LIMIT`
+- `PUBLIC_SIGNUP_ENABLED`
+- `INFRA_BUDGET_HARD_STOP_ENABLED`
+- `INFRA_MONTHLY_BUDGET_USD`
+- `RAILWAY_SUBSCRIPTION_MONTHLY_USD`
+- `RAILWAY_BACKEND_ESTIMATED_MONTHLY_USD`
+- `RAILWAY_DB_ESTIMATED_MONTHLY_USD`
+- `VERCEL_ESTIMATED_MONTHLY_USD`
 - `SEED_ADMIN_EMAIL`
 - `SEED_ADMIN_PASSWORD`
 
@@ -66,21 +76,31 @@ Public frontend variable:
 
 ## Public Beta Deploy
 
+Current beta URLs:
+
+- Frontend: `https://frontend-coral-six-al1fy1xeup.vercel.app`
+- Backend: `https://backend-production-97eb4.up.railway.app`
+
 Frontend goes to Vercel with:
 
 - Root directory: `frontend`
 - Build command: `npm run build`
 - Output directory: `dist`
 - Env: `VITE_API_BASE_URL=<Railway backend URL>`
+- SPA fallback: `frontend/vercel.json`
 
-Backend goes to Railway with this repository root and `railway.toml`.
+Backend goes to Railway with the `backend/` directory uploaded as root and `backend/railway.toml`.
 
 Beta constraints:
 
 - Keep Railway backend at 1 instance while `alembic upgrade head` runs in the start command.
 - If scaling beyond 1 instance, move migration into a separate release/predeploy step.
 - Keep `/artists/{id}/sync`, YouTube source CRUD, and `/ai/briefing/*` admin-only during beta.
-- Public users can sign up, write posts/comments, search, and use RAG Q&A within quota.
+- Public signup defaults to `PUBLIC_SIGNUP_ENABLED`; admins can toggle it at runtime from the app.
+- Repeated failed login attempts are locked by email/IP for the configured lockout window.
+- Social login is not wired to a provider yet, but the DB now supports passwordless users linked through `auth_identities(provider, provider_subject)`.
+- Infra cost hard stop uses admin-managed monthly estimates. It blocks public API traffic with 503 when the elapsed monthly estimate exceeds the budget, while keeping login and admin recovery endpoints open.
+- Actual Railway scale-to-zero is a separate operational action. Use `railway scale --service backend sfo=0` only when you intentionally want to take the backend offline.
 
 ## Railway pgvector Preflight
 
@@ -115,9 +135,16 @@ npm run build
 
 Manual beta scenario:
 
-1. Public signup/login.
-2. Create a post and comment.
-3. Ask RAG Q&A.
-4. Admin adds YouTube source and runs sync.
-5. Admin creates briefing preview and publishes.
-6. Public user reads the published briefing post.
+1. Login with a seeded or manually created account.
+2. Create, edit, delete a post and add a comment.
+3. Use search, tag filter, and paging.
+4. Ask RAG Q&A.
+5. Admin adds YouTube source and runs sync.
+6. Admin creates briefing preview and publishes.
+7. Public user reads the published briefing post.
+
+## Known v1 Limits
+
+- YouTube and Naver real API verification requires `YOUTUBE_API_KEY`, `NAVER_CLIENT_ID`, and `NAVER_CLIENT_SECRET`.
+- During beta, sync, source management, and briefing preview/publish are admin-only.
+- Railway backend stays at one instance while migrations run in the start command.

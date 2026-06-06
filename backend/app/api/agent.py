@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, TypedDict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -11,9 +11,10 @@ from app.api.posts import _post_read, _post_query
 from app.core.db import get_db
 from app.core.rate_limit import limiter
 from app.dependencies import require_admin
-from app.models import AgentRun, Artist, Briefing, Post, User
+from app.models import AgentRun, Artist, Briefing, McpCallLog, Post, User, YoutubeSource
 from app.schemas import AgentRunRead, BriefingPreviewResponse, PostRead
 from app.services.mcp_client import McpToolClient
+from app.services.quota import consume_ai_quota
 from app.services.rag import refresh_post_chunks, search_chunks
 
 router = APIRouter(tags=["agent"])
@@ -23,16 +24,47 @@ class BriefingState(TypedDict):
     db: Any
     artist_id: int
     refresh: bool
+    agent_run_id: int | None
     markdown: str
 
 
-def _render_briefing_markdown(db: Session, artist_id: int, refresh: bool) -> str:
+def _youtube_sources_are_stale(
+    db: Session, artist_id: int, max_age_seconds: int = 300
+) -> bool:
+    sources = db.scalars(
+        select(YoutubeSource).where(
+            YoutubeSource.artist_id == artist_id,
+            YoutubeSource.enabled.is_(True),
+        )
+    ).all()
+    if not sources:
+        return False
+    now = datetime.now(UTC)
+    max_age = timedelta(seconds=max_age_seconds)
+    for source in sources:
+        if source.last_synced_at is None:
+            return True
+        synced_at = source.last_synced_at
+        if synced_at.tzinfo is None:
+            synced_at = synced_at.replace(tzinfo=UTC)
+        if now - synced_at > max_age:
+            return True
+    return False
+
+
+def _render_briefing_markdown(
+    db: Session, artist_id: int, refresh: bool, agent_run_id: int | None = None
+) -> str:
     artist = db.get(Artist, artist_id)
     if artist is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
-    mcp = McpToolClient(db)
-    if refresh:
-        sync_result = mcp.call_tool("youtube_sync_if_stale", {"artist_id": artist_id})
+    mcp = McpToolClient(db, agent_run_id=agent_run_id)
+    sync_max_age_seconds = 300
+    if refresh or _youtube_sources_are_stale(db, artist_id, sync_max_age_seconds):
+        sync_result = mcp.call_tool(
+            "youtube_sync_if_stale",
+            {"artist_id": artist_id, "max_age_seconds": sync_max_age_seconds},
+        )
         if sync_result.get("status_code") == 409:
             mcp.call_tool("youtube_get_cached", {"artist_id": artist_id})
     cached = mcp.call_tool("youtube_get_cached", {"artist_id": artist_id})
@@ -60,7 +92,9 @@ def _render_briefing_markdown(db: Session, artist_id: int, refresh: bool) -> str
     return "\n".join(lines)
 
 
-def _briefing_markdown(db: Session, artist_id: int, refresh: bool) -> str:
+def _briefing_markdown(
+    db: Session, artist_id: int, refresh: bool, agent_run_id: int | None = None
+) -> str:
     graph = StateGraph(BriefingState)
 
     def render_node(state: BriefingState) -> dict[str, str]:
@@ -69,6 +103,7 @@ def _briefing_markdown(db: Session, artist_id: int, refresh: bool) -> str:
                 state["db"],
                 state["artist_id"],
                 state["refresh"],
+                state["agent_run_id"],
             )
         }
 
@@ -76,7 +111,13 @@ def _briefing_markdown(db: Session, artist_id: int, refresh: bool) -> str:
     graph.add_edge(START, "render")
     graph.add_edge("render", END)
     result = graph.compile().invoke(
-        {"db": db, "artist_id": artist_id, "refresh": refresh, "markdown": ""}
+        {
+            "db": db,
+            "artist_id": artist_id,
+            "refresh": refresh,
+            "agent_run_id": agent_run_id,
+            "markdown": "",
+        }
     )
     return result["markdown"]
 
@@ -91,17 +132,19 @@ def preview_briefing(
     refresh: bool = Query(default=False),
     briefing_type: str = "daily",
 ) -> BriefingPreviewResponse:
+    consume_ai_quota(db, user, "briefing_preview")
     today = datetime.now(UTC).date()
-    markdown = _briefing_markdown(db, artist_id, refresh)
     run = AgentRun(
         artist_id=artist_id,
         user_id=user.id,
         status="previewed",
         briefing_type=briefing_type,
         briefing_date=today,
-        preview_markdown=markdown,
+        preview_markdown="",
     )
     db.add(run)
+    db.flush()
+    run.preview_markdown = _briefing_markdown(db, artist_id, refresh, run.id)
     db.commit()
     db.refresh(run)
     return BriefingPreviewResponse(
@@ -132,6 +175,7 @@ def publish_briefing(
     )
     if exists is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Briefing already published")
+    consume_ai_quota(db, user, "briefing_publish")
     artist = db.get(Artist, run.artist_id)
     title = f"{artist.name if artist else 'Artist'} {run.briefing_date} 브리핑"
     post = Post(title=title, content=run.preview_markdown, author_id=user.id, artist_id=run.artist_id)
@@ -166,8 +210,29 @@ def get_agent_run(
     run_id: int,
     _: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
-) -> AgentRun:
+) -> AgentRunRead:
     run = db.get(AgentRun, run_id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
-    return run
+    tool_calls = db.scalars(
+        select(McpCallLog).where(McpCallLog.agent_run_id == run.id).order_by(McpCallLog.id.asc())
+    ).all()
+    return AgentRunRead(
+        id=run.id,
+        artist_id=run.artist_id,
+        user_id=run.user_id,
+        status=run.status,
+        briefing_type=run.briefing_type,
+        briefing_date=run.briefing_date,
+        preview_markdown=run.preview_markdown,
+        created_post_id=run.created_post_id,
+        tool_calls=[
+            {
+                "id": call.id,
+                "tool_name": call.tool_name,
+                "input_json": call.input_json,
+                "output_json": call.output_json,
+            }
+            for call in tool_calls
+        ],
+    )

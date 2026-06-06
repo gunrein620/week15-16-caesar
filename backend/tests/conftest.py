@@ -8,7 +8,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
     monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("JWT_SECRET_KEY", "test-secret")
-    monkeypatch.setenv("AI_DAILY_USER_LIMIT", "1")
+    monkeypatch.setenv("AI_DAILY_USER_LIMIT", "2")
     monkeypatch.setenv("AI_DAILY_GLOBAL_LIMIT", "20")
     monkeypatch.setenv("SEED_ADMIN_EMAIL", "admin@example.com")
     monkeypatch.setenv("SEED_ADMIN_PASSWORD", "admin-password")

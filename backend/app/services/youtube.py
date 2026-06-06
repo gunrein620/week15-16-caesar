@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.db import is_postgres
-from app.models import YoutubeSource, YoutubeVideo, YoutubeVideoSource
+from app.models import ArtistKeyword, YoutubeSource, YoutubeVideo, YoutubeVideoSource
 from app.services.rag import refresh_video_chunks
 from app.services.text import content_hash
 
@@ -64,28 +64,56 @@ def _uploads_playlist_id(channel_or_playlist_id: str) -> str:
     return items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
 
 
-def fetch_source_videos(source: YoutubeSource, max_results: int = 10) -> list[dict[str, Any]]:
-    if source.source_type == "curated_video":
+def _int_or_none(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _batched(values: list[str], size: int) -> Iterator[list[str]]:
+    for index in range(0, len(values), size):
+        yield values[index : index + size]
+
+
+def _playlist_video_ids(playlist_id: str, max_results: int) -> list[str]:
+    data = _youtube_get(
+        "playlistItems",
+        {"part": "snippet", "playlistId": playlist_id, "maxResults": max_results},
+    )
+    ids: list[str] = []
+    for item in data.get("items", []):
+        video_id = item.get("snippet", {}).get("resourceId", {}).get("videoId")
+        if video_id:
+            ids.append(video_id)
+    return ids
+
+
+def _video_details(video_ids: list[str]) -> list[dict[str, Any]]:
+    videos: list[dict[str, Any]] = []
+    for batch in _batched(video_ids, 50):
         data = _youtube_get(
             "videos",
-            {"part": "snippet", "id": source.source_value, "maxResults": 1},
+            {"part": "snippet,statistics", "id": ",".join(batch), "maxResults": len(batch)},
         )
-        items = data.get("items", [])
+        videos.extend(data.get("items", []))
+    return videos
+
+
+def fetch_source_videos(source: YoutubeSource, max_results: int = 10) -> list[dict[str, Any]]:
+    if source.source_type == "curated_video":
+        items = _video_details([source.source_value])
     else:
         playlist_id = _uploads_playlist_id(source.source_value)
-        data = _youtube_get(
-            "playlistItems",
-            {"part": "snippet", "playlistId": playlist_id, "maxResults": max_results},
-        )
-        items = data.get("items", [])
+        items = _video_details(_playlist_video_ids(playlist_id, max_results))
 
     videos: list[dict[str, Any]] = []
     for item in items:
         snippet = item.get("snippet", {})
-        resource = snippet.get("resourceId", {})
-        video_id = item.get("id") if source.source_type == "curated_video" else resource.get("videoId")
-        if source.source_type == "curated_video":
-            video_id = item.get("id")
+        statistics = item.get("statistics", {})
+        video_id = item.get("id")
         if not video_id:
             continue
         thumbnails = snippet.get("thumbnails", {})
@@ -105,9 +133,25 @@ def fetch_source_videos(source: YoutubeSource, max_results: int = 10) -> list[di
                 "published_at": snippet.get("publishedAt"),
                 "thumbnail_url": best_thumbnail.get("url", ""),
                 "url": f"https://www.youtube.com/watch?v={video_id}",
+                "view_count": _int_or_none(statistics.get("viewCount")),
+                "like_count": _int_or_none(statistics.get("likeCount")),
+                "comment_count": _int_or_none(statistics.get("commentCount")),
             }
         )
     return videos
+
+
+def _matches_fan_channel_keywords(db: Session, artist_id: int, item: dict[str, Any]) -> bool:
+    keywords = [
+        keyword.lower()
+        for keyword in db.scalars(
+            select(ArtistKeyword.keyword).where(ArtistKeyword.artist_id == artist_id)
+        ).all()
+    ]
+    if not keywords:
+        return False
+    haystack = f"{item.get('title', '')}\n{item.get('description', '')}".lower()
+    return any(keyword in haystack for keyword in keywords)
 
 
 def sync_artist_videos(db: Session, artist_id: int) -> dict[str, int]:
@@ -130,6 +174,10 @@ def sync_artist_videos(db: Session, artist_id: int) -> dict[str, int]:
         linked = 0
         for source in sources:
             for item in fetch_source_videos(source):
+                if source.source_type == "fan_channel" and not _matches_fan_channel_keywords(
+                    db, artist_id, item
+                ):
+                    continue
                 hashed = content_hash(f"{item['title']}\n{item['description']}")
                 video = db.get(YoutubeVideo, item["id"])
                 is_new = video is None
@@ -143,6 +191,9 @@ def sync_artist_videos(db: Session, artist_id: int) -> dict[str, int]:
                         channel_title=item["channel_title"],
                         thumbnail_url=item["thumbnail_url"],
                         url=item["url"],
+                        view_count=item.get("view_count"),
+                        like_count=item.get("like_count"),
+                        comment_count=item.get("comment_count"),
                         content_hash=hashed,
                     )
                     created += 1
@@ -153,6 +204,9 @@ def sync_artist_videos(db: Session, artist_id: int) -> dict[str, int]:
                     video.channel_title = item["channel_title"]
                     video.thumbnail_url = item["thumbnail_url"]
                     video.url = item["url"]
+                    video.view_count = item.get("view_count")
+                    video.like_count = item.get("like_count")
+                    video.comment_count = item.get("comment_count")
                     if changed:
                         video.content_hash = hashed
                         updated += 1

@@ -38,6 +38,32 @@ class ArtistRead(BaseModel):
     description: str
 
 
+class ArtistKeywordCreate(BaseModel):
+    keyword: str = Field(min_length=1, max_length=120)
+
+
+class ArtistKeywordRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    artist_id: int
+    keyword: str
+
+
+class MemberCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    position: str = Field(default="", max_length=80)
+
+
+class MemberRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    artist_id: int
+    name: str
+    position: str
+
+
 class PostCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     content: str = Field(min_length=1)
@@ -106,10 +132,44 @@ class SimilarRequest(BaseModel):
     limit: int = Field(default=5, ge=1, le=10)
 
 
+class SignupSettingsRead(BaseModel):
+    public_signup_enabled: bool
+
+
+class SignupSettingsUpdate(BaseModel):
+    public_signup_enabled: bool
+
+
+class InfraCostSettings(BaseModel):
+    hard_stop_enabled: bool
+    manual_hard_stop: bool
+    hard_stopped: bool
+    monthly_budget_usd: float
+    estimated_monthly_usd: float
+    elapsed_estimated_usd: float
+    budget_ratio: float
+    railway_subscription_monthly_usd: float
+    railway_backend_estimated_monthly_usd: float
+    railway_db_estimated_monthly_usd: float
+    vercel_estimated_monthly_usd: float
+    period_start: str
+    next_reset: str
+
+
+class InfraCostSettingsUpdate(BaseModel):
+    hard_stop_enabled: bool
+    manual_hard_stop: bool
+    monthly_budget_usd: float = Field(ge=0)
+    railway_subscription_monthly_usd: float = Field(ge=0)
+    railway_backend_estimated_monthly_usd: float = Field(ge=0)
+    railway_db_estimated_monthly_usd: float = Field(ge=0)
+    vercel_estimated_monthly_usd: float = Field(ge=0)
+
+
 class YoutubeSourceCreate(BaseModel):
-    source_type: str
-    source_value: str
-    title: str
+    source_type: str = Field(min_length=1, max_length=40)
+    source_value: str = Field(min_length=1, max_length=255)
+    title: str = Field(min_length=1, max_length=160)
 
 
 class YoutubeSourceRead(BaseModel):
@@ -128,8 +188,12 @@ class YoutubeVideoRead(BaseModel):
     title: str
     description: str
     channel_title: str
+    published_at: datetime | None
     thumbnail_url: str
     url: str
+    view_count: int | None
+    like_count: int | None
+    comment_count: int | None
 
 
 class BriefingPreviewResponse(BaseModel):
@@ -150,3 +214,4 @@ class AgentRunRead(BaseModel):
     briefing_date: date
     preview_markdown: str
     created_post_id: int | None
+    tool_calls: list[dict] = Field(default_factory=list)
