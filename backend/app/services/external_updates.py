@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Artist, ExternalUpdate
+from app.models import Artist, ArtistKeyword, ExternalUpdate, Member
 from app.services.link_preview import resolve_link_preview
 from app.services.naver import naver_blog_search, naver_news_search
 
@@ -48,6 +48,17 @@ def _external_id(source_type: str, item: dict[str, Any], url: str, title: str) -
     return f"{source_type}:{candidate}"
 
 
+def _has_any_term(text: str, terms: list[str]) -> bool:
+    lowered = text.lower()
+    return any(term.lower() in lowered for term in terms if term)
+
+
+def _is_relevant_item(source_type: str, title: str, description: str, terms: list[str]) -> bool:
+    if source_type == "naver_blog":
+        return _has_any_term(title, terms)
+    return _has_any_term(f"{title}\n{description}", terms)
+
+
 def _sync_naver_items(
     db: Session,
     artist_id: int,
@@ -55,6 +66,7 @@ def _sync_naver_items(
     source_type: str,
     source_label: str,
     items: list[dict[str, Any]],
+    relevance_terms: list[str],
 ) -> dict[str, int]:
     created = 0
     updated = 0
@@ -63,6 +75,8 @@ def _sync_naver_items(
         description = _clean(item.get("description"))
         url = item.get("originallink") or item.get("link") or ""
         if not title or not url:
+            continue
+        if not _is_relevant_item(source_type, title, description, relevance_terms):
             continue
         preview = resolve_link_preview(url)
         thumbnail_url = preview.get("thumbnail_url", "")
@@ -110,6 +124,15 @@ def sync_external_updates(db: Session, artist_id: int, *, display: int = 20) -> 
     artist = db.get(Artist, artist_id)
     if artist is None:
         return {"naver_available": False, "naver_created": 0, "naver_updated": 0, "error": "Artist not found"}
+    relevance_terms = [
+        keyword
+        for keyword in db.scalars(
+            select(ArtistKeyword.keyword).where(ArtistKeyword.artist_id == artist_id)
+        ).all()
+    ] + [
+        member
+        for member in db.scalars(select(Member.name).where(Member.artist_id == artist_id)).all()
+    ]
     try:
         news_result = _sync_naver_items(
             db,
@@ -117,6 +140,7 @@ def sync_external_updates(db: Session, artist_id: int, *, display: int = 20) -> 
             source_type="naver_news",
             source_label="Naver News",
             items=naver_news_search(artist.name, display=display),
+            relevance_terms=relevance_terms,
         )
         blog_result = _sync_naver_items(
             db,
@@ -124,6 +148,7 @@ def sync_external_updates(db: Session, artist_id: int, *, display: int = 20) -> 
             source_type="naver_blog",
             source_label="Naver Blog",
             items=naver_blog_search(artist.name, display=display),
+            relevance_terms=relevance_terms,
         )
     except Exception as exc:
         db.rollback()

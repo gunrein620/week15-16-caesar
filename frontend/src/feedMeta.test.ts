@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { buildFeedMetaParts } from './feedMeta.ts'
+import { buildFeedFooterParts, buildFeedMetaParts } from './feedMeta.ts'
 
 test('buildFeedMetaParts keeps source and published date time visible', () => {
   const meta = buildFeedMetaParts({
@@ -14,4 +14,18 @@ test('buildFeedMetaParts keeps source and published date time visible', () => {
   assert.match(meta.timestamp, /07/)
   assert.match(meta.timestamp, /15/)
   assert.match(meta.timestamp, /12/)
+})
+
+test('buildFeedFooterParts always exposes the published timestamp', () => {
+  const footer = buildFeedFooterParts({
+    published_at: '2026-06-07T06:12:00Z',
+    view_count: 3398,
+    comment_count: null,
+  })
+
+  assert.match(footer.timestamp, /06/)
+  assert.match(footer.timestamp, /07/)
+  assert.match(footer.timestamp, /15/)
+  assert.match(footer.timestamp, /12/)
+  assert.deepEqual(footer.stats, [{ type: 'views', value: 3398 }])
 })

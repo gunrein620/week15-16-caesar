@@ -186,6 +186,48 @@ def test_updates_feed_filters_by_member_keyword_and_source(client):
     assert {item["item_type"] for item in source_response.json()["items"]} == {"youtube"}
 
 
+def test_updates_feed_filters_loose_naver_blog_snippet_matches(client):
+    with get_session_factory()() as db:
+        db.add_all(
+            [
+                ExternalUpdate(
+                    artist_id=1,
+                    source_type="naver_blog",
+                    external_id="irrelevant-blog",
+                    title="soft haze",
+                    description="ATTACK RESCENE(리센느) 단어가 본문 주변 스니펫에만 걸린 일상 글",
+                    url="https://blog.example.com/soft-haze",
+                    thumbnail_url="",
+                    source_label="Naver Blog",
+                    published_at=datetime(2030, 6, 7, 12, tzinfo=UTC),
+                    content_hash="irrelevant-blog-hash",
+                    raw_payload={},
+                ),
+                ExternalUpdate(
+                    artist_id=1,
+                    source_type="naver_blog",
+                    external_id="relevant-blog",
+                    title="사람들이 이제야 리센느를 알아본다",
+                    description="리센느 원이 반응 정리",
+                    url="https://blog.example.com/rescene",
+                    thumbnail_url="",
+                    source_label="Naver Blog",
+                    published_at=datetime(2030, 6, 7, 11, tzinfo=UTC),
+                    content_hash="relevant-blog-hash",
+                    raw_payload={},
+                ),
+            ]
+        )
+        db.commit()
+
+    response = client.get("/artists/1/updates", params={"source": "naver_blog"})
+
+    assert response.status_code == 200, response.text
+    titles = [item["title"] for item in response.json()["items"]]
+    assert "soft haze" not in titles
+    assert "사람들이 이제야 리센느를 알아본다" in titles
+
+
 def test_updates_feed_deduplicates_video_linked_to_multiple_sources(client):
     with get_session_factory()() as db:
         first_source = YoutubeSource(

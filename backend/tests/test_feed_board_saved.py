@@ -131,6 +131,39 @@ def test_admin_sync_updates_populates_naver_cache(client, monkeypatch):
     assert cached[0]["thumbnail_url"] == "https://img.example.com/news.jpg"
 
 
+def test_admin_sync_updates_skips_loose_naver_blog_snippet_matches(client, monkeypatch):
+    monkeypatch.setattr("app.services.external_updates.naver_news_search", lambda query, display=5: [])
+    monkeypatch.setattr(
+        "app.services.external_updates.naver_blog_search",
+        lambda query, display=5: [
+            {
+                "title": "soft haze",
+                "description": "ATTACK RESCENE(리센느) 단어가 본문 주변 스니펫에만 걸린 일상 글",
+                "link": "https://blog.example.com/soft-haze",
+                "postdate": "20300607",
+            },
+            {
+                "title": "사람들이 이제야 리센느를 알아본다",
+                "description": "리센느 원이 반응 정리",
+                "link": "https://blog.example.com/rescene",
+                "postdate": "20300607",
+            },
+        ],
+    )
+    monkeypatch.setattr("app.services.external_updates.resolve_link_preview", lambda url: {})
+
+    admin_token = login(client, "admin@example.com", "admin-password")
+    response = client.post(
+        "/artists/1/sync-updates",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["naver_created"] == 1
+    cached = client.get("/artists/1/updates", params={"source": "naver_blog"}).json()["items"]
+    assert [item["title"] for item in cached] == ["사람들이 이제야 리센느를 알아본다"]
+
+
 def test_saved_items_are_user_scoped_and_deduplicated(client):
     first_token = signup(client, "first@example.com")
     second_token = signup(client, "second@example.com")

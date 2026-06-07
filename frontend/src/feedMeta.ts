@@ -21,3 +21,19 @@ export function buildFeedMetaParts(
     timestamp: formatFeedDateTime(item.published_at),
   }
 }
+
+export function buildFeedFooterParts(
+  item: Pick<UpdateFeedItem, 'published_at' | 'view_count' | 'comment_count'>,
+) {
+  const stats: Array<{ type: 'views' | 'comments'; value: number }> = []
+  if (item.view_count !== null) {
+    stats.push({ type: 'views', value: item.view_count })
+  }
+  if (item.comment_count !== null) {
+    stats.push({ type: 'comments', value: item.comment_count })
+  }
+  return {
+    timestamp: formatFeedDateTime(item.published_at),
+    stats,
+  }
+}

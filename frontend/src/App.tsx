@@ -55,7 +55,7 @@ import {
   type AppPanel,
   type BoardMode,
 } from './boardNavigation'
-import { buildFeedMetaParts } from './feedMeta'
+import { buildFeedFooterParts, buildFeedMetaParts } from './feedMeta'
 import { sortYoutubeVideos, type VideoSort } from './videoSorting'
 
 type AuthMode = 'login' | 'signup'
@@ -757,6 +757,7 @@ function UpdateFeedCard({
             ? 'Naver Blog'
             : 'Naver News'
   const meta = buildFeedMetaParts(item)
+  const footer = buildFeedFooterParts(item)
   const body = (
     <>
       <div className="updateThumb">
@@ -771,19 +772,22 @@ function UpdateFeedCard({
       <div className="updateBody">
         <div className="updateMeta">
           <span className={`typeBadge ${item.item_type}`}>{label}</span>
-          <span className="updateTimestamp">{meta.timestamp}</span>
           <span className="updateSource">{meta.source}</span>
         </div>
         <strong>{item.title}</strong>
         {item.description && <p>{excerpt(item.description, 130)}</p>}
         <div className="updateFoot">
-          {item.view_count !== null && (
-            <span>
-              <Eye size={14} />
-              {formatNumber(item.view_count)}
-            </span>
+          <span className="updateTimestamp">{footer.timestamp}</span>
+          {footer.stats.map((stat) =>
+            stat.type === 'views' ? (
+              <span key={stat.type}>
+                <Eye size={14} />
+                {formatNumber(stat.value)}
+              </span>
+            ) : (
+              <span key={stat.type}>댓글 {formatNumber(stat.value)}</span>
+            ),
           )}
-          {item.comment_count !== null && <span>댓글 {formatNumber(item.comment_count)}</span>}
           {[...item.member_names.map(memberLabel), ...item.matched_keywords, ...item.tags].slice(0, 4).map((tag) => (
             <em key={tag}>{tag}</em>
           ))}

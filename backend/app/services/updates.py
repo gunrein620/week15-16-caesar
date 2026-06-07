@@ -47,6 +47,23 @@ def _matches(text: str, candidates: list[str]) -> list[str]:
     return [candidate for candidate in candidates if candidate.lower() in lowered]
 
 
+def _has_any_term(text: str, candidates: list[str]) -> bool:
+    lowered = text.lower()
+    return any(candidate.lower() in lowered for candidate in candidates if candidate)
+
+
+def _external_update_is_relevant(
+    row: ExternalUpdate,
+    *,
+    artist_keywords: list[str],
+    members: list[str],
+) -> bool:
+    terms = artist_keywords + members
+    if row.source_type == "naver_blog":
+        return _has_any_term(row.title, terms)
+    return _has_any_term(f"{row.title}\n{row.description}", terms)
+
+
 def _item_passes(
     item: UpdateFeedItem,
     *,
@@ -204,6 +221,12 @@ def get_artist_updates(
             .limit(200)
         ).all()
         for row in external_rows:
+            if not _external_update_is_relevant(
+                row,
+                artist_keywords=artist_keywords,
+                members=members,
+            ):
+                continue
             text = f"{row.title}\n{row.description}\n{row.source_label}"
             items.append(
                 UpdateFeedItem(
