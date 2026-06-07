@@ -757,6 +757,19 @@ h2 {
   gap: 7px;
 }
 
+.updateTimestamp {
+  color: #354139;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.updateSource {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .typeBadge {
   border-radius: 999px;
   color: #ffffff;

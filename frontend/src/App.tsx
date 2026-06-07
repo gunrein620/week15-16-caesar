@@ -55,6 +55,7 @@ import {
   type AppPanel,
   type BoardMode,
 } from './boardNavigation'
+import { buildFeedMetaParts } from './feedMeta'
 import { sortYoutubeVideos, type VideoSort } from './videoSorting'
 
 type AuthMode = 'login' | 'signup'
@@ -755,6 +756,7 @@ function UpdateFeedCard({
           : item.item_type === 'naver_blog'
             ? 'Naver Blog'
             : 'Naver News'
+  const meta = buildFeedMetaParts(item)
   const body = (
     <>
       <div className="updateThumb">
@@ -769,8 +771,8 @@ function UpdateFeedCard({
       <div className="updateBody">
         <div className="updateMeta">
           <span className={`typeBadge ${item.item_type}`}>{label}</span>
-          <span>{item.source_label}</span>
-          <span>{formatDateTime(item.published_at)}</span>
+          <span className="updateTimestamp">{meta.timestamp}</span>
+          <span className="updateSource">{meta.source}</span>
         </div>
         <strong>{item.title}</strong>
         {item.description && <p>{excerpt(item.description, 130)}</p>}
