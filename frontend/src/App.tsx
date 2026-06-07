@@ -44,6 +44,7 @@ import {
   UpdateFeedResponse,
   User,
   YoutubeSource,
+  YoutubeSourceType,
   YoutubeVideo,
   api,
 } from './api'
@@ -58,6 +59,34 @@ import { sortYoutubeVideos, type VideoSort } from './videoSorting'
 
 type AuthMode = 'login' | 'signup'
 type FeedSource = 'all' | 'youtube' | 'naver' | 'briefing' | 'post'
+
+const youtubeSourceOptions: { value: YoutubeSourceType; label: string; placeholder: string }[] = [
+  {
+    value: 'official_channel',
+    label: '그룹 공식 채널',
+    placeholder: 'YouTube channel ID 또는 uploads playlist ID',
+  },
+  {
+    value: 'member_channel',
+    label: '멤버 개인 채널',
+    placeholder: '예: 원이 개인 YouTube channel ID',
+  },
+  {
+    value: 'fan_channel',
+    label: '팬 채널',
+    placeholder: '팬 채널 ID 또는 uploads playlist ID',
+  },
+  {
+    value: 'curated_video',
+    label: '단일 영상',
+    placeholder: 'YouTube video ID',
+  },
+  {
+    value: 'keyword_search',
+    label: '키워드 검색',
+    placeholder: '예: 리센느 원이',
+  },
+]
 
 function useStoredToken() {
   const [token, setToken] = useState(() => localStorage.getItem('caesar_token'))
@@ -1647,7 +1676,8 @@ function YoutubePanel({ token, user }: { token: string | null; user?: User }) {
   })
   const [sourceValue, setSourceValue] = useState('')
   const [sourceTitle, setSourceTitle] = useState('')
-  const [sourceType, setSourceType] = useState('official_channel')
+  const [sourceType, setSourceType] = useState<YoutubeSourceType>('official_channel')
+  const selectedSourceOption = youtubeSourceOptions.find((option) => option.value === sourceType)
   const addSource = useMutation({
     mutationFn: () =>
       api<YoutubeSource>(
@@ -1696,13 +1726,22 @@ function YoutubePanel({ token, user }: { token: string | null; user?: User }) {
             addSource.mutate()
           }}
         >
-          <select value={sourceType} onChange={(event) => setSourceType(event.target.value)}>
-            <option value="official_channel">official_channel</option>
-            <option value="fan_channel">fan_channel</option>
-            <option value="curated_video">curated_video</option>
+          <select
+            value={sourceType}
+            onChange={(event) => setSourceType(event.target.value as YoutubeSourceType)}
+          >
+            {youtubeSourceOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
           <input value={sourceTitle} onChange={(event) => setSourceTitle(event.target.value)} placeholder="소스 이름" />
-          <input value={sourceValue} onChange={(event) => setSourceValue(event.target.value)} placeholder="channel or video id" />
+          <input
+            value={sourceValue}
+            onChange={(event) => setSourceValue(event.target.value)}
+            placeholder={selectedSourceOption?.placeholder ?? "channel or video id"}
+          />
           <button className="secondary" title="소스 추가">
             <Upload size={17} />
             Add

@@ -20,7 +20,13 @@ from app.core.db import Base
 from app.core.types import EmbeddingVector
 
 UserRole = Literal["user", "admin"]
-YoutubeSourceType = Literal["official_channel", "fan_channel", "curated_video"]
+YoutubeSourceType = Literal[
+    "official_channel",
+    "member_channel",
+    "fan_channel",
+    "curated_video",
+    "keyword_search",
+]
 
 
 class TimestampMixin:
@@ -248,7 +254,7 @@ class YoutubeSource(Base, TimestampMixin):
     __tablename__ = "youtube_sources"
     __table_args__ = (
         CheckConstraint(
-            "source_type IN ('official_channel', 'fan_channel', 'curated_video')",
+            "source_type IN ('official_channel', 'member_channel', 'fan_channel', 'curated_video', 'keyword_search')",
             name="ck_youtube_source_type",
         ),
         CheckConstraint("length(trim(source_value)) > 0", name="ck_youtube_source_value"),

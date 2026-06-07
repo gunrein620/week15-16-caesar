@@ -2,6 +2,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 from fastapi import HTTPException, status
@@ -52,11 +53,36 @@ def _youtube_get(path: str, params: dict[str, Any]) -> dict[str, Any]:
 
 
 def _uploads_playlist_id(channel_or_playlist_id: str) -> str:
+    channel_or_playlist_id = channel_or_playlist_id.strip()
     if channel_or_playlist_id.startswith("UU"):
         return channel_or_playlist_id
+    parsed = urlparse(channel_or_playlist_id)
+    if parsed.scheme and "youtube.com" in parsed.netloc:
+        path_parts = [part for part in parsed.path.split("/") if part]
+        if len(path_parts) >= 2 and path_parts[0] == "channel":
+            channel_or_playlist_id = path_parts[1]
+        elif path_parts and path_parts[0].startswith("@"):
+            channel_or_playlist_id = path_parts[0]
+        else:
+            playlist_id = parse_qs(parsed.query).get("list", [None])[0]
+            if playlist_id and playlist_id.startswith("UU"):
+                return playlist_id
+    channel_params: dict[str, Any]
+    if channel_or_playlist_id.startswith("@"):
+        channel_params = {
+            "part": "contentDetails",
+            "forHandle": channel_or_playlist_id.removeprefix("@"),
+            "maxResults": 1,
+        }
+    else:
+        channel_params = {
+            "part": "contentDetails",
+            "id": channel_or_playlist_id,
+            "maxResults": 1,
+        }
     data = _youtube_get(
         "channels",
-        {"part": "contentDetails", "id": channel_or_playlist_id, "maxResults": 1},
+        channel_params,
     )
     items = data.get("items", [])
     if not items:
@@ -79,13 +105,41 @@ def _batched(values: list[str], size: int) -> Iterator[list[str]]:
 
 
 def _playlist_video_ids(playlist_id: str, max_results: int) -> list[str]:
+    ids: list[str] = []
+    page_token: str | None = None
+    while len(ids) < max_results:
+        params: dict[str, Any] = {
+            "part": "snippet",
+            "playlistId": playlist_id,
+            "maxResults": min(50, max_results - len(ids)),
+        }
+        if page_token:
+            params["pageToken"] = page_token
+        data = _youtube_get("playlistItems", params)
+        for item in data.get("items", []):
+            video_id = item.get("snippet", {}).get("resourceId", {}).get("videoId")
+            if video_id:
+                ids.append(video_id)
+        page_token = data.get("nextPageToken")
+        if not page_token:
+            break
+    return ids
+
+
+def _search_video_ids(query: str, max_results: int) -> list[str]:
     data = _youtube_get(
-        "playlistItems",
-        {"part": "snippet", "playlistId": playlist_id, "maxResults": max_results},
+        "search",
+        {
+            "part": "snippet",
+            "type": "video",
+            "q": query,
+            "order": "date",
+            "maxResults": min(max_results, 50),
+        },
     )
     ids: list[str] = []
     for item in data.get("items", []):
-        video_id = item.get("snippet", {}).get("resourceId", {}).get("videoId")
+        video_id = item.get("id", {}).get("videoId")
         if video_id:
             ids.append(video_id)
     return ids
@@ -102,9 +156,11 @@ def _video_details(video_ids: list[str]) -> list[dict[str, Any]]:
     return videos
 
 
-def fetch_source_videos(source: YoutubeSource, max_results: int = 10) -> list[dict[str, Any]]:
+def fetch_source_videos(source: YoutubeSource, max_results: int = 25) -> list[dict[str, Any]]:
     if source.source_type == "curated_video":
         items = _video_details([source.source_value])
+    elif source.source_type == "keyword_search":
+        items = _video_details(_search_video_ids(source.source_value, max_results))
     else:
         playlist_id = _uploads_playlist_id(source.source_value)
         items = _video_details(_playlist_video_ids(playlist_id, max_results))

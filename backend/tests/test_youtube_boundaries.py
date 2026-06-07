@@ -62,7 +62,14 @@ def test_sync_handles_each_source_type_and_get_videos_is_cache_only(client, monk
     admin_token = login(client, "admin@example.com", "admin-password")
     headers = {"Authorization": f"Bearer {admin_token}"}
 
-    for source_type in ["official_channel", "fan_channel", "curated_video"]:
+    source_types = [
+        "official_channel",
+        "member_channel",
+        "fan_channel",
+        "curated_video",
+        "keyword_search",
+    ]
+    for source_type in source_types:
         created = client.post(
             "/artists/1/youtube-sources",
             json={
@@ -92,8 +99,8 @@ def test_sync_handles_each_source_type_and_get_videos_is_cache_only(client, monk
 
     synced = client.post("/artists/1/sync", headers=headers)
     assert synced.status_code == 200, synced.text
-    assert synced.json()["created"] == 3
-    assert synced.json()["linked"] == 3
+    assert synced.json()["created"] == len(source_types)
+    assert synced.json()["linked"] == len(source_types)
 
     def fail_if_called(source: YoutubeSource, max_results: int = 10):
         raise AssertionError("GET /videos must not call external fetch")
@@ -103,16 +110,18 @@ def test_sync_handles_each_source_type_and_get_videos_is_cache_only(client, monk
     assert videos.status_code == 200
     assert {item["id"] for item in videos.json()} == {
         "video-official_channel",
+        "video-member_channel",
         "video-fan_channel",
         "video-curated_video",
+        "video-keyword_search",
     }
     assert all(item["published_at"] is not None for item in videos.json())
 
     with get_session_factory()() as db:
         link_count = db.scalar(select(func.count()).select_from(YoutubeVideoSource))
         chunk_count = db.scalar(select(func.count()).select_from(RagChunk))
-    assert link_count == 3
-    assert chunk_count >= 3
+    assert link_count == len(source_types)
+    assert chunk_count >= len(source_types)
 
 
 def test_get_videos_deduplicates_video_linked_to_multiple_sources(client):
@@ -398,6 +407,61 @@ def test_channel_sources_resolve_playlist_then_fetch_video_details(monkeypatch):
     assert videos[1]["like_count"] == 20
 
 
+def test_channel_source_accepts_youtube_handle_url(monkeypatch):
+    monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
+    reset_settings_cache()
+    calls: list[tuple[str, dict]] = []
+
+    def fake_youtube_get(path: str, params: dict):
+        calls.append((path, params))
+        if path == "channels":
+            return {
+                "items": [
+                    {
+                        "contentDetails": {
+                            "relatedPlaylists": {
+                                "uploads": "UUwoniuploads",
+                            }
+                        }
+                    }
+                ]
+            }
+        if path == "playlistItems":
+            return {"items": [{"snippet": {"resourceId": {"videoId": "woni-video"}}}]}
+        if path == "videos":
+            return {
+                "items": [
+                    {
+                        "id": "woni-video",
+                        "snippet": {
+                            "title": "원이 개인 채널 업데이트",
+                            "description": "RESCENE Woni",
+                            "channelTitle": "안녕하세요원이입니다잘부탁드립니다",
+                            "publishedAt": "2026-06-06T00:00:00Z",
+                            "thumbnails": {"high": {"url": "thumb"}},
+                        },
+                        "statistics": {"viewCount": "1000"},
+                    }
+                ]
+            }
+        raise AssertionError(path)
+
+    monkeypatch.setattr("app.services.youtube._youtube_get", fake_youtube_get)
+    source = YoutubeSource(
+        artist_id=1,
+        source_type="member_channel",
+        source_value="https://www.youtube.com/@helloiamwoninicetomeetyou",
+        title="원이 개인 채널",
+    )
+
+    videos = fetch_source_videos(source, max_results=1)
+
+    assert [path for path, _ in calls] == ["channels", "playlistItems", "videos"]
+    assert calls[0][1]["forHandle"] == "helloiamwoninicetomeetyou"
+    assert "id" not in calls[0][1]
+    assert videos[0]["id"] == "woni-video"
+
+
 def test_curated_source_uses_videos_list_only(monkeypatch):
     monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
     reset_settings_cache()
@@ -435,3 +499,65 @@ def test_curated_source_uses_videos_list_only(monkeypatch):
     assert [path for path, _ in calls] == ["videos"]
     assert calls[0][1]["id"] == "curated-id"
     assert videos[0]["view_count"] == 300
+
+
+def test_keyword_search_source_searches_then_fetches_video_details(monkeypatch):
+    monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
+    reset_settings_cache()
+    calls: list[tuple[str, dict]] = []
+
+    def fake_youtube_get(path: str, params: dict):
+        calls.append((path, params))
+        if path == "search":
+            return {
+                "items": [
+                    {"id": {"videoId": "search-video-a"}},
+                    {"id": {"videoId": "search-video-b"}},
+                ]
+            }
+        if path == "videos":
+            return {
+                "items": [
+                    {
+                        "id": "search-video-a",
+                        "snippet": {
+                            "title": "원이 브이로그",
+                            "description": "RESCENE Woni update",
+                            "channelTitle": "안녕하세요원이입니다잘부탁드립니다",
+                            "publishedAt": "2026-06-06T00:00:00Z",
+                            "thumbnails": {"high": {"url": "thumb-a"}},
+                        },
+                        "statistics": {"viewCount": "300"},
+                    },
+                    {
+                        "id": "search-video-b",
+                        "snippet": {
+                            "title": "리센느 원이 쇼츠",
+                            "description": "RESCENE Woni short",
+                            "channelTitle": "fan",
+                            "publishedAt": "2026-06-05T00:00:00Z",
+                            "thumbnails": {"medium": {"url": "thumb-b"}},
+                        },
+                        "statistics": {"viewCount": "200"},
+                    },
+                ]
+            }
+        raise AssertionError(path)
+
+    monkeypatch.setattr("app.services.youtube._youtube_get", fake_youtube_get)
+    source = YoutubeSource(
+        artist_id=1,
+        source_type="keyword_search",
+        source_value="리센느 원이",
+        title="원이 키워드 검색",
+    )
+
+    videos = fetch_source_videos(source, max_results=2)
+
+    assert [path for path, _ in calls] == ["search", "videos"]
+    assert calls[0][1]["part"] == "snippet"
+    assert calls[0][1]["type"] == "video"
+    assert calls[0][1]["q"] == "리센느 원이"
+    assert calls[0][1]["order"] == "date"
+    assert calls[1][1]["id"] == "search-video-a,search-video-b"
+    assert [video["id"] for video in videos] == ["search-video-a", "search-video-b"]

@@ -74,10 +74,17 @@ export type ArtistKeyword = {
   keyword: string
 }
 
+export type YoutubeSourceType =
+  | 'official_channel'
+  | 'member_channel'
+  | 'fan_channel'
+  | 'curated_video'
+  | 'keyword_search'
+
 export type YoutubeSource = {
   id: number
   artist_id: number
-  source_type: string
+  source_type: YoutubeSourceType
   source_value: string
   title: string
   enabled: boolean

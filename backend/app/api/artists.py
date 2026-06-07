@@ -25,7 +25,13 @@ from app.services.updates import get_artist_updates
 from app.services.youtube import sync_artist_videos
 
 router = APIRouter(tags=["artists"])
-YOUTUBE_SOURCE_TYPES = {"official_channel", "fan_channel", "curated_video"}
+YOUTUBE_SOURCE_TYPES = {
+    "official_channel",
+    "member_channel",
+    "fan_channel",
+    "curated_video",
+    "keyword_search",
+}
 
 
 def _validated_source_payload(payload: YoutubeSourceCreate) -> tuple[str, str, str]:
