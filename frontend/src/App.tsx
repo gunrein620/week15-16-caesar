@@ -498,7 +498,6 @@ function HomePanel({
   const [member, setMember] = useState('')
   const [keyword, setKeyword] = useState('')
   const [feedQuery, setFeedQuery] = useState('')
-  const [archiveQuestion, setArchiveQuestion] = useState('최근 원이 영상 뭐 있어?')
   const updates = useInfiniteQuery({
     queryKey: ['updates', source, member, keyword, feedQuery],
     initialPageParam: null as string | null,
@@ -521,14 +520,6 @@ function HomePanel({
   const artistKeywords = useQuery({
     queryKey: ['artist-keywords', 1],
     queryFn: () => api<ArtistKeyword[]>('/artists/1/keywords'),
-  })
-  const qa = useMutation({
-    mutationFn: () =>
-      api<{ answer: string; sources: QaSource[] }>(
-        '/ai/qa',
-        { method: 'POST', body: JSON.stringify({ question: archiveQuestion, artist_id: 1 }) },
-        token,
-      ),
   })
   const saveItem = useMutation({
     mutationFn: (item: UpdateFeedItem) =>
@@ -563,88 +554,16 @@ function HomePanel({
     { value: 'briefing', label: '오늘의 요약' },
     { value: 'post', label: '팬글' },
   ]
-  const examples = ['최근 원이 영상 뭐 있어?', '러브어택 무대 영상 모아줘', '이번 주 리센느 소식 요약해줘']
   const feedItems = updates.data?.pages.flatMap((pageData) => pageData.items) ?? []
   const naverAvailable = updates.data?.pages.every((pageData) => pageData.naver_available) ?? true
   return (
     <div className="homeStack">
-      <section className="homeHero">
-        <div className="homeIntro">
-          <p className="eyebrow">오늘/최근 업데이트</p>
-          <h2>리센느 자료 모아보기</h2>
-          <p className="muted">YouTube, Naver, 브리핑, 팬 게시글을 시간순으로 모아 봅니다.</p>
-        </div>
-        <form
-          className="archiveSearch"
-          onSubmit={(event) => {
-            event.preventDefault()
-            if (!token) {
-              onRequireAuth()
-              return
-            }
-            qa.mutate()
-          }}
-        >
-          <label htmlFor="archive-question">게시글/YouTube 아카이브 검색</label>
-          <div className="archiveInput">
-            <Search size={18} />
-            <input
-              id="archive-question"
-              value={archiveQuestion}
-              onChange={(event) => setArchiveQuestion(event.target.value)}
-              placeholder="예: 러브어택 무대 영상 모아줘"
-            />
-            <button className="primary" disabled={qa.isPending} title="아카이브 검색">
-              <Send size={17} />
-              검색
-            </button>
-          </div>
-          <div className="exampleChips">
-            {examples.map((example) => (
-              <button
-                key={example}
-                type="button"
-                className={archiveQuestion === example ? 'active' : ''}
-                onClick={() => setArchiveQuestion(example)}
-              >
-                {example}
-              </button>
-            ))}
-          </div>
-          <p className="hint">
-            {archiveSearchHintForQuestion(archiveQuestion)}
-          </p>
-          {!token && <p className="hint">읽기는 공개입니다. AI 아카이브 검색은 로그인 후 사용할 수 있습니다.</p>}
-          {qa.error && <p className="error">{qa.error.message}</p>}
-        </form>
-      </section>
-
-      {qa.data && (
-        <section className="archiveResult">
-          <div className="sectionHead">
-            <div>
-              <p className="eyebrow">Archive answer</p>
-              <h2>검색 결과</h2>
-            </div>
-          </div>
-          <ArchiveAnswerBlock answer={qa.data.answer} />
-          <div className="sourceCards">
-            {qa.data.sources.map((qaSource, index) => (
-              <SourceCard
-                key={`${qaSource.source_type}-${qaSource.chunk_id}-${index}`}
-                source={qaSource}
-                onOpenPost={onOpenPost}
-              />
-            ))}
-          </div>
-        </section>
-      )}
-
       <section className="feedPanel">
         <div className="sectionHead">
           <div>
             <p className="eyebrow">Live feed</p>
             <h2>통합 업데이트</h2>
+            <p className="muted">YouTube, Naver, 오늘의 요약, 팬글을 시간순으로 모아 봅니다.</p>
           </div>
           <span className="feedCount">{formatNumber(feedItems.length)} items</span>
         </div>

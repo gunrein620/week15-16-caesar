@@ -180,8 +180,6 @@ h2 {
 .answer,
 .emptyState,
 .adminBudget,
-.homeHero,
-.archiveResult,
 .feedPanel {
   background: #ffffff;
   border: 1px solid #d9ded5;
@@ -538,49 +536,6 @@ h2 {
   white-space: nowrap;
 }
 
-.homeHero {
-  display: grid;
-  gap: 18px;
-  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.2fr);
-  padding: 18px;
-}
-
-.homeIntro h2 {
-  font-size: 28px;
-  line-height: 1.2;
-  margin-bottom: 8px;
-}
-
-.archiveSearch {
-  display: grid;
-  gap: 10px;
-}
-
-.archiveSearch label {
-  color: #26533a;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.archiveInput {
-  align-items: center;
-  border: 1px solid #cfd8d1;
-  border-radius: 8px;
-  display: grid;
-  gap: 8px;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
-  min-height: 44px;
-  padding: 4px 4px 4px 12px;
-}
-
-.archiveInput input {
-  border: 0;
-  min-height: 34px;
-  outline: 0;
-  padding-left: 0;
-}
-
-.exampleChips,
 .chipLine,
 .filterLine {
   display: flex;
@@ -589,7 +544,6 @@ h2 {
   min-width: 0;
 }
 
-.exampleChips button,
 .chipLine button,
 .filterLine button {
   background: #ffffff;
@@ -600,7 +554,6 @@ h2 {
   padding: 0 10px;
 }
 
-.exampleChips button.active,
 .chipLine button.active,
 .filterLine button.active {
   background: #17201b;
@@ -618,7 +571,6 @@ h2 {
   padding: 9px 10px;
 }
 
-.archiveResult,
 .feedPanel {
   padding: 16px;
 }
@@ -1494,7 +1446,6 @@ button:disabled {
     white-space: nowrap;
   }
 
-  .exampleChips,
   .chipLine,
   .filterLine {
     flex-wrap: nowrap;
@@ -1503,13 +1454,11 @@ button:disabled {
     scrollbar-width: none;
   }
 
-  .exampleChips::-webkit-scrollbar,
   .chipLine::-webkit-scrollbar,
   .filterLine::-webkit-scrollbar {
     display: none;
   }
 
-  .exampleChips button,
   .chipLine button,
   .filterLine button {
     flex: 0 0 auto;
@@ -1592,9 +1541,6 @@ button:disabled {
     flex-direction: column;
   }
 
-  .homeHero {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 520px) {
@@ -1611,19 +1557,6 @@ button:disabled {
 
   .sourceOpen {
     display: none;
-  }
-
-  .archiveInput {
-    grid-template-columns: 20px minmax(0, 1fr);
-  }
-
-  .archiveInput .primary {
-    grid-column: 1 / -1;
-    width: 100%;
-  }
-
-  .homeIntro h2 {
-    font-size: 23px;
   }
 
   .updateCard {
