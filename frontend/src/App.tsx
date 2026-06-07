@@ -57,7 +57,11 @@ import {
   type AppPanel,
   type BoardMode,
 } from './boardNavigation'
-import { buildArchiveAnswerPreview, buildArchiveSourceDisplay } from './archiveSearch'
+import {
+  archiveSearchHintForQuestion,
+  buildArchiveAnswerPreview,
+  buildArchiveSourceDisplay,
+} from './archiveSearch'
 import { buildFeedFooterParts, buildFeedMetaParts } from './feedMeta'
 import { sortYoutubeVideos, type VideoSort } from './videoSorting'
 
@@ -607,7 +611,7 @@ function HomePanel({
             ))}
           </div>
           <p className="hint">
-            아카이브 검색은 저장된 게시글과 YouTube 영상 설명을 AI로 찾습니다. Naver 뉴스/블로그는 아래 통합 업데이트 검색에서 찾을 수 있습니다.
+            {archiveSearchHintForQuestion(archiveQuestion)}
           </p>
           {!token && <p className="hint">읽기는 공개입니다. AI 아카이브 검색은 로그인 후 사용할 수 있습니다.</p>}
           {qa.error && <p className="error">{qa.error.message}</p>}
@@ -1597,6 +1601,7 @@ function RagPanel({
           onChange={(event) => setQuestion(event.target.value)}
           placeholder="예: 최근 원이 영상 뭐 있어? / 러브어택 무대 영상 모아줘"
         />
+        <p className="hint">{archiveSearchHintForQuestion(question)}</p>
         <button className="primary" disabled={qa.isPending} title="질문 보내기">
           <Send size={17} />
           검색
@@ -1649,30 +1654,42 @@ function ArchiveAnswerBlock({ answer }: { answer: string }) {
   )
 }
 
+function archiveSourceTypeLabel(source: QaSource) {
+  if (source.source_type === 'youtube') return 'YouTube'
+  if (source.source_type === 'briefing') return '오늘의 요약'
+  if (source.source_type === 'naver_news') return 'Naver News'
+  if (source.source_type === 'naver_blog') return 'Naver Blog'
+  return '게시글'
+}
+
 function SourceCard({ source, onOpenPost }: { source: QaSource; onOpenPost: (postId: number) => void }) {
-  const isYoutube = source.source_type === 'youtube'
+  const isExternal = source.url.startsWith('http')
   const display = buildArchiveSourceDisplay(source)
+  const metaParts = [
+    source.channel_title || source.source_label || '',
+    source.published_at ? formatDateTime(source.published_at) : '',
+    source.view_count !== null && source.view_count !== undefined
+      ? `${formatNumber(source.view_count)} views`
+      : '',
+  ].filter(Boolean)
   const body = (
     <>
       <div className="sourceThumb">
-        {isYoutube && source.thumbnail_url ? (
+        {source.thumbnail_url ? (
           <img src={source.thumbnail_url} alt="" loading="lazy" />
         ) : (
           <FileText size={22} />
         )}
       </div>
       <div className="sourceBody">
-        <span className="sourceType">{isYoutube ? 'YouTube' : '게시글'}</span>
+        <span className="sourceType">{archiveSourceTypeLabel(source)}</span>
         <strong>{display.title}</strong>
-        <small>
-          {isYoutube && source.channel_title ? `${source.channel_title} · ` : ''}
-          {isYoutube ? `${formatNumber(source.view_count)} views` : formatDate(source.published_at)}
-        </small>
+        <small>{metaParts.join(' · ') || formatDate(source.published_at)}</small>
         {display.description && <p>{display.description}</p>}
       </div>
     </>
   )
-  if (isYoutube) {
+  if (isExternal) {
     return (
       <a className="sourceCard" href={source.url} target="_blank" rel="noreferrer">
         {body}

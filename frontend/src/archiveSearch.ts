@@ -12,6 +12,17 @@ function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, ' ').trim()
 }
 
+export function archiveSearchHintForQuestion(question: string): string {
+  const normalized = normalizeWhitespace(question).toLowerCase()
+  if (/(오늘|금일|최근|이번\s*주|최신|업데이트|새\s*소식)/.test(normalized)) {
+    return '오늘/최근 질문은 저장된 통합 업데이트 캐시에서 먼저 찾습니다. YouTube, 브리핑, Naver, 팬글 카드가 함께 표시됩니다.'
+  }
+  if (/(러브\s*어택|love\s*attack|데자\s*부|deja\s*vu|uh\s*uh|곡|앨범|활동|무대|직캠|영상)/.test(normalized)) {
+    return '곡명/앨범/활동명은 관리자 키워드 사전의 alias를 우선 적용해 제목이 맞는 아카이브 결과를 먼저 보여줍니다.'
+  }
+  return '아카이브 검색은 저장된 게시글과 YouTube 자료를 찾습니다. Naver 뉴스/블로그는 통합 업데이트 캐시에 저장된 항목을 카드로 보여줍니다.'
+}
+
 export function buildArchiveAnswerPreview(answer: string, maxLength = 90): ArchiveAnswerPreview {
   const normalized = normalizeWhitespace(answer)
   if (normalized.length <= maxLength) {

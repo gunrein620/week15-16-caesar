@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { buildArchiveAnswerPreview, buildArchiveSourceDisplay } from './archiveSearch.ts'
+import {
+  archiveSearchHintForQuestion,
+  buildArchiveAnswerPreview,
+  buildArchiveSourceDisplay,
+} from './archiveSearch.ts'
 
 test('buildArchiveAnswerPreview collapses long generated answers', () => {
   const answer =
@@ -23,4 +27,19 @@ test('buildArchiveSourceDisplay keeps archive cards title-first and omits raw ch
 
   assert.equal(display.title, 'RESCENE LOVE ATTACK Dance Practice')
   assert.equal(display.description, null)
+})
+
+test('archiveSearchHintForQuestion separates live updates from archive search', () => {
+  assert.match(
+    archiveSearchHintForQuestion('오늘 새 소식 찾아줘'),
+    /통합 업데이트/,
+  )
+  assert.match(
+    archiveSearchHintForQuestion('러브어택 무대 영상 모아줘'),
+    /곡명/,
+  )
+  assert.match(
+    archiveSearchHintForQuestion('러브어택 요약해줘'),
+    /곡명/,
+  )
 })

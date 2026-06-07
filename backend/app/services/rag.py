@@ -1,42 +1,17 @@
-import re
+from datetime import UTC, datetime, timedelta, timezone
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models import ArtistArchiveTerm, Post, RagChunk, YoutubeVideo
+from app.models import Post, RagChunk, YoutubeVideo
+from app.schemas import UpdateFeedItem
+from app.services.search_intent import SearchIntent, parse_search_intent
 from app.services.text import chunk_text, content_hash, cosine_similarity, deterministic_embedding
+from app.services.updates import get_artist_updates
 
 
-def _normalize_keyword_text(value: str) -> str:
-    return re.sub(r"[^0-9a-z가-힣]+", "", value.lower())
-
-
-def _required_alias_groups(db: Session, artist_id: int, question: str) -> list[tuple[str, ...]]:
-    normalized_question = _normalize_keyword_text(question)
-    groups: list[tuple[str, ...]] = []
-    archive_terms = db.scalars(
-        select(ArtistArchiveTerm).where(ArtistArchiveTerm.artist_id == artist_id)
-    ).all()
-    for term in archive_terms:
-        aliases = [term.title, *(term.aliases or [])]
-        normalized_aliases = tuple(
-            dict.fromkeys(
-                alias
-                for alias in (_normalize_keyword_text(value) for value in aliases)
-                if alias
-            )
-        )
-        if any(alias and alias in normalized_question for alias in normalized_aliases):
-            groups.append(normalized_aliases)
-    return groups
-
-
-def _matches_required_aliases(chunk: RagChunk, required_groups: list[tuple[str, ...]]) -> bool:
-    if not required_groups:
-        return True
-    normalized_content = _normalize_keyword_text(chunk.content)
-    return all(any(alias and alias in normalized_content for alias in aliases) for aliases in required_groups)
+KST = timezone(timedelta(hours=9))
 
 
 def embed_text(text: str) -> list[float]:
@@ -85,17 +60,9 @@ def refresh_video_chunks(db: Session, video: YoutubeVideo, artist_id: int) -> No
 
 
 def search_chunks(db: Session, question: str, artist_id: int, limit: int = 5) -> list[RagChunk]:
-    query_embedding = embed_text(question)
-    chunks = db.scalars(select(RagChunk).where(RagChunk.artist_id == artist_id)).all()
-    ranked = sorted(
-        chunks,
-        key=lambda chunk: cosine_similarity(query_embedding, chunk.embedding),
-        reverse=True,
-    )
-    required_groups = _required_alias_groups(db, artist_id, question)
-    if required_groups:
-        ranked = [chunk for chunk in ranked if _matches_required_aliases(chunk, required_groups)]
-    return ranked[:limit]
+    from app.services.archive_search import search_archive_candidates
+
+    return search_archive_candidates(db, question, artist_id=artist_id, limit=limit)
 
 
 def _chunk_source_payload(db: Session, chunk: RagChunk) -> dict:
@@ -114,6 +81,7 @@ def _chunk_source_payload(db: Session, chunk: RagChunk) -> dict:
             "url": video.url if video else "",
             "thumbnail_url": video.thumbnail_url if video else "",
             "channel_title": video.channel_title if video else "",
+            "source_label": "YouTube",
             "published_at": video.published_at.isoformat() if video and video.published_at else None,
             "view_count": video.view_count if video else None,
         }
@@ -125,19 +93,124 @@ def _chunk_source_payload(db: Session, chunk: RagChunk) -> dict:
         "url": f"/posts/{post.id}" if post else "",
         "thumbnail_url": "",
         "channel_title": "",
+        "source_label": "Fan post",
         "published_at": post.created_at.isoformat() if post and post.created_at else None,
         "view_count": None,
     }
 
 
+def _aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _temporal_cutoff(intent: SearchIntent) -> datetime | None:
+    if intent.temporal == "today":
+        now_kst = datetime.now(KST)
+        return now_kst.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
+    if intent.temporal == "recent":
+        return datetime.now(UTC) - timedelta(days=7)
+    return None
+
+
+def _post_id_from_url(url: str) -> int | None:
+    if not url.startswith("/posts/"):
+        return None
+    try:
+        return int(url.removeprefix("/posts/").split("/", 1)[0])
+    except ValueError:
+        return None
+
+
+def _update_source_payload(item: UpdateFeedItem) -> dict:
+    item_type, _, raw_id = item.id.partition(":")
+    post_id = _post_id_from_url(item.url)
+    return {
+        "chunk_id": None,
+        "post_id": post_id,
+        "youtube_video_id": raw_id if item_type == "youtube" else None,
+        "source_type": item.item_type,
+        "title": item.title,
+        "url": item.url,
+        "thumbnail_url": item.thumbnail_url,
+        "channel_title": item.source_label,
+        "source_label": item.source_label,
+        "published_at": item.published_at.isoformat(),
+        "view_count": item.view_count,
+        "comment_count": item.comment_count,
+        "content": item.description,
+        "description": item.description,
+    }
+
+
+def _matches_temporal_archive_terms(item: UpdateFeedItem, intent: SearchIntent) -> bool:
+    if not intent.archive_terms:
+        return True
+    from app.services.search_intent import normalize_search_text
+
+    haystack = normalize_search_text(
+        " ".join([item.title, item.description, *item.tags, *item.matched_keywords])
+    )
+    return all(
+        any(alias in haystack for alias in term.aliases)
+        for term in intent.archive_terms
+    )
+
+
+def _temporal_update_sources(
+    db: Session,
+    intent: SearchIntent,
+    *,
+    limit: int = 5,
+) -> list[dict]:
+    source = "youtube" if intent.media_type == "youtube" else None
+    response = get_artist_updates(db, intent.artist_id, source=source, limit=80)
+    cutoff = _temporal_cutoff(intent)
+    items = response.items
+    if cutoff is not None:
+        items = [item for item in items if _aware_utc(item.published_at) >= cutoff]
+    items = [item for item in items if _matches_temporal_archive_terms(item, intent)]
+    return [_update_source_payload(item) for item in items[:limit]]
+
+
+def _temporal_answer(intent: SearchIntent, sources: list[dict]) -> str:
+    if not sources:
+        if intent.temporal == "today":
+            return "오늘 올라온 캐시 업데이트를 아직 찾지 못했습니다. 관리자 동기화 후 다시 확인해 주세요."
+        return "최근 캐시 업데이트를 아직 찾지 못했습니다. 관리자 동기화 후 다시 확인해 주세요."
+    label = "오늘" if intent.temporal == "today" else "최근"
+    return f"{label} 업데이트를 시간순으로 찾았습니다. 아래 카드에서 영상, 글, 뉴스 원문을 바로 확인해 주세요."
+
+
+def format_context_for_answer(payloads: list[dict]) -> str:
+    blocks: list[str] = []
+    for index, source in enumerate(payloads, start=1):
+        lines = [
+            f"[source {index}]",
+            f"source_type: {source.get('source_type') or ''}",
+            f"title: {source.get('title') or ''}",
+            f"published_at: {source.get('published_at') or ''}",
+            f"url: {source.get('url') or ''}",
+            f"content: {source.get('content') or source.get('description') or ''}",
+        ]
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
+
+
 def answer_question(db: Session, question: str, artist_id: int) -> tuple[str, list[dict]]:
+    intent = parse_search_intent(question, artist_id=artist_id, db=db)
+    if intent.route == "updates":
+        sources = _temporal_update_sources(db, intent)
+        return _temporal_answer(intent, sources), sources
+
     chunks = search_chunks(db, question, artist_id)
     sources = [_chunk_source_payload(db, chunk) for chunk in chunks]
     if not chunks:
         return "아직 참고할 게시글이나 영상 데이터가 없습니다.", sources
 
     settings = get_settings()
-    context = "\n\n".join(chunk.content for chunk in chunks)
+    context = format_context_for_answer(sources)
     if settings.openai_api_key:
         from openai import OpenAI
 

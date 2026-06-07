@@ -112,17 +112,20 @@ export type YoutubeVideo = {
 }
 
 export type QaSource = {
-  chunk_id: number
+  chunk_id: number | null
   post_id: number | null
   youtube_video_id: string | null
-  source_type: 'post' | 'youtube'
+  source_type: 'post' | 'youtube' | 'briefing' | 'naver_news' | 'naver_blog'
   title: string
   url: string
   thumbnail_url: string
   channel_title: string
+  source_label?: string
   published_at: string | null
   view_count: number | null
+  comment_count?: number | null
   content: string
+  description?: string
 }
 
 export type UpdateFeedItem = {
