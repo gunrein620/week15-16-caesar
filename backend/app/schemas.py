@@ -196,6 +196,28 @@ class YoutubeVideoRead(BaseModel):
     comment_count: int | None
 
 
+class UpdateFeedItem(BaseModel):
+    id: str
+    item_type: str
+    title: str
+    description: str
+    url: str
+    thumbnail_url: str = ""
+    source_label: str
+    published_at: datetime
+    view_count: int | None = None
+    comment_count: int | None = None
+    matched_keywords: list[str] = Field(default_factory=list)
+    member_names: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+
+class UpdateFeedResponse(BaseModel):
+    artist_id: int
+    items: list[UpdateFeedItem]
+    naver_available: bool
+
+
 class BriefingPreviewResponse(BaseModel):
     run_id: int
     preview_markdown: str

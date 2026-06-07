@@ -14,11 +14,13 @@ from app.schemas import (
     ArtistRead,
     MemberCreate,
     MemberRead,
+    UpdateFeedResponse,
     YoutubeSourceCreate,
     YoutubeSourceRead,
     YoutubeVideoRead,
 )
 from app.services.quota import consume_ai_quota
+from app.services.updates import get_artist_updates
 from app.services.youtube import sync_artist_videos
 
 router = APIRouter(tags=["artists"])
@@ -54,6 +56,30 @@ def list_videos(artist_id: int, db: Annotated[Session, Depends(get_db)]) -> list
         .where(YoutubeSource.artist_id == artist_id)
         .order_by(YoutubeVideo.published_at.desc().nullslast())
     ).all()
+
+
+@router.get("/artists/{artist_id}/updates", response_model=UpdateFeedResponse)
+@limiter.limit("60/minute")
+def list_updates(
+    request: Request,
+    artist_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    source: str | None = None,
+    member: str | None = None,
+    keyword: str | None = None,
+    q: str | None = None,
+    limit: int = 30,
+) -> UpdateFeedResponse:
+    _require_artist(db, artist_id)
+    return get_artist_updates(
+        db,
+        artist_id,
+        source=source,
+        member=member,
+        keyword=keyword,
+        query=q,
+        limit=min(max(limit, 1), 50),
+    )
 
 
 @router.post("/artists/{artist_id}/sync")

@@ -23,15 +23,19 @@ import {
 } from 'lucide-react'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import {
+  ArtistKeyword,
   AuthResponse,
   BriefingPreview,
   Comment,
   InfraCostSettings,
+  Member,
   Post,
   PostList,
   QaSource,
   SignupSettings,
   Tag,
+  UpdateFeedItem,
+  UpdateFeedResponse,
   User,
   YoutubeSource,
   YoutubeVideo,
@@ -39,8 +43,9 @@ import {
 } from './api'
 
 type AuthMode = 'login' | 'signup'
-type Panel = 'board' | 'rag' | 'youtube' | 'briefing' | 'admin'
+type Panel = 'home' | 'board' | 'rag' | 'youtube' | 'briefing' | 'admin'
 type VideoSort = 'latest' | 'views' | 'title'
+type FeedSource = 'all' | 'youtube' | 'naver' | 'briefing' | 'post'
 
 function useStoredToken() {
   const [token, setToken] = useState(() => localStorage.getItem('caesar_token'))
@@ -59,6 +64,18 @@ function formatDate(value: string | null | undefined) {
   return new Intl.DateTimeFormat('ko-KR', { month: '2-digit', day: '2-digit' }).format(date)
 }
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "-"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "-"
+  return new Intl.DateTimeFormat('ko-KR', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
 function formatNumber(value: number | null | undefined) {
   if (value === null || value === undefined) return "-"
   return new Intl.NumberFormat('en-US').format(value)
@@ -70,10 +87,27 @@ function excerpt(value: string, maxLength = 180) {
   return `${normalized.slice(0, maxLength)}...`
 }
 
+const memberLabels: Record<string, string> = {
+  Woni: '원이',
+  Liv: '리브',
+  Minami: '미나미',
+  May: '메이',
+  Zena: '제나',
+}
+
+function memberLabel(name: string) {
+  return memberLabels[name] ?? name
+}
+
+function postIdFromUrl(url: string) {
+  const match = url.match(/^\/posts\/(\d+)$/)
+  return match ? Number(match[1]) : null
+}
+
 export default function App() {
   const queryClient = useQueryClient()
   const [token, setToken] = useStoredToken()
-  const [panel, setPanel] = useState<Panel>('board')
+  const [panel, setPanel] = useState<Panel>('home')
   const [selectedPostId, setSelectedPostId] = useState<number | null>(null)
   const [search, setSearch] = useState('')
   const [tagFilter, setTagFilter] = useState('')
@@ -126,10 +160,16 @@ export default function App() {
     },
   })
 
-  const selectedPost = useMemo(
-    () => posts.data?.items.find((post) => post.id === selectedPostId) ?? posts.data?.items[0] ?? null,
+  const listedSelectedPost = useMemo(
+    () => posts.data?.items.find((post) => post.id === selectedPostId) ?? null,
     [posts.data?.items, selectedPostId],
   )
+  const selectedPostById = useQuery({
+    queryKey: ['post', selectedPostId],
+    queryFn: () => api<Post>(`/posts/${selectedPostId}`),
+    enabled: Boolean(selectedPostId && !listedSelectedPost),
+  })
+  const selectedPost = listedSelectedPost ?? selectedPostById.data ?? posts.data?.items[0] ?? null
 
   const logout = () => {
     setToken(null)
@@ -141,7 +181,7 @@ export default function App() {
       <header className="topbar">
         <div>
           <p className="eyebrow">RESCENE</p>
-          <h1>Fan Board</h1>
+          <h1>Updates</h1>
         </div>
         <div className="session">
           {me.data ? (
@@ -173,27 +213,34 @@ export default function App() {
       </header>
 
       <nav className="tabs">
+        <button className={panel === 'home' ? 'active' : ''} onClick={() => setPanel('home')}>
+          홈
+        </button>
         <button className={panel === 'board' ? 'active' : ''} onClick={() => setPanel('board')}>
-          Board
+          팬 게시판
         </button>
         <button className={panel === 'rag' ? 'active' : ''} onClick={() => setPanel('rag')}>
-          RAG
+          아카이브
         </button>
         <button className={panel === 'youtube' ? 'active' : ''} onClick={() => setPanel('youtube')}>
           YouTube
         </button>
         <button className={panel === 'briefing' ? 'active' : ''} onClick={() => setPanel('briefing')}>
-          Briefing
+          오늘의 요약
         </button>
         {me.data?.role === 'admin' && (
           <button className={panel === 'admin' ? 'active' : ''} onClick={() => setPanel('admin')}>
-            Admin
+            관리
           </button>
         )}
       </nav>
 
-      <main className="layout">
+      <main className={panel === 'home' ? 'layout homeLayout' : 'layout'}>
         <section className="leftPane">
+          <div className="sideTitle">
+            <strong>팬 게시판</strong>
+            <span>후기와 댓글</span>
+          </div>
           <div className="searchbar">
             <Search size={17} />
             <input
@@ -233,7 +280,23 @@ export default function App() {
         </section>
 
         <section className="mainPane">
-          {!me.data && (
+          {!me.data && panel !== 'home' && (
+            <AuthPanel
+              publicSignupEnabled={signupStatus.data?.public_signup_enabled ?? false}
+              setToken={setToken}
+            />
+          )}
+          {panel === 'home' && (
+            <HomePanel
+              token={token}
+              user={me.data}
+              onOpenPost={(postId) => {
+                setSelectedPostId(postId)
+                setPanel('board')
+              }}
+            />
+          )}
+          {!me.data && panel === 'home' && (
             <AuthPanel
               publicSignupEnabled={signupStatus.data?.public_signup_enabled ?? false}
               setToken={setToken}
@@ -246,6 +309,8 @@ export default function App() {
               post={selectedPost}
               onChanged={() => {
                 void queryClient.invalidateQueries({ queryKey: ['posts'] })
+                void queryClient.invalidateQueries({ queryKey: ['post', selectedPost?.id] })
+                void queryClient.invalidateQueries({ queryKey: ['updates'] })
                 void queryClient.invalidateQueries({ queryKey: ['comments', selectedPost?.id] })
                 void queryClient.invalidateQueries({ queryKey: ['tags'] })
               }}
@@ -268,6 +333,284 @@ export default function App() {
         </section>
       </main>
     </div>
+  )
+}
+
+function HomePanel({
+  token,
+  user,
+  onOpenPost,
+}: {
+  token: string | null
+  user?: User
+  onOpenPost: (postId: number) => void
+}) {
+  const [source, setSource] = useState<FeedSource>('all')
+  const [member, setMember] = useState('')
+  const [keyword, setKeyword] = useState('')
+  const [feedQuery, setFeedQuery] = useState('')
+  const [archiveQuestion, setArchiveQuestion] = useState('최근 원이 영상 뭐 있어?')
+  const updates = useQuery({
+    queryKey: ['updates', source, member, keyword, feedQuery],
+    queryFn: () => {
+      const params = new URLSearchParams({ limit: '30' })
+      if (source !== 'all') params.set('source', source)
+      if (member) params.set('member', member)
+      if (keyword) params.set('keyword', keyword)
+      if (feedQuery) params.set('q', feedQuery)
+      return api<UpdateFeedResponse>(`/artists/1/updates?${params.toString()}`)
+    },
+  })
+  const members = useQuery({
+    queryKey: ['members', 1],
+    queryFn: () => api<Member[]>('/artists/1/members'),
+  })
+  const artistKeywords = useQuery({
+    queryKey: ['artist-keywords', 1],
+    queryFn: () => api<ArtistKeyword[]>('/artists/1/keywords'),
+  })
+  const tags = useQuery({
+    queryKey: ['tags'],
+    queryFn: () => api<Tag[]>('/tags'),
+  })
+  const qa = useMutation({
+    mutationFn: () =>
+      api<{ answer: string; sources: QaSource[] }>(
+        '/ai/qa',
+        { method: 'POST', body: JSON.stringify({ question: archiveQuestion, artist_id: 1 }) },
+        token,
+      ),
+  })
+  const keywordOptions = useMemo(() => {
+    const fixed = ['컴백', '무대', '직캠', '라디오', 'Love Attack']
+    const fromArtist = artistKeywords.data?.map((item) => item.keyword) ?? []
+    const fromTags = tags.data?.map((item) => item.name) ?? []
+    return [...new Set([...fixed, ...fromArtist, ...fromTags])].slice(0, 14)
+  }, [artistKeywords.data, tags.data])
+  const sourceOptions: { value: FeedSource; label: string }[] = [
+    { value: 'all', label: '전체' },
+    { value: 'youtube', label: 'YouTube' },
+    { value: 'naver', label: 'Naver' },
+    { value: 'briefing', label: '오늘의 요약' },
+    { value: 'post', label: '팬글' },
+  ]
+  const examples = ['최근 원이 영상 뭐 있어?', '러브어택 무대 영상 모아줘', '이번 주 리센느 소식 요약해줘']
+  return (
+    <div className="homeStack">
+      <section className="homeHero">
+        <div className="homeIntro">
+          <p className="eyebrow">오늘/최근 업데이트</p>
+          <h2>리센느 떡밥 모아보기</h2>
+          <p className="muted">YouTube, Naver, 브리핑, 팬 게시글을 시간순으로 모아 봅니다.</p>
+        </div>
+        <form
+          className="archiveSearch"
+          onSubmit={(event) => {
+            event.preventDefault()
+            qa.mutate()
+          }}
+        >
+          <label htmlFor="archive-question">아카이브 검색</label>
+          <div className="archiveInput">
+            <Search size={18} />
+            <input
+              id="archive-question"
+              value={archiveQuestion}
+              onChange={(event) => setArchiveQuestion(event.target.value)}
+              placeholder="예: 러브어택 무대 영상 모아줘"
+            />
+            <button className="primary" disabled={!token || qa.isPending} title="아카이브 검색">
+              <Send size={17} />
+              검색
+            </button>
+          </div>
+          <div className="exampleChips">
+            {examples.map((example) => (
+              <button
+                key={example}
+                type="button"
+                className={archiveQuestion === example ? 'active' : ''}
+                onClick={() => setArchiveQuestion(example)}
+              >
+                {example}
+              </button>
+            ))}
+          </div>
+          {!token && <p className="hint">읽기는 공개입니다. AI 아카이브 검색은 로그인 후 사용할 수 있습니다.</p>}
+          {qa.error && <p className="error">{qa.error.message}</p>}
+        </form>
+      </section>
+
+      {qa.data && (
+        <section className="archiveResult">
+          <div className="sectionHead">
+            <div>
+              <p className="eyebrow">Archive answer</p>
+              <h2>검색 결과</h2>
+            </div>
+          </div>
+          <p>{qa.data.answer}</p>
+          <div className="sourceCards">
+            {qa.data.sources.map((qaSource, index) => (
+              <SourceCard
+                key={`${qaSource.source_type}-${qaSource.chunk_id}-${index}`}
+                source={qaSource}
+                onOpenPost={onOpenPost}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="feedPanel">
+        <div className="sectionHead">
+          <div>
+            <p className="eyebrow">Live feed</p>
+            <h2>통합 업데이트</h2>
+          </div>
+          <span className="feedCount">{formatNumber(updates.data?.items.length ?? 0)} items</span>
+        </div>
+        <div className="feedControls">
+          <div className="searchbar">
+            <Search size={17} />
+            <input
+              value={feedQuery}
+              onChange={(event) => setFeedQuery(event.target.value)}
+              placeholder="제목, 출처, 키워드 검색"
+            />
+          </div>
+          <div className="filterLine" aria-label="source filter">
+            {sourceOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={source === option.value ? 'active' : ''}
+                onClick={() => setSource(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <div className="chipLine" aria-label="member filter">
+            <button type="button" className={!member ? 'active' : ''} onClick={() => setMember('')}>
+              멤버 전체
+            </button>
+            {members.data?.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={member === item.name ? 'active' : ''}
+                onClick={() => setMember(item.name)}
+              >
+                {memberLabel(item.name)}
+              </button>
+            ))}
+          </div>
+          <div className="chipLine" aria-label="keyword filter">
+            <button type="button" className={!keyword ? 'active' : ''} onClick={() => setKeyword('')}>
+              키워드 전체
+            </button>
+            {keywordOptions.map((item) => (
+              <button
+                key={item}
+                type="button"
+                className={keyword === item ? 'active' : ''}
+                onClick={() => setKeyword(item)}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        </div>
+        {updates.data?.naver_available === false && (
+          <p className="hint">Naver 키 또는 호출이 잠시 unavailable입니다. YouTube/게시글/브리핑은 계속 표시됩니다.</p>
+        )}
+        {updates.isLoading && <p className="muted">업데이트를 불러오는 중...</p>}
+        {updates.error && <p className="error">{updates.error.message}</p>}
+        <div className="feedList">
+          {updates.data?.items.map((item) => (
+            <UpdateFeedCard key={item.id} item={item} onOpenPost={onOpenPost} />
+          ))}
+        </div>
+        {!updates.isLoading && updates.data?.items.length === 0 && (
+          <div className="emptyState">
+            <FileText size={24} />
+            <p>조건에 맞는 업데이트가 없습니다.</p>
+          </div>
+        )}
+      </section>
+
+      {user?.role === 'admin' && (
+        <p className="adminHint">동기화와 오늘의 요약 발행은 상단 YouTube/오늘의 요약 탭에서 관리합니다.</p>
+      )}
+    </div>
+  )
+}
+
+function UpdateFeedCard({ item, onOpenPost }: { item: UpdateFeedItem; onOpenPost: (postId: number) => void }) {
+  const postId = postIdFromUrl(item.url)
+  const isExternal = item.url.startsWith('http')
+  const label =
+    item.item_type === 'youtube'
+      ? 'YouTube'
+      : item.item_type === 'briefing'
+        ? '오늘의 요약'
+        : item.item_type === 'post'
+          ? '팬글'
+          : item.item_type === 'naver_blog'
+            ? 'Naver Blog'
+            : 'Naver News'
+  const body = (
+    <>
+      <div className="updateThumb">
+        {item.thumbnail_url ? (
+          <img src={item.thumbnail_url} alt="" loading="lazy" />
+        ) : item.item_type === 'youtube' ? (
+          <PlayCircle size={26} />
+        ) : (
+          <FileText size={24} />
+        )}
+      </div>
+      <div className="updateBody">
+        <div className="updateMeta">
+          <span className={`typeBadge ${item.item_type}`}>{label}</span>
+          <span>{item.source_label}</span>
+          <span>{formatDateTime(item.published_at)}</span>
+        </div>
+        <strong>{item.title}</strong>
+        {item.description && <p>{excerpt(item.description, 130)}</p>}
+        <div className="updateFoot">
+          {item.view_count !== null && (
+            <span>
+              <Eye size={14} />
+              {formatNumber(item.view_count)}
+            </span>
+          )}
+          {item.comment_count !== null && <span>댓글 {formatNumber(item.comment_count)}</span>}
+          {[...item.member_names.map(memberLabel), ...item.matched_keywords, ...item.tags].slice(0, 4).map((tag) => (
+            <em key={tag}>{tag}</em>
+          ))}
+        </div>
+      </div>
+      {isExternal && <ExternalLink className="sourceOpen" size={16} />}
+    </>
+  )
+  if (isExternal) {
+    return (
+      <a className="updateCard" href={item.url} target="_blank" rel="noreferrer">
+        {body}
+      </a>
+    )
+  }
+  return (
+    <button
+      type="button"
+      className="updateCard"
+      onClick={() => postId && onOpenPost(postId)}
+      disabled={!postId}
+    >
+      {body}
+    </button>
   )
 }
 
@@ -640,20 +983,24 @@ function RagPanel({
           qa.mutate()
         }}
       >
+        <div>
+          <p className="eyebrow">Archive search</p>
+          <h2>리센느 자료 검색</h2>
+        </div>
         <textarea
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
-          placeholder="예: 최근 올라온 유튜브 영상 뭐 있어?"
+          placeholder="예: 최근 원이 영상 뭐 있어? / 러브어택 무대 영상 모아줘"
         />
         <button className="primary" disabled={!token || qa.isPending} title="질문 보내기">
           <Send size={17} />
-          질문
+          검색
         </button>
       </form>
       {qa.error && <p className="error">{qa.error.message}</p>}
       {qa.data && (
         <section className="answer">
-          <h2>답변</h2>
+          <h2>검색 결과</h2>
           <p>{qa.data.answer}</p>
           <div className="sourceCards">
             {qa.data.sources.map((source, index) => (

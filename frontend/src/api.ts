@@ -45,6 +45,19 @@ export type Tag = {
   name: string
 }
 
+export type Member = {
+  id: number
+  artist_id: number
+  name: string
+  position: string
+}
+
+export type ArtistKeyword = {
+  id: number
+  artist_id: number
+  keyword: string
+}
+
 export type YoutubeSource = {
   id: number
   artist_id: number
@@ -79,6 +92,28 @@ export type QaSource = {
   published_at: string | null
   view_count: number | null
   content: string
+}
+
+export type UpdateFeedItem = {
+  id: string
+  item_type: 'youtube' | 'post' | 'briefing' | 'naver_news' | 'naver_blog'
+  title: string
+  description: string
+  url: string
+  thumbnail_url: string
+  source_label: string
+  published_at: string
+  view_count: number | null
+  comment_count: number | null
+  matched_keywords: string[]
+  member_names: string[]
+  tags: string[]
+}
+
+export type UpdateFeedResponse = {
+  artist_id: number
+  items: UpdateFeedItem[]
+  naver_available: boolean
 }
 
 export type AuthResponse = {

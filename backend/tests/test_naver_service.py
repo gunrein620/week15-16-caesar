@@ -2,7 +2,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.core.config import reset_settings_cache
-from app.services.naver import naver_news_search
+from app.services.naver import naver_blog_search, naver_news_search
 
 
 def test_naver_missing_keys_returns_structured_unavailable(monkeypatch):
@@ -57,3 +57,42 @@ def test_naver_present_keys_send_required_headers(monkeypatch):
         "X-Naver-Client-Id": "client-id",
         "X-Naver-Client-Secret": "client-secret",
     }
+
+
+def test_naver_blog_search_uses_blog_endpoint(monkeypatch):
+    monkeypatch.setenv("NAVER_CLIENT_ID", "client-id")
+    monkeypatch.setenv("NAVER_CLIENT_SECRET", "client-secret")
+    reset_settings_cache()
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"items": [{"title": "RESCENE blog"}]}
+
+    class FakeClient:
+        def __init__(self, timeout):
+            captured["timeout"] = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def get(self, url, params, headers):
+            captured["url"] = url
+            captured["params"] = params
+            captured["headers"] = headers
+            return FakeResponse()
+
+    monkeypatch.setattr("app.services.naver.httpx.Client", FakeClient)
+
+    items = naver_blog_search("RESCENE", display=2)
+
+    assert items == [{"title": "RESCENE blog"}]
+    assert captured["url"] == "https://openapi.naver.com/v1/search/blog.json"
+    assert captured["params"] == {"query": "RESCENE", "display": 2, "sort": "date"}
+    assert captured["headers"]["X-Naver-Client-Id"] == "client-id"

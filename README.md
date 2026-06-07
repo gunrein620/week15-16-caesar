@@ -90,6 +90,7 @@ Frontend goes to Vercel with:
 - SPA fallback: `frontend/vercel.json`
 
 Backend goes to Railway with the `backend/` directory uploaded as root and `backend/railway.toml`.
+From the repo root, use `railway up ./backend --path-as-root --service backend --detach`.
 
 Beta constraints:
 
