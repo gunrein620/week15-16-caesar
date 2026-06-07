@@ -64,6 +64,7 @@ import {
 } from './archiveSearch'
 import { buildFeedFooterParts, buildFeedMetaParts } from './feedMeta'
 import { sortYoutubeVideos, type VideoSort } from './videoSorting'
+import { buildYoutubeSourcePayload } from './youtubeSourceForm'
 
 type AuthMode = 'login' | 'signup'
 type FeedSource = 'all' | 'youtube' | 'naver' | 'briefing' | 'post'
@@ -311,7 +312,7 @@ export default function App() {
           오늘의 요약
         </button>
         <button className={panel === 'saved' ? 'active' : ''} onClick={() => openPanel('saved')}>
-          저장한 떡밥
+          저장한 자료
         </button>
         {me.data?.role === 'admin' && (
           <button className={panel === 'admin' ? 'active' : ''} onClick={() => openPanel('admin')}>
@@ -570,7 +571,7 @@ function HomePanel({
       <section className="homeHero">
         <div className="homeIntro">
           <p className="eyebrow">오늘/최근 업데이트</p>
-          <h2>리센느 떡밥 모아보기</h2>
+          <h2>리센느 자료 모아보기</h2>
           <p className="muted">YouTube, Naver, 브리핑, 팬 게시글을 시간순으로 모아 봅니다.</p>
         </div>
         <form
@@ -1730,7 +1731,13 @@ function YoutubePanel({ token, user }: { token: string | null; user?: User }) {
         '/artists/1/youtube-sources',
         {
           method: 'POST',
-          body: JSON.stringify({ source_type: sourceType, source_value: sourceValue, title: sourceTitle }),
+          body: JSON.stringify(
+            buildYoutubeSourcePayload({
+              sourceType,
+              sourceTitle,
+              sourceValue,
+            }),
+          ),
         },
         token,
       ),
@@ -1782,13 +1789,17 @@ function YoutubePanel({ token, user }: { token: string | null; user?: User }) {
               </option>
             ))}
           </select>
-          <input value={sourceTitle} onChange={(event) => setSourceTitle(event.target.value)} placeholder="소스 이름" />
+          <input
+            value={sourceTitle}
+            onChange={(event) => setSourceTitle(event.target.value)}
+            placeholder={sourceType === 'keyword_search' ? '소스 이름 (비워두면 자동 생성)' : '소스 이름'}
+          />
           <input
             value={sourceValue}
             onChange={(event) => setSourceValue(event.target.value)}
             placeholder={selectedSourceOption?.placeholder ?? "channel or video id"}
           />
-          <button className="secondary" title="소스 추가">
+          <button className="secondary" disabled={addSource.isPending || !sourceValue.trim()} title="소스 추가">
             <Upload size={17} />
             Add
           </button>
@@ -1798,6 +1809,7 @@ function YoutubePanel({ token, user }: { token: string | null; user?: User }) {
           </button>
         </form>
       )}
+      {addSource.error && <p className="error">{addSource.error.message}</p>}
       {sync.error && <p className="error">{sync.error.message}</p>}
       <div className="sourceList">
         {sources.data?.map((source) => (
@@ -1976,7 +1988,7 @@ function SavedPanel({
       <div className="sectionHead">
         <div>
           <p className="eyebrow">Saved</p>
-          <h2>저장한 떡밥</h2>
+          <h2>저장한 자료</h2>
         </div>
         <span className="feedCount">{formatNumber(savedItems.data?.length ?? 0)} items</span>
       </div>
