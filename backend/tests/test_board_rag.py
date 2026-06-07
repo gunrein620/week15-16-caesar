@@ -197,3 +197,50 @@ def test_rag_youtube_sources_include_card_metadata(client):
     assert source["thumbnail_url"].endswith("/hqdefault.jpg")
     assert source["channel_title"] == "RESCENE"
     assert source["view_count"] == 1234
+
+
+def test_rag_song_title_query_excludes_other_song_sources(client):
+    token = signup(client, "rag-song-filter@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    with get_session_factory()() as db:
+        love_attack = YoutubeVideo(
+            id="love-attack-stage",
+            title="RESCENE LOVE ATTACK Dance Practice",
+            description="리센느 러브어택 무대 영상입니다.",
+            channel_title="RESCENE",
+            thumbnail_url="https://img.youtube.com/vi/love-attack-stage/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=love-attack-stage",
+            view_count=1000,
+            like_count=100,
+            comment_count=10,
+            content_hash="love-attack-stage-hash",
+        )
+        deja_vu = YoutubeVideo(
+            id="deja-vu-stage",
+            title="RESCENE Deja Vu Stage",
+            description="리센느 원이 무대 영상입니다.",
+            channel_title="RESCENE",
+            thumbnail_url="https://img.youtube.com/vi/deja-vu-stage/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=deja-vu-stage",
+            view_count=900,
+            like_count=90,
+            comment_count=9,
+            content_hash="deja-vu-stage-hash",
+        )
+        db.add_all([love_attack, deja_vu])
+        db.flush()
+        refresh_video_chunks(db, love_attack, artist_id=1)
+        refresh_video_chunks(db, deja_vu, artist_id=1)
+        db.commit()
+
+    response = client.post(
+        "/ai/qa",
+        json={"question": "러브어택 무대 영상 모아줘", "artist_id": 1},
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    source_ids = {source["youtube_video_id"] for source in response.json()["sources"]}
+    assert "love-attack-stage" in source_ids
+    assert "deja-vu-stage" not in source_ids

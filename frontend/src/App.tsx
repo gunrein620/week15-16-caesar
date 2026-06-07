@@ -56,6 +56,7 @@ import {
   type AppPanel,
   type BoardMode,
 } from './boardNavigation'
+import { buildArchiveAnswerPreview, buildArchiveSourceDisplay } from './archiveSearch'
 import { buildFeedFooterParts, buildFeedMetaParts } from './feedMeta'
 import { sortYoutubeVideos, type VideoSort } from './videoSorting'
 
@@ -614,7 +615,7 @@ function HomePanel({
               <h2>검색 결과</h2>
             </div>
           </div>
-          <p>{qa.data.answer}</p>
+          <ArchiveAnswerBlock answer={qa.data.answer} />
           <div className="sourceCards">
             {qa.data.sources.map((qaSource, index) => (
               <SourceCard
@@ -1598,7 +1599,7 @@ function RagPanel({
       {qa.data && (
         <section className="answer">
           <h2>검색 결과</h2>
-          <p>{qa.data.answer}</p>
+          <ArchiveAnswerBlock answer={qa.data.answer} />
           <div className="sourceCards">
             {qa.data.sources.map((source, index) => (
               <SourceCard
@@ -1628,8 +1629,22 @@ function RagPanel({
   )
 }
 
+function ArchiveAnswerBlock({ answer }: { answer: string }) {
+  const preview = buildArchiveAnswerPreview(answer)
+  return (
+    <details className="archiveAnswerBlock">
+      <summary>
+        <span>AI 요약</span>
+        <small>{preview.text}</small>
+      </summary>
+      <p>{answer}</p>
+    </details>
+  )
+}
+
 function SourceCard({ source, onOpenPost }: { source: QaSource; onOpenPost: (postId: number) => void }) {
   const isYoutube = source.source_type === 'youtube'
+  const display = buildArchiveSourceDisplay(source)
   const body = (
     <>
       <div className="sourceThumb">
@@ -1641,12 +1656,12 @@ function SourceCard({ source, onOpenPost }: { source: QaSource; onOpenPost: (pos
       </div>
       <div className="sourceBody">
         <span className="sourceType">{isYoutube ? 'YouTube' : '게시글'}</span>
-        <strong>{source.title}</strong>
+        <strong>{display.title}</strong>
         <small>
           {isYoutube && source.channel_title ? `${source.channel_title} · ` : ''}
           {isYoutube ? `${formatNumber(source.view_count)} views` : formatDate(source.published_at)}
         </small>
-        <p>{excerpt(source.content)}</p>
+        {display.description && <p>{display.description}</p>}
       </div>
     </>
   )

@@ -1,9 +1,37 @@
+import re
+
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models import Post, RagChunk, YoutubeVideo
 from app.services.text import chunk_text, content_hash, cosine_similarity, deterministic_embedding
+
+TITLE_ALIAS_GROUPS = (
+    ("love attack", "러브어택", "러브 어택"),
+    ("deja vu", "deja-vu", "데자부", "데자뷰"),
+)
+
+
+def _normalize_keyword_text(value: str) -> str:
+    return re.sub(r"[^0-9a-z가-힣]+", "", value.lower())
+
+
+def _required_alias_groups(question: str) -> list[tuple[str, ...]]:
+    normalized_question = _normalize_keyword_text(question)
+    groups: list[tuple[str, ...]] = []
+    for aliases in TITLE_ALIAS_GROUPS:
+        normalized_aliases = tuple(_normalize_keyword_text(alias) for alias in aliases)
+        if any(alias and alias in normalized_question for alias in normalized_aliases):
+            groups.append(normalized_aliases)
+    return groups
+
+
+def _matches_required_aliases(chunk: RagChunk, required_groups: list[tuple[str, ...]]) -> bool:
+    if not required_groups:
+        return True
+    normalized_content = _normalize_keyword_text(chunk.content)
+    return all(any(alias and alias in normalized_content for alias in aliases) for aliases in required_groups)
 
 
 def embed_text(text: str) -> list[float]:
@@ -59,6 +87,9 @@ def search_chunks(db: Session, question: str, artist_id: int, limit: int = 5) ->
         key=lambda chunk: cosine_similarity(query_embedding, chunk.embedding),
         reverse=True,
     )
+    required_groups = _required_alias_groups(question)
+    if required_groups:
+        ranked = [chunk for chunk in ranked if _matches_required_aliases(chunk, required_groups)]
     return ranked[:limit]
 
 
@@ -111,7 +142,10 @@ def answer_question(db: Session, question: str, artist_id: int) -> tuple[str, li
             messages=[
                 {
                     "role": "system",
-                    "content": "Answer in Korean using only the provided RESCENE community context.",
+                    "content": (
+                        "Answer in Korean using only the provided RESCENE community context. "
+                        "Keep it to two short sentences and do not list raw URLs because source cards are shown separately."
+                    ),
                 },
                 {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"},
             ],
