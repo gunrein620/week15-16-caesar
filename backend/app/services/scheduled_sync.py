@@ -9,9 +9,12 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.db import get_session_factory
 from app.services.app_settings import (
-    SYNC_LAST_CHANNEL_KEY,
+    SYNC_LAST_CURATED_KEY,
+    SYNC_LAST_FAN_KEY,
     SYNC_LAST_KEYWORD_KEY,
+    SYNC_LAST_MEMBER_KEY,
     SYNC_LAST_NAVER_KEY,
+    SYNC_LAST_OFFICIAL_KEY,
     get_sync_settings,
     set_sync_last_run,
 )
@@ -21,7 +24,12 @@ from app.services.youtube import sync_artist_videos
 
 logger = logging.getLogger(__name__)
 
-CHANNEL_SOURCE_TYPES = {"official_channel", "member_channel", "fan_channel", "curated_video"}
+SOURCE_SYNC_JOBS = [
+    ("official", "official_interval_minutes", "last_official_sync_at", SYNC_LAST_OFFICIAL_KEY, {"official_channel"}),
+    ("member", "member_interval_minutes", "last_member_sync_at", SYNC_LAST_MEMBER_KEY, {"member_channel"}),
+    ("fan", "fan_interval_minutes", "last_fan_sync_at", SYNC_LAST_FAN_KEY, {"fan_channel"}),
+    ("curated", "curated_interval_minutes", "last_curated_sync_at", SYNC_LAST_CURATED_KEY, {"curated_video"}),
+]
 KEYWORD_SOURCE_TYPES = {"keyword_search"}
 SCHEDULER_POLL_SECONDS = 60
 
@@ -57,14 +65,15 @@ def run_due_syncs_once(db: Session, artist_id: int = 1, now: datetime | None = N
         return {"ran": []}
 
     ran: list[str] = []
-    if _due(settings["last_channel_sync_at"], int(settings["channel_interval_minutes"]), now):
+    for job_name, interval_key, last_value_key, last_setting_key, source_types in SOURCE_SYNC_JOBS:
         try:
-            sync_artist_videos(db, artist_id, source_types=CHANNEL_SOURCE_TYPES)
-            ran.append("channel")
+            if _due(settings[last_value_key], int(settings[interval_key]), now):
+                sync_artist_videos(db, artist_id, source_types=source_types)
+                ran.append(job_name)
+                _mark(db, last_setting_key, now)
         except HTTPException as exc:
             if exc.status_code != 409:
                 raise
-        _mark(db, SYNC_LAST_CHANNEL_KEY, now)
 
     if _due(settings["last_naver_sync_at"], int(settings["naver_interval_minutes"]), now):
         sync_external_updates(db, artist_id)

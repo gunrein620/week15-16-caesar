@@ -2078,9 +2078,12 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
           method: 'PUT',
           body: JSON.stringify({
             enabled: syncForm?.enabled ?? true,
-            channel_interval_minutes: syncForm?.channel_interval_minutes ?? 30,
+            official_interval_minutes: syncForm?.official_interval_minutes ?? 180,
+            member_interval_minutes: syncForm?.member_interval_minutes ?? 120,
+            fan_interval_minutes: syncForm?.fan_interval_minutes ?? 60,
+            curated_interval_minutes: syncForm?.curated_interval_minutes ?? 720,
             naver_interval_minutes: syncForm?.naver_interval_minutes ?? 60,
-            keyword_interval_minutes: syncForm?.keyword_interval_minutes ?? 360,
+            keyword_interval_minutes: syncForm?.keyword_interval_minutes ?? 120,
           }),
         },
         token,
@@ -2159,7 +2162,10 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
           <span className="role">{syncForm.enabled ? 'auto' : 'paused'}</span>
         </div>
         <div className="budgetStats">
-          <span>Channel last {formatDateTime(syncForm.last_channel_sync_at)}</span>
+          <span>Official last {formatDateTime(syncForm.last_official_sync_at)}</span>
+          <span>Member last {formatDateTime(syncForm.last_member_sync_at)}</span>
+          <span>Fan last {formatDateTime(syncForm.last_fan_sync_at)}</span>
+          <span>Curated last {formatDateTime(syncForm.last_curated_sync_at)}</span>
           <span>Naver last {formatDateTime(syncForm.last_naver_sync_at)}</span>
           <span>Keyword last {formatDateTime(syncForm.last_keyword_sync_at)}</span>
         </div>
@@ -2179,14 +2185,47 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
             Auto sync
           </label>
           <label>
-            Channel sources
+            Official channel
+            <input
+              type="number"
+              min="30"
+              max="1440"
+              step="30"
+              value={syncForm.official_interval_minutes}
+              onChange={(event) => setSyncNumber('official_interval_minutes', event.target.value)}
+            />
+          </label>
+          <label>
+            Member channel
+            <input
+              type="number"
+              min="30"
+              max="1440"
+              step="30"
+              value={syncForm.member_interval_minutes}
+              onChange={(event) => setSyncNumber('member_interval_minutes', event.target.value)}
+            />
+          </label>
+          <label>
+            Fan channel
             <input
               type="number"
               min="15"
               max="1440"
               step="15"
-              value={syncForm.channel_interval_minutes}
-              onChange={(event) => setSyncNumber('channel_interval_minutes', event.target.value)}
+              value={syncForm.fan_interval_minutes}
+              onChange={(event) => setSyncNumber('fan_interval_minutes', event.target.value)}
+            />
+          </label>
+          <label>
+            Curated video
+            <input
+              type="number"
+              min="60"
+              max="1440"
+              step="60"
+              value={syncForm.curated_interval_minutes}
+              onChange={(event) => setSyncNumber('curated_interval_minutes', event.target.value)}
             />
           </label>
           <label>

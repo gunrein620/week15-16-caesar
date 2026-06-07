@@ -169,10 +169,16 @@ export type InfraCostSettings = {
 
 export type SyncSettings = {
   enabled: boolean
-  channel_interval_minutes: number
+  official_interval_minutes: number
+  member_interval_minutes: number
+  fan_interval_minutes: number
+  curated_interval_minutes: number
   naver_interval_minutes: number
   keyword_interval_minutes: number
-  last_channel_sync_at: string | null
+  last_official_sync_at: string | null
+  last_member_sync_at: string | null
+  last_fan_sync_at: string | null
+  last_curated_sync_at: string | null
   last_naver_sync_at: string | null
   last_keyword_sync_at: string | null
 }

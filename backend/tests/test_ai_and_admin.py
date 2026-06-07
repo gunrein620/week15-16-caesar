@@ -94,9 +94,12 @@ def test_admin_can_manage_live_feed_sync_settings(client):
         "/admin/settings/sync",
         json={
             "enabled": True,
-            "channel_interval_minutes": 45,
+            "official_interval_minutes": 240,
+            "member_interval_minutes": 180,
+            "fan_interval_minutes": 45,
+            "curated_interval_minutes": 1440,
             "naver_interval_minutes": 90,
-            "keyword_interval_minutes": 360,
+            "keyword_interval_minutes": 180,
         },
         headers=admin_headers,
     )
@@ -104,7 +107,10 @@ def test_admin_can_manage_live_feed_sync_settings(client):
         "/admin/settings/sync",
         json={
             "enabled": True,
-            "channel_interval_minutes": 30,
+            "official_interval_minutes": 180,
+            "member_interval_minutes": 120,
+            "fan_interval_minutes": 60,
+            "curated_interval_minutes": 720,
             "naver_interval_minutes": 60,
             "keyword_interval_minutes": 30,
         },
@@ -114,13 +120,19 @@ def test_admin_can_manage_live_feed_sync_settings(client):
     assert forbidden.status_code == 403
     assert current.status_code == 200, current.text
     assert current.json()["enabled"] is True
-    assert current.json()["channel_interval_minutes"] == 30
+    assert current.json()["official_interval_minutes"] == 180
+    assert current.json()["member_interval_minutes"] == 120
+    assert current.json()["fan_interval_minutes"] == 60
+    assert current.json()["curated_interval_minutes"] == 720
     assert current.json()["naver_interval_minutes"] == 60
-    assert current.json()["keyword_interval_minutes"] == 360
+    assert current.json()["keyword_interval_minutes"] == 120
     assert updated.status_code == 200, updated.text
-    assert updated.json()["channel_interval_minutes"] == 45
+    assert updated.json()["official_interval_minutes"] == 240
+    assert updated.json()["member_interval_minutes"] == 180
+    assert updated.json()["fan_interval_minutes"] == 45
+    assert updated.json()["curated_interval_minutes"] == 1440
     assert updated.json()["naver_interval_minutes"] == 90
-    assert updated.json()["keyword_interval_minutes"] == 360
+    assert updated.json()["keyword_interval_minutes"] == 180
     assert invalid_keyword.status_code == 422
 
 

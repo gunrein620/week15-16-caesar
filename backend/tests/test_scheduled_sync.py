@@ -22,18 +22,23 @@ def test_scheduled_sync_runs_due_jobs_on_separate_intervals(client, monkeypatch)
     with get_session_factory()() as db:
         first = run_due_syncs_once(db, artist_id=1, now=now)
         calls_after_first = list(calls)
-        second = run_due_syncs_once(db, artist_id=1, now=now + timedelta(minutes=29))
-        third = run_due_syncs_once(db, artist_id=1, now=now + timedelta(minutes=30))
-        fourth = run_due_syncs_once(db, artist_id=1, now=now + timedelta(minutes=60))
-        fifth = run_due_syncs_once(db, artist_id=1, now=now + timedelta(minutes=360))
+        second = run_due_syncs_once(db, artist_id=1, now=now + timedelta(minutes=59))
+        third = run_due_syncs_once(db, artist_id=1, now=now + timedelta(minutes=60))
+        fourth = run_due_syncs_once(db, artist_id=1, now=now + timedelta(minutes=120))
+        fifth = run_due_syncs_once(db, artist_id=1, now=now + timedelta(minutes=180))
+        sixth = run_due_syncs_once(db, artist_id=1, now=now + timedelta(minutes=720))
 
-    assert first["ran"] == ["channel", "naver", "keyword"]
+    assert first["ran"] == ["official", "member", "fan", "curated", "naver", "keyword"]
     assert calls_after_first == [
-        ("youtube", ("curated_video", "fan_channel", "member_channel", "official_channel")),
+        ("youtube", ("official_channel",)),
+        ("youtube", ("member_channel",)),
+        ("youtube", ("fan_channel",)),
+        ("youtube", ("curated_video",)),
         ("naver", 1),
         ("youtube", ("keyword_search",)),
     ]
     assert second["ran"] == []
-    assert third["ran"] == ["channel"]
-    assert fourth["ran"] == ["channel", "naver"]
-    assert fifth["ran"] == ["channel", "naver", "keyword"]
+    assert third["ran"] == ["fan", "naver"]
+    assert fourth["ran"] == ["member", "fan", "naver", "keyword"]
+    assert fifth["ran"] == ["official", "fan", "naver"]
+    assert sixth["ran"] == ["official", "member", "fan", "curated", "naver", "keyword"]

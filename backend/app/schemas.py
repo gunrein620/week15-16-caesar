@@ -174,17 +174,26 @@ class InfraCostSettingsUpdate(BaseModel):
 
 class SyncSettings(BaseModel):
     enabled: bool
-    channel_interval_minutes: int
+    official_interval_minutes: int
+    member_interval_minutes: int
+    fan_interval_minutes: int
+    curated_interval_minutes: int
     naver_interval_minutes: int
     keyword_interval_minutes: int
-    last_channel_sync_at: str | None
+    last_official_sync_at: str | None
+    last_member_sync_at: str | None
+    last_fan_sync_at: str | None
+    last_curated_sync_at: str | None
     last_naver_sync_at: str | None
     last_keyword_sync_at: str | None
 
 
 class SyncSettingsUpdate(BaseModel):
     enabled: bool
-    channel_interval_minutes: int = Field(ge=15, le=1440)
+    official_interval_minutes: int = Field(ge=30, le=1440)
+    member_interval_minutes: int = Field(ge=30, le=1440)
+    fan_interval_minutes: int = Field(ge=15, le=1440)
+    curated_interval_minutes: int = Field(ge=60, le=1440)
     naver_interval_minutes: int = Field(ge=15, le=1440)
     keyword_interval_minutes: int = Field(ge=60, le=1440)
 

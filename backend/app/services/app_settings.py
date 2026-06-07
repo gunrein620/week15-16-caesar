@@ -5,17 +5,26 @@ from app.models import AppSetting
 
 PUBLIC_SIGNUP_SETTING_KEY = "public_signup_enabled"
 SYNC_ENABLED_KEY = "sync.enabled"
-SYNC_CHANNEL_INTERVAL_KEY = "sync.channel_interval_minutes"
+SYNC_OFFICIAL_INTERVAL_KEY = "sync.official_interval_minutes"
+SYNC_MEMBER_INTERVAL_KEY = "sync.member_interval_minutes"
+SYNC_FAN_INTERVAL_KEY = "sync.fan_interval_minutes"
+SYNC_CURATED_INTERVAL_KEY = "sync.curated_interval_minutes"
 SYNC_NAVER_INTERVAL_KEY = "sync.naver_interval_minutes"
 SYNC_KEYWORD_INTERVAL_KEY = "sync.keyword_interval_minutes"
-SYNC_LAST_CHANNEL_KEY = "sync.last_channel_sync_at"
+SYNC_LAST_OFFICIAL_KEY = "sync.last_official_sync_at"
+SYNC_LAST_MEMBER_KEY = "sync.last_member_sync_at"
+SYNC_LAST_FAN_KEY = "sync.last_fan_sync_at"
+SYNC_LAST_CURATED_KEY = "sync.last_curated_sync_at"
 SYNC_LAST_NAVER_KEY = "sync.last_naver_sync_at"
 SYNC_LAST_KEYWORD_KEY = "sync.last_keyword_sync_at"
 
 DEFAULT_SYNC_ENABLED = True
-DEFAULT_CHANNEL_INTERVAL_MINUTES = 30
+DEFAULT_OFFICIAL_INTERVAL_MINUTES = 180
+DEFAULT_MEMBER_INTERVAL_MINUTES = 120
+DEFAULT_FAN_INTERVAL_MINUTES = 60
+DEFAULT_CURATED_INTERVAL_MINUTES = 720
 DEFAULT_NAVER_INTERVAL_MINUTES = 60
-DEFAULT_KEYWORD_INTERVAL_MINUTES = 360
+DEFAULT_KEYWORD_INTERVAL_MINUTES = 120
 
 
 def _parse_bool(value: str) -> bool:
@@ -67,9 +76,21 @@ def set_public_signup_enabled(db: Session, enabled: bool) -> bool:
 def get_sync_settings(db: Session) -> dict[str, int | bool | str | None]:
     return {
         "enabled": _parse_bool(_setting(db, SYNC_ENABLED_KEY, _serialize_bool(DEFAULT_SYNC_ENABLED))),
-        "channel_interval_minutes": _parse_int(
-            _setting(db, SYNC_CHANNEL_INTERVAL_KEY, str(DEFAULT_CHANNEL_INTERVAL_MINUTES)),
-            DEFAULT_CHANNEL_INTERVAL_MINUTES,
+        "official_interval_minutes": _parse_int(
+            _setting(db, SYNC_OFFICIAL_INTERVAL_KEY, str(DEFAULT_OFFICIAL_INTERVAL_MINUTES)),
+            DEFAULT_OFFICIAL_INTERVAL_MINUTES,
+        ),
+        "member_interval_minutes": _parse_int(
+            _setting(db, SYNC_MEMBER_INTERVAL_KEY, str(DEFAULT_MEMBER_INTERVAL_MINUTES)),
+            DEFAULT_MEMBER_INTERVAL_MINUTES,
+        ),
+        "fan_interval_minutes": _parse_int(
+            _setting(db, SYNC_FAN_INTERVAL_KEY, str(DEFAULT_FAN_INTERVAL_MINUTES)),
+            DEFAULT_FAN_INTERVAL_MINUTES,
+        ),
+        "curated_interval_minutes": _parse_int(
+            _setting(db, SYNC_CURATED_INTERVAL_KEY, str(DEFAULT_CURATED_INTERVAL_MINUTES)),
+            DEFAULT_CURATED_INTERVAL_MINUTES,
         ),
         "naver_interval_minutes": _parse_int(
             _setting(db, SYNC_NAVER_INTERVAL_KEY, str(DEFAULT_NAVER_INTERVAL_MINUTES)),
@@ -79,7 +100,10 @@ def get_sync_settings(db: Session) -> dict[str, int | bool | str | None]:
             _setting(db, SYNC_KEYWORD_INTERVAL_KEY, str(DEFAULT_KEYWORD_INTERVAL_MINUTES)),
             DEFAULT_KEYWORD_INTERVAL_MINUTES,
         ),
-        "last_channel_sync_at": _setting(db, SYNC_LAST_CHANNEL_KEY, "") or None,
+        "last_official_sync_at": _setting(db, SYNC_LAST_OFFICIAL_KEY, "") or None,
+        "last_member_sync_at": _setting(db, SYNC_LAST_MEMBER_KEY, "") or None,
+        "last_fan_sync_at": _setting(db, SYNC_LAST_FAN_KEY, "") or None,
+        "last_curated_sync_at": _setting(db, SYNC_LAST_CURATED_KEY, "") or None,
         "last_naver_sync_at": _setting(db, SYNC_LAST_NAVER_KEY, "") or None,
         "last_keyword_sync_at": _setting(db, SYNC_LAST_KEYWORD_KEY, "") or None,
     }
@@ -87,7 +111,10 @@ def get_sync_settings(db: Session) -> dict[str, int | bool | str | None]:
 
 def set_sync_settings(db: Session, payload: dict[str, int | bool]) -> dict[str, int | bool | str | None]:
     _set_setting(db, SYNC_ENABLED_KEY, _serialize_bool(bool(payload["enabled"])))
-    _set_setting(db, SYNC_CHANNEL_INTERVAL_KEY, str(payload["channel_interval_minutes"]))
+    _set_setting(db, SYNC_OFFICIAL_INTERVAL_KEY, str(payload["official_interval_minutes"]))
+    _set_setting(db, SYNC_MEMBER_INTERVAL_KEY, str(payload["member_interval_minutes"]))
+    _set_setting(db, SYNC_FAN_INTERVAL_KEY, str(payload["fan_interval_minutes"]))
+    _set_setting(db, SYNC_CURATED_INTERVAL_KEY, str(payload["curated_interval_minutes"]))
     _set_setting(db, SYNC_NAVER_INTERVAL_KEY, str(payload["naver_interval_minutes"]))
     _set_setting(db, SYNC_KEYWORD_INTERVAL_KEY, str(payload["keyword_interval_minutes"]))
     db.flush()
