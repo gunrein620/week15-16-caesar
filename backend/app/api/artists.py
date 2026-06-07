@@ -206,6 +206,19 @@ def add_keyword(
     return ArtistKeywordRead.model_validate(item)
 
 
+@router.delete("/artist-keywords/{keyword_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_keyword(
+    keyword_id: int,
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    keyword = db.get(ArtistKeyword, keyword_id)
+    if keyword is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Keyword not found")
+    db.delete(keyword)
+    db.commit()
+
+
 @router.get("/artists/{artist_id}/members", response_model=list[MemberRead])
 def list_members(artist_id: int, db: Annotated[Session, Depends(get_db)]) -> list[Member]:
     _require_artist(db, artist_id)

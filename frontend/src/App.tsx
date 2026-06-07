@@ -369,10 +369,6 @@ function HomePanel({
     queryKey: ['artist-keywords', 1],
     queryFn: () => api<ArtistKeyword[]>('/artists/1/keywords'),
   })
-  const tags = useQuery({
-    queryKey: ['tags'],
-    queryFn: () => api<Tag[]>('/tags'),
-  })
   const qa = useMutation({
     mutationFn: () =>
       api<{ answer: string; sources: QaSource[] }>(
@@ -384,9 +380,8 @@ function HomePanel({
   const keywordOptions = useMemo(() => {
     const fixed = ['컴백', '무대', '직캠', '라디오', 'Love Attack']
     const fromArtist = artistKeywords.data?.map((item) => item.keyword) ?? []
-    const fromTags = tags.data?.map((item) => item.name) ?? []
-    return [...new Set([...fixed, ...fromArtist, ...fromTags])].slice(0, 14)
-  }, [artistKeywords.data, tags.data])
+    return [...new Set([...fixed, ...fromArtist])].slice(0, 14)
+  }, [artistKeywords.data])
   const sourceOptions: { value: FeedSource; label: string }[] = [
     { value: 'all', label: '전체' },
     { value: 'youtube', label: 'YouTube' },
@@ -410,7 +405,7 @@ function HomePanel({
             qa.mutate()
           }}
         >
-          <label htmlFor="archive-question">아카이브 검색</label>
+          <label htmlFor="archive-question">게시글/YouTube 아카이브 검색</label>
           <div className="archiveInput">
             <Search size={18} />
             <input
@@ -436,6 +431,9 @@ function HomePanel({
               </button>
             ))}
           </div>
+          <p className="hint">
+            아카이브 검색은 저장된 게시글과 YouTube 영상 설명을 AI로 찾습니다. Naver 뉴스/블로그는 아래 통합 업데이트 검색에서 찾을 수 있습니다.
+          </p>
           {!token && <p className="hint">읽기는 공개입니다. AI 아카이브 검색은 로그인 후 사용할 수 있습니다.</p>}
           {qa.error && <p className="error">{qa.error.message}</p>}
         </form>
@@ -1260,10 +1258,39 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
     queryFn: () => api<InfraCostSettings>('/admin/settings/infra-cost', {}, token),
     enabled: Boolean(token && user?.role === 'admin'),
   })
+  const keywords = useQuery({
+    queryKey: ['artist-keywords', 1],
+    queryFn: () => api<ArtistKeyword[]>('/artists/1/keywords'),
+    enabled: Boolean(token && user?.role === 'admin'),
+  })
   const [form, setForm] = useState<InfraCostSettings | null>(null)
+  const [keywordInput, setKeywordInput] = useState('')
   useEffect(() => {
     if (settings.data) setForm(settings.data)
   }, [settings.data])
+  const addKeyword = useMutation({
+    mutationFn: () =>
+      api<ArtistKeyword>(
+        '/artists/1/keywords',
+        {
+          method: 'POST',
+          body: JSON.stringify({ keyword: keywordInput }),
+        },
+        token,
+      ),
+    onSuccess: () => {
+      setKeywordInput('')
+      void queryClient.invalidateQueries({ queryKey: ['artist-keywords', 1] })
+      void queryClient.invalidateQueries({ queryKey: ['updates'] })
+    },
+  })
+  const deleteKeyword = useMutation({
+    mutationFn: (keywordId: number) => api<void>(`/artist-keywords/${keywordId}`, { method: 'DELETE' }, token),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['artist-keywords', 1] })
+      void queryClient.invalidateQueries({ queryKey: ['updates'] })
+    },
+  })
   const update = useMutation({
     mutationFn: () =>
       api<InfraCostSettings>(
@@ -1303,6 +1330,48 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
   const ratio = Math.round(form.budget_ratio * 100)
   return (
     <div className="stack">
+      <section className="adminBudget">
+        <div className="postHead">
+          <div>
+            <h2>Home keywords</h2>
+            <p className="muted">홈 필터에 노출할 리센느 키워드를 관리합니다.</p>
+          </div>
+        </div>
+        <form
+          className="inlineForm keywordAdminForm"
+          onSubmit={(event) => {
+            event.preventDefault()
+            addKeyword.mutate()
+          }}
+        >
+          <input
+            value={keywordInput}
+            onChange={(event) => setKeywordInput(event.target.value)}
+            placeholder="예: 컴백, 라디오, Love Attack"
+          />
+          <button className="primary" disabled={!keywordInput.trim() || addKeyword.isPending}>
+            <Save size={17} />
+            추가
+          </button>
+        </form>
+        <div className="sourceList">
+          {keywords.data?.map((item) => (
+            <span key={item.id}>
+              {item.keyword}
+              <button
+                className="chipButton"
+                onClick={() => deleteKeyword.mutate(item.id)}
+                disabled={deleteKeyword.isPending}
+                title="키워드 삭제"
+              >
+                <Trash2 size={13} />
+              </button>
+            </span>
+          ))}
+        </div>
+        {addKeyword.error && <p className="error">{addKeyword.error.message}</p>}
+        {deleteKeyword.error && <p className="error">{deleteKeyword.error.message}</p>}
+      </section>
       <section className={form.hard_stopped ? 'adminBudget stopped' : 'adminBudget'}>
         <div className="postHead">
           <div>

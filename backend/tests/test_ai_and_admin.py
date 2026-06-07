@@ -84,6 +84,12 @@ def test_sync_and_briefing_are_admin_only(client):
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     preview = client.post("/ai/briefing/preview", headers=admin_headers)
     assert preview.status_code == 200, preview.text
+    preview_markdown = preview.json()["preview_markdown"]
+    assert "핵심 요약" in preview_markdown
+    assert "최근 영상" in preview_markdown
+    assert "팬 반응" in preview_markdown
+    assert "Naver 소식" in preview_markdown
+    assert not any(line.startswith("#") for line in preview_markdown.splitlines())
     run_id = preview.json()["run_id"]
 
     publish = client.post(f"/ai/briefing/{run_id}/publish", headers=admin_headers)
@@ -97,6 +103,28 @@ def test_sync_and_briefing_are_admin_only(client):
         f"/ai/briefing/{duplicate_preview.json()['run_id']}/publish", headers=admin_headers
     )
     assert duplicate.status_code == 409
+
+
+def test_admin_can_manage_home_keywords(client):
+    user_token = signup(client)
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+    blocked = client.post("/artists/1/keywords", json={"keyword": "라디오"}, headers=user_headers)
+    assert blocked.status_code == 403
+
+    admin_token = login(client, "admin@example.com", "admin-password")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    created = client.post("/artists/1/keywords", json={"keyword": "라디오"}, headers=admin_headers)
+    assert created.status_code == 201, created.text
+    keyword_id = created.json()["id"]
+
+    listed = client.get("/artists/1/keywords")
+    assert listed.status_code == 200
+    assert "라디오" in {item["keyword"] for item in listed.json()}
+
+    deleted = client.delete(f"/artist-keywords/{keyword_id}", headers=admin_headers)
+    assert deleted.status_code == 204
+    listed_after = client.get("/artists/1/keywords")
+    assert "라디오" not in {item["keyword"] for item in listed_after.json()}
 
 
 def test_preview_does_not_create_post_and_agent_logs_mcp_tool_calls(client):

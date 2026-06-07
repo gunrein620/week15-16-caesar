@@ -1,4 +1,6 @@
 from datetime import UTC, datetime, timedelta
+from html import unescape
+import re
 from typing import Annotated, Any, TypedDict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -18,6 +20,7 @@ from app.services.quota import consume_ai_quota
 from app.services.rag import refresh_post_chunks, search_chunks
 
 router = APIRouter(tags=["agent"])
+HTML_RE = re.compile(r"<[^>]+>")
 
 
 class BriefingState(TypedDict):
@@ -52,6 +55,17 @@ def _youtube_sources_are_stale(
     return False
 
 
+def _clean_external_text(value: str | None) -> str:
+    return HTML_RE.sub("", unescape(value or "")).replace("\n", " ").strip()
+
+
+def _clip(value: str, max_length: int = 180) -> str:
+    normalized = " ".join(value.split())
+    if len(normalized) <= max_length:
+        return normalized
+    return f"{normalized[:max_length].rstrip()}..."
+
+
 def _render_briefing_markdown(
     db: Session, artist_id: int, refresh: bool, agent_run_id: int | None = None
 ) -> str:
@@ -70,23 +84,41 @@ def _render_briefing_markdown(
     cached = mcp.call_tool("youtube_get_cached", {"artist_id": artist_id})
     news = mcp.call_tool("naver_news_search", {"query": artist.name, "display": 3})
     chunks = search_chunks(db, f"{artist.name} 최근 반응", artist_id, limit=3)
-    lines = [f"# {artist.name} 활동 브리핑", ""]
-    lines.append("## 팬 커뮤니티 반응")
-    if chunks:
-        lines.extend([f"- {chunk.content}" for chunk in chunks])
-    else:
-        lines.append("- 아직 게시판 반응 데이터가 충분하지 않습니다.")
-    lines.append("")
-    lines.append("## YouTube 캐시")
     videos = cached.get("videos", [])
+    news_items = news.get("items", []) if "items" in news else []
+    lines = [
+        f"{artist.name} 오늘의 요약",
+        f"기준일: {datetime.now(UTC).date().isoformat()}",
+        "",
+        "핵심 요약",
+        f"- 최근 영상 {len(videos[:5])}개, Naver 소식 {len(news_items[:3])}개, 팬 반응 {len(chunks)}개를 확인했습니다.",
+        "- 자세히 볼 만한 링크와 반응을 아래에 모았습니다.",
+        "",
+        "최근 영상",
+    ]
     if videos:
-        lines.extend([f"- [{video['title']}]({video['url']})" for video in videos[:5]])
+        for index, video in enumerate(videos[:5], start=1):
+            title = _clip(_clean_external_text(video.get("title")), 90)
+            lines.append(f"{index}. {title}")
+            if video.get("url"):
+                lines.append(f"   링크: {video['url']}")
     else:
         lines.append("- 아직 동기화된 영상이 없습니다.")
     lines.append("")
-    lines.append("## Naver 검색")
-    if "items" in news:
-        lines.extend([f"- {item.get('title', '').replace('<b>', '').replace('</b>', '')}" for item in news["items"][:3]])
+    lines.append("팬 반응")
+    if chunks:
+        lines.extend([f"- {_clip(chunk.content)}" for chunk in chunks])
+    else:
+        lines.append("- 아직 게시판 반응 데이터가 충분하지 않습니다.")
+    lines.append("")
+    lines.append("Naver 소식")
+    if news_items:
+        for index, item in enumerate(news_items[:3], start=1):
+            title = _clip(_clean_external_text(item.get("title")), 90)
+            lines.append(f"{index}. {title}")
+            url = item.get("originallink") or item.get("link")
+            if url:
+                lines.append(f"   링크: {url}")
     else:
         lines.append("- Naver API 키가 없어 검색을 건너뜁니다.")
     return "\n".join(lines)
