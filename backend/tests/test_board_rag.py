@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.db import get_session_factory
 from app.models import RagChunk, YoutubeVideo
 from app.services.rag import refresh_video_chunks
-from tests.conftest import signup
+from tests.conftest import login, signup
 
 
 def test_post_crud_comments_tags_and_rag_chunk_lifecycle(client):
@@ -96,6 +96,52 @@ def test_post_crud_comments_tags_and_rag_chunk_lifecycle(client):
     assert deleted.status_code == 204
     with get_session_factory()() as db:
         assert db.scalar(select(RagChunk).where(RagChunk.post_id == post_id)) is None
+
+
+def test_admin_can_update_and_delete_any_post(client):
+    owner_token = signup(client, "post-owner@example.com")
+    other_token = signup(client, "post-other@example.com")
+    admin_token = login(client, "admin@example.com", "admin-password")
+
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    created = client.post(
+        "/posts",
+        json={
+            "title": "작성자 글",
+            "content": "작성자만 쓴 글입니다.",
+            "artist_id": 1,
+            "tags": ["owner"],
+        },
+        headers=owner_headers,
+    )
+    assert created.status_code == 201, created.text
+    post_id = created.json()["id"]
+
+    forbidden_update = client.put(
+        f"/posts/{post_id}",
+        json={"title": "다른 사용자의 수정"},
+        headers=other_headers,
+    )
+    forbidden_delete = client.delete(f"/posts/{post_id}", headers=other_headers)
+
+    assert forbidden_update.status_code == 403
+    assert forbidden_delete.status_code == 403
+
+    admin_update = client.put(
+        f"/posts/{post_id}",
+        json={"title": "관리자가 수정한 글", "content": "관리자 수정 내용입니다."},
+        headers=admin_headers,
+    )
+    assert admin_update.status_code == 200, admin_update.text
+    assert admin_update.json()["title"] == "관리자가 수정한 글"
+    assert admin_update.json()["author"]["email"] == "post-owner@example.com"
+
+    admin_delete = client.delete(f"/posts/{post_id}", headers=admin_headers)
+    assert admin_delete.status_code == 204
+    assert client.get(f"/posts/{post_id}").status_code == 404
 
 
 def test_minimal_seed_posts_have_rag_chunks(client):
