@@ -114,7 +114,7 @@ def get_artist_updates(
         .where(YoutubeSource.artist_id == artist_id)
         .order_by(YoutubeVideo.published_at.desc().nullslast())
         .limit(200)
-    ).all()
+    ).unique().all()
     for video in videos:
         text = f"{video.title}\n{video.description}\n{video.channel_title}"
         items.append(

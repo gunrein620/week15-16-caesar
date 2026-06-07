@@ -54,9 +54,9 @@ import {
   type AppPanel,
   type BoardMode,
 } from './boardNavigation'
+import { sortYoutubeVideos, type VideoSort } from './videoSorting'
 
 type AuthMode = 'login' | 'signup'
-type VideoSort = 'latest' | 'views' | 'title'
 type FeedSource = 'all' | 'youtube' | 'naver' | 'briefing' | 'post'
 
 function useStoredToken() {
@@ -1678,12 +1678,7 @@ function YoutubePanel({ token, user }: { token: string | null; user?: User }) {
     },
   })
   const sortedVideos = useMemo(() => {
-    const items = [...(videos.data ?? [])]
-    return items.sort((left, right) => {
-      if (videoSort === 'views') return (right.view_count ?? -1) - (left.view_count ?? -1)
-      if (videoSort === 'title') return left.title.localeCompare(right.title)
-      return new Date(right.published_at ?? 0).getTime() - new Date(left.published_at ?? 0).getTime()
-    })
+    return sortYoutubeVideos(videos.data ?? [], videoSort)
   }, [videos.data, videoSort])
   return (
     <div className="stack">

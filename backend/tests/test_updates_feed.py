@@ -186,6 +186,47 @@ def test_updates_feed_filters_by_member_keyword_and_source(client):
     assert {item["item_type"] for item in source_response.json()["items"]} == {"youtube"}
 
 
+def test_updates_feed_deduplicates_video_linked_to_multiple_sources(client):
+    with get_session_factory()() as db:
+        first_source = YoutubeSource(
+            artist_id=1,
+            source_type="official_channel",
+            source_value="official",
+            title="official",
+        )
+        second_source = YoutubeSource(
+            artist_id=1,
+            source_type="fan_channel",
+            source_value="fan",
+            title="fan",
+        )
+        video = YoutubeVideo(
+            id="shared-feed-video",
+            title="Shared feed video",
+            description="same video from two sources",
+            channel_title="RESCENE",
+            published_at=datetime(2026, 6, 6, 13, tzinfo=UTC),
+            thumbnail_url="",
+            url="https://youtube.example.com/shared-feed-video",
+            view_count=100,
+            content_hash="shared-feed-video-hash",
+        )
+        db.add_all([first_source, second_source, video])
+        db.flush()
+        db.add_all(
+            [
+                YoutubeVideoSource(video_id=video.id, source_id=first_source.id),
+                YoutubeVideoSource(video_id=video.id, source_id=second_source.id),
+            ]
+        )
+        db.commit()
+
+    response = client.get("/artists/1/updates", params={"source": "youtube"})
+
+    assert response.status_code == 200, response.text
+    assert [item["id"] for item in response.json()["items"]].count("youtube:shared-feed-video") == 1
+
+
 def test_updates_feed_stays_public_without_naver_cache(client):
     response = client.get("/artists/1/updates")
 

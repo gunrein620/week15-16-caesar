@@ -45,7 +45,7 @@ class McpToolClient:
             .where(YoutubeSource.artist_id == artist_id)
             .order_by(YoutubeVideo.published_at.desc().nullslast())
             .limit(10)
-        ).all()
+        ).unique().all()
         return {
             "videos": [
                 {

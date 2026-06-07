@@ -115,6 +115,47 @@ def test_sync_handles_each_source_type_and_get_videos_is_cache_only(client, monk
     assert chunk_count >= 3
 
 
+def test_get_videos_deduplicates_video_linked_to_multiple_sources(client):
+    with get_session_factory()() as db:
+        first_source = YoutubeSource(
+            artist_id=1,
+            source_type="official_channel",
+            source_value="official",
+            title="official",
+        )
+        second_source = YoutubeSource(
+            artist_id=1,
+            source_type="fan_channel",
+            source_value="fan",
+            title="fan",
+        )
+        video = YoutubeVideo(
+            id="shared-video",
+            title="Shared video",
+            description="same video from two sources",
+            channel_title="RESCENE",
+            published_at=None,
+            thumbnail_url="",
+            url="https://www.youtube.com/watch?v=shared-video",
+            view_count=100,
+            content_hash="shared-video-hash",
+        )
+        db.add_all([first_source, second_source, video])
+        db.flush()
+        db.add_all(
+            [
+                YoutubeVideoSource(video_id=video.id, source_id=first_source.id),
+                YoutubeVideoSource(video_id=video.id, source_id=second_source.id),
+            ]
+        )
+        db.commit()
+
+    videos = client.get("/artists/1/videos")
+
+    assert videos.status_code == 200, videos.text
+    assert [item["id"] for item in videos.json()] == ["shared-video"]
+
+
 def test_sync_skips_reembedding_when_content_hash_is_unchanged(client, monkeypatch):
     monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
     reset_settings_cache()

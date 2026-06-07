@@ -56,7 +56,7 @@ def list_videos(artist_id: int, db: Annotated[Session, Depends(get_db)]) -> list
         .join(YoutubeSource)
         .where(YoutubeSource.artist_id == artist_id)
         .order_by(YoutubeVideo.published_at.desc().nullslast())
-    ).all()
+    ).unique().all()
 
 
 @router.get("/artists/{artist_id}/updates", response_model=UpdateFeedResponse)
