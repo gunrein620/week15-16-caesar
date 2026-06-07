@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.security import hash_password
-from app.models import Artist, ArtistKeyword, Member, Post, Tag, User
+from app.models import Artist, ArtistArchiveTerm, ArtistKeyword, Member, Post, Tag, User
 from app.services.rag import refresh_post_chunks
 
 
@@ -27,6 +27,24 @@ def ensure_rescene_seed(db: Session) -> Artist:
     for keyword in ["RESCENE", "리센느", "Love Attack", "UhUh"]:
         if keyword not in existing_keywords:
             db.add(ArtistKeyword(artist_id=artist.id, keyword=keyword))
+
+    existing_archive_terms = {
+        (term.term_type, term.title) for term in artist.archive_terms
+    }
+    for term_type, title, aliases in [
+        ("song", "Love Attack", ["러브어택", "러브 어택", "Love Attack"]),
+        ("song", "Deja Vu", ["데자부", "데자뷰", "Deja Vu", "Deja-Vu"]),
+        ("song", "UhUh", ["UhUh", "Uh Uh"]),
+    ]:
+        if (term_type, title) not in existing_archive_terms:
+            db.add(
+                ArtistArchiveTerm(
+                    artist_id=artist.id,
+                    term_type=term_type,
+                    title=title,
+                    aliases=aliases,
+                )
+            )
 
     db.flush()
     return artist

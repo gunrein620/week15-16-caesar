@@ -53,6 +53,71 @@ def test_keywords_and_members_can_be_managed_by_admin(client):
     assert updated_member.json()["position"] == "leader"
 
 
+def test_archive_terms_can_be_managed_by_admin(client):
+    user_token = signup(client, "archive-term-user@example.com")
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+    admin_token = login(client, "admin@example.com", "admin-password")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    seeded = client.get("/artists/1/archive-terms")
+    assert seeded.status_code == 200
+    assert "Love Attack" in {item["title"] for item in seeded.json()}
+
+    blocked = client.post(
+        "/artists/1/archive-terms",
+        json={
+            "term_type": "song",
+            "title": "Dream Signal",
+            "aliases": ["드림시그널"],
+        },
+        headers=user_headers,
+    )
+    assert blocked.status_code == 403
+
+    created = client.post(
+        "/artists/1/archive-terms",
+        json={
+            "term_type": "song",
+            "title": "  Dream Signal  ",
+            "aliases": ["드림시그널", "Dream Signal", " "],
+        },
+        headers=admin_headers,
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["term_type"] == "song"
+    assert created.json()["title"] == "Dream Signal"
+    assert created.json()["aliases"] == ["드림시그널", "Dream Signal"]
+
+    duplicate = client.post(
+        "/artists/1/archive-terms",
+        json={
+            "term_type": "song",
+            "title": "Dream Signal",
+            "aliases": ["드림 시그널"],
+        },
+        headers=admin_headers,
+    )
+    assert duplicate.status_code == 201
+    assert duplicate.json()["id"] == created.json()["id"]
+    assert duplicate.json()["aliases"] == ["드림 시그널"]
+
+    updated = client.put(
+        f"/artist-archive-terms/{created.json()['id']}",
+        json={
+            "term_type": "activity",
+            "title": "Dream Signal era",
+            "aliases": ["드림시그널 활동"],
+        },
+        headers=admin_headers,
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["term_type"] == "activity"
+    assert updated.json()["title"] == "Dream Signal era"
+
+    deleted = client.delete(f"/artist-archive-terms/{created.json()['id']}", headers=admin_headers)
+    assert deleted.status_code == 204
+
+
 def test_keyword_and_member_create_are_admin_only(client):
     user_token = signup(client)
     headers = {"Authorization": f"Bearer {user_token}"}

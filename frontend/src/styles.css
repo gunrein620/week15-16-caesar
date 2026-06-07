@@ -1324,6 +1324,30 @@ textarea {
   border: 1px solid #cfd8d1;
 }
 
+.archiveTermForm {
+  margin: 12px 0;
+}
+
+.archiveTermList span {
+  align-items: center;
+  gap: 7px;
+}
+
+.archiveTermList strong {
+  color: #17201b;
+  font-size: 12px;
+}
+
+.archiveTermList em {
+  color: #637065;
+  font-size: 12px;
+  font-style: normal;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .budgetForm label {
   color: #44534a;
   display: grid;

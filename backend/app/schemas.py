@@ -51,6 +51,22 @@ class ArtistKeywordRead(BaseModel):
     keyword: str
 
 
+class ArtistArchiveTermCreate(BaseModel):
+    term_type: str = Field(min_length=1, max_length=40)
+    title: str = Field(min_length=1, max_length=160)
+    aliases: list[str] = Field(default_factory=list, max_length=20)
+
+
+class ArtistArchiveTermRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    artist_id: int
+    term_type: str
+    title: str
+    aliases: list[str]
+
+
 class MemberCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     position: str = Field(default="", max_length=80)

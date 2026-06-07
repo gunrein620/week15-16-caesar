@@ -7,8 +7,19 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.rate_limit import limiter
 from app.dependencies import require_admin
-from app.models import Artist, ArtistKeyword, Member, User, YoutubeSource, YoutubeVideo, YoutubeVideoSource
+from app.models import (
+    Artist,
+    ArtistArchiveTerm,
+    ArtistKeyword,
+    Member,
+    User,
+    YoutubeSource,
+    YoutubeVideo,
+    YoutubeVideoSource,
+)
 from app.schemas import (
+    ArtistArchiveTermCreate,
+    ArtistArchiveTermRead,
     ArtistKeywordCreate,
     ArtistKeywordRead,
     ArtistRead,
@@ -32,6 +43,7 @@ YOUTUBE_SOURCE_TYPES = {
     "curated_video",
     "keyword_search",
 }
+ARCHIVE_TERM_TYPES = {"song", "album", "activity"}
 
 
 def _validated_source_payload(payload: YoutubeSourceCreate) -> tuple[str, str, str]:
@@ -45,6 +57,28 @@ def _validated_source_payload(payload: YoutubeSourceCreate) -> tuple[str, str, s
     if not title:
         raise HTTPException(status_code=422, detail="title is required")
     return source_type, source_value, title
+
+
+def _clean_aliases(aliases: list[str]) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for alias in aliases:
+        value = alias.strip()
+        if not value or value in seen:
+            continue
+        cleaned.append(value)
+        seen.add(value)
+    return cleaned
+
+
+def _validated_archive_term_payload(payload: ArtistArchiveTermCreate) -> tuple[str, str, list[str]]:
+    term_type = payload.term_type.strip()
+    title = payload.title.strip()
+    if term_type not in ARCHIVE_TERM_TYPES:
+        raise HTTPException(status_code=422, detail="Invalid term_type")
+    if not title:
+        raise HTTPException(status_code=422, detail="title is required")
+    return term_type, title, _clean_aliases(payload.aliases)
 
 
 @router.get("/artists", response_model=list[ArtistRead])
@@ -256,6 +290,97 @@ def delete_keyword(
     if keyword is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Keyword not found")
     db.delete(keyword)
+    db.commit()
+
+
+@router.get("/artists/{artist_id}/archive-terms", response_model=list[ArtistArchiveTermRead])
+def list_archive_terms(
+    artist_id: int, db: Annotated[Session, Depends(get_db)]
+) -> list[ArtistArchiveTerm]:
+    _require_artist(db, artist_id)
+    return db.scalars(
+        select(ArtistArchiveTerm)
+        .where(ArtistArchiveTerm.artist_id == artist_id)
+        .order_by(ArtistArchiveTerm.term_type.asc(), ArtistArchiveTerm.title.asc())
+    ).all()
+
+
+@router.post(
+    "/artists/{artist_id}/archive-terms",
+    response_model=ArtistArchiveTermRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_archive_term(
+    artist_id: int,
+    payload: ArtistArchiveTermCreate,
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ArtistArchiveTermRead:
+    _require_artist(db, artist_id)
+    term_type, title, aliases = _validated_archive_term_payload(payload)
+    existing = db.scalar(
+        select(ArtistArchiveTerm).where(
+            ArtistArchiveTerm.artist_id == artist_id,
+            ArtistArchiveTerm.term_type == term_type,
+            ArtistArchiveTerm.title == title,
+        )
+    )
+    if existing is not None:
+        existing.aliases = aliases
+        db.commit()
+        db.refresh(existing)
+        return ArtistArchiveTermRead.model_validate(existing)
+    item = ArtistArchiveTerm(
+        artist_id=artist_id,
+        term_type=term_type,
+        title=title,
+        aliases=aliases,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return ArtistArchiveTermRead.model_validate(item)
+
+
+@router.put("/artist-archive-terms/{term_id}", response_model=ArtistArchiveTermRead)
+def update_archive_term(
+    term_id: int,
+    payload: ArtistArchiveTermCreate,
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ArtistArchiveTermRead:
+    term = db.get(ArtistArchiveTerm, term_id)
+    if term is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive term not found")
+    term_type, title, aliases = _validated_archive_term_payload(payload)
+    conflict = db.scalar(
+        select(ArtistArchiveTerm).where(
+            ArtistArchiveTerm.artist_id == term.artist_id,
+            ArtistArchiveTerm.term_type == term_type,
+            ArtistArchiveTerm.title == title,
+            ArtistArchiveTerm.id != term.id,
+        )
+    )
+    if conflict is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Archive term already exists")
+    term.term_type = term_type
+    term.title = title
+    term.aliases = aliases
+    db.commit()
+    db.refresh(term)
+    return ArtistArchiveTermRead.model_validate(term)
+
+
+@router.delete("/artist-archive-terms/{term_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_archive_term(
+    term_id: int,
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    term = db.get(ArtistArchiveTerm, term_id)
+    if term is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archive term not found")
+    db.delete(term)
     db.commit()
 
 

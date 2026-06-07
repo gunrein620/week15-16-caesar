@@ -74,6 +74,14 @@ export type ArtistKeyword = {
   keyword: string
 }
 
+export type ArtistArchiveTerm = {
+  id: number
+  artist_id: number
+  term_type: 'song' | 'album' | 'activity'
+  title: string
+  aliases: string[]
+}
+
 export type YoutubeSourceType =
   | 'official_channel'
   | 'member_channel'

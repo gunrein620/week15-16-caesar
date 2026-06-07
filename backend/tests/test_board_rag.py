@@ -244,3 +244,63 @@ def test_rag_song_title_query_excludes_other_song_sources(client):
     source_ids = {source["youtube_video_id"] for source in response.json()["sources"]}
     assert "love-attack-stage" in source_ids
     assert "deja-vu-stage" not in source_ids
+
+
+def test_rag_song_title_filter_uses_admin_archive_terms(client):
+    token = signup(client, "rag-dictionary-filter@example.com")
+    admin_token = login(client, "admin@example.com", "admin-password")
+    headers = {"Authorization": f"Bearer {token}"}
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    term = client.post(
+        "/artists/1/archive-terms",
+        json={
+            "term_type": "song",
+            "title": "Dream Signal",
+            "aliases": ["드림시그널"],
+        },
+        headers=admin_headers,
+    )
+    assert term.status_code == 201, term.text
+
+    with get_session_factory()() as db:
+        dream_signal = YoutubeVideo(
+            id="dream-signal-stage",
+            title="RESCENE Dream Signal Stage",
+            description="리센느 드림시그널 무대 영상입니다.",
+            channel_title="RESCENE",
+            thumbnail_url="https://img.youtube.com/vi/dream-signal-stage/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=dream-signal-stage",
+            view_count=1000,
+            like_count=100,
+            comment_count=10,
+            content_hash="dream-signal-stage-hash",
+        )
+        other_stage = YoutubeVideo(
+            id="other-stage",
+            title="RESCENE Other Stage",
+            description="리센느 원이 무대 영상입니다.",
+            channel_title="RESCENE",
+            thumbnail_url="https://img.youtube.com/vi/other-stage/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=other-stage",
+            view_count=900,
+            like_count=90,
+            comment_count=9,
+            content_hash="other-stage-hash",
+        )
+        db.add_all([dream_signal, other_stage])
+        db.flush()
+        refresh_video_chunks(db, dream_signal, artist_id=1)
+        refresh_video_chunks(db, other_stage, artist_id=1)
+        db.commit()
+
+    response = client.post(
+        "/ai/qa",
+        json={"question": "드림시그널 무대 영상 모아줘", "artist_id": 1},
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    source_ids = {source["youtube_video_id"] for source in response.json()["sources"]}
+    assert "dream-signal-stage" in source_ids
+    assert "other-stage" not in source_ids

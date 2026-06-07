@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import {
+  ArtistArchiveTerm,
   ArtistKeyword,
   AuthResponse,
   BriefingPreview,
@@ -141,6 +142,12 @@ const memberLabels: Record<string, string> = {
 
 function memberLabel(name: string) {
   return memberLabels[name] ?? name
+}
+
+function archiveTermTypeLabel(type: ArtistArchiveTerm['term_type']) {
+  if (type === 'song') return '곡명'
+  if (type === 'album') return '앨범'
+  return '활동'
 }
 
 function postIdFromUrl(url: string) {
@@ -2029,9 +2036,18 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
     queryFn: () => api<ArtistKeyword[]>('/artists/1/keywords'),
     enabled: Boolean(token && user?.role === 'admin'),
   })
+  const archiveTerms = useQuery({
+    queryKey: ['artist-archive-terms', 1],
+    queryFn: () => api<ArtistArchiveTerm[]>('/artists/1/archive-terms'),
+    enabled: Boolean(token && user?.role === 'admin'),
+  })
   const [form, setForm] = useState<InfraCostSettings | null>(null)
   const [syncForm, setSyncForm] = useState<SyncSettings | null>(null)
   const [keywordInput, setKeywordInput] = useState('')
+  const [termType, setTermType] = useState<ArtistArchiveTerm['term_type']>('song')
+  const [termTitle, setTermTitle] = useState('')
+  const [termAliases, setTermAliases] = useState('')
+  const [editingTermId, setEditingTermId] = useState<number | null>(null)
   useEffect(() => {
     if (settings.data) setForm(settings.data)
   }, [settings.data])
@@ -2059,6 +2075,39 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['artist-keywords', 1] })
       void queryClient.invalidateQueries({ queryKey: ['updates'] })
+    },
+  })
+  const saveArchiveTerm = useMutation({
+    mutationFn: () => {
+      const payload = {
+        term_type: termType,
+        title: termTitle,
+        aliases: termAliases
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean),
+      }
+      return api<ArtistArchiveTerm>(
+        editingTermId ? `/artist-archive-terms/${editingTermId}` : '/artists/1/archive-terms',
+        {
+          method: editingTermId ? 'PUT' : 'POST',
+          body: JSON.stringify(payload),
+        },
+        token,
+      )
+    },
+    onSuccess: () => {
+      setTermType('song')
+      setTermTitle('')
+      setTermAliases('')
+      setEditingTermId(null)
+      void queryClient.invalidateQueries({ queryKey: ['artist-archive-terms', 1] })
+    },
+  })
+  const deleteArchiveTerm = useMutation({
+    mutationFn: (termId: number) => api<void>(`/artist-archive-terms/${termId}`, { method: 'DELETE' }, token),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['artist-archive-terms', 1] })
     },
   })
   const update = useMutation({
@@ -2167,6 +2216,99 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
         </div>
         {addKeyword.error && <p className="error">{addKeyword.error.message}</p>}
         {deleteKeyword.error && <p className="error">{deleteKeyword.error.message}</p>}
+      </section>
+      <section className="adminBudget">
+        <div className="postHead">
+          <div>
+            <h2>Archive search dictionary</h2>
+            <p className="muted">곡명, 앨범명, 활동명 alias를 관리합니다. 아카이브 검색 결과 필터에 사용됩니다.</p>
+          </div>
+        </div>
+        <form
+          className="budgetForm archiveTermForm"
+          onSubmit={(event) => {
+            event.preventDefault()
+            saveArchiveTerm.mutate()
+          }}
+        >
+          <label>
+            Type
+            <select
+              value={termType}
+              onChange={(event) => setTermType(event.target.value as ArtistArchiveTerm['term_type'])}
+            >
+              <option value="song">곡명</option>
+              <option value="album">앨범</option>
+              <option value="activity">활동명</option>
+            </select>
+          </label>
+          <label>
+            Title
+            <input
+              value={termTitle}
+              onChange={(event) => setTermTitle(event.target.value)}
+              placeholder="예: Love Attack"
+            />
+          </label>
+          <label>
+            Aliases
+            <input
+              value={termAliases}
+              onChange={(event) => setTermAliases(event.target.value)}
+              placeholder="예: 러브어택, 러브 어택, LOVE ATTACK"
+            />
+          </label>
+          <button className="primary" disabled={!termTitle.trim() || saveArchiveTerm.isPending}>
+            <Save size={17} />
+            {editingTermId ? '수정' : '추가'}
+          </button>
+          {editingTermId && (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                setEditingTermId(null)
+                setTermType('song')
+                setTermTitle('')
+                setTermAliases('')
+              }}
+            >
+              취소
+            </button>
+          )}
+        </form>
+        <div className="sourceList archiveTermList">
+          {archiveTerms.data?.map((item) => (
+            <span key={item.id}>
+              <strong>{archiveTermTypeLabel(item.term_type)}</strong>
+              {item.title}
+              {item.aliases.length > 0 && <em>{item.aliases.join(', ')}</em>}
+              <button
+                className="chipButton"
+                onClick={() => {
+                  setEditingTermId(item.id)
+                  setTermType(item.term_type)
+                  setTermTitle(item.title)
+                  setTermAliases(item.aliases.join(', '))
+                }}
+                title="사전 항목 수정"
+              >
+                <Edit3 size={13} />
+              </button>
+              <button
+                className="chipButton"
+                onClick={() => deleteArchiveTerm.mutate(item.id)}
+                disabled={deleteArchiveTerm.isPending}
+                title="사전 항목 삭제"
+              >
+                <Trash2 size={13} />
+              </button>
+            </span>
+          ))}
+        </div>
+        {archiveTerms.error && <p className="error">{archiveTerms.error.message}</p>}
+        {saveArchiveTerm.error && <p className="error">{saveArchiveTerm.error.message}</p>}
+        {deleteArchiveTerm.error && <p className="error">{deleteArchiveTerm.error.message}</p>}
       </section>
       <section className="adminBudget">
         <div className="postHead">

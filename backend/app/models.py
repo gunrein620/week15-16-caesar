@@ -27,6 +27,7 @@ YoutubeSourceType = Literal[
     "curated_video",
     "keyword_search",
 ]
+ArchiveTermType = Literal["song", "album", "activity"]
 
 
 class TimestampMixin:
@@ -111,6 +112,9 @@ class Artist(Base, TimestampMixin):
     keywords: Mapped[list["ArtistKeyword"]] = relationship(
         back_populates="artist", cascade="all, delete-orphan"
     )
+    archive_terms: Mapped[list["ArtistArchiveTerm"]] = relationship(
+        back_populates="artist", cascade="all, delete-orphan"
+    )
 
 
 class Member(Base, TimestampMixin):
@@ -140,6 +144,26 @@ class ArtistKeyword(Base, TimestampMixin):
     keyword: Mapped[str] = mapped_column(String(120), nullable=False)
 
     artist: Mapped[Artist] = relationship(back_populates="keywords")
+
+
+class ArtistArchiveTerm(Base, TimestampMixin):
+    __tablename__ = "artist_archive_terms"
+    __table_args__ = (
+        UniqueConstraint("artist_id", "term_type", "title", name="uq_artist_archive_term"),
+        CheckConstraint(
+            "term_type IN ('song', 'album', 'activity')",
+            name="ck_artist_archive_term_type",
+        ),
+        CheckConstraint("length(trim(title)) > 0", name="ck_artist_archive_term_title"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), index=True)
+    term_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    aliases: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+
+    artist: Mapped[Artist] = relationship(back_populates="archive_terms")
 
 
 class Post(Base, TimestampMixin):
