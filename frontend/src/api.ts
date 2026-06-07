@@ -167,6 +167,16 @@ export type InfraCostSettings = {
   next_reset: string
 }
 
+export type SyncSettings = {
+  enabled: boolean
+  channel_interval_minutes: number
+  naver_interval_minutes: number
+  keyword_interval_minutes: number
+  last_channel_sync_at: string | null
+  last_naver_sync_at: string | null
+  last_keyword_sync_at: string | null
+}
+
 export type BriefingPreview = {
   run_id: number
   preview_markdown: string

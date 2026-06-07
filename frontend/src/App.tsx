@@ -39,6 +39,7 @@ import {
   QaSource,
   SavedItem,
   SignupSettings,
+  SyncSettings,
   Tag,
   UpdateFeedItem,
   UpdateFeedResponse,
@@ -2003,16 +2004,25 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
     queryFn: () => api<InfraCostSettings>('/admin/settings/infra-cost', {}, token),
     enabled: Boolean(token && user?.role === 'admin'),
   })
+  const syncSettings = useQuery({
+    queryKey: ['sync-settings', token],
+    queryFn: () => api<SyncSettings>('/admin/settings/sync', {}, token),
+    enabled: Boolean(token && user?.role === 'admin'),
+  })
   const keywords = useQuery({
     queryKey: ['artist-keywords', 1],
     queryFn: () => api<ArtistKeyword[]>('/artists/1/keywords'),
     enabled: Boolean(token && user?.role === 'admin'),
   })
   const [form, setForm] = useState<InfraCostSettings | null>(null)
+  const [syncForm, setSyncForm] = useState<SyncSettings | null>(null)
   const [keywordInput, setKeywordInput] = useState('')
   useEffect(() => {
     if (settings.data) setForm(settings.data)
   }, [settings.data])
+  useEffect(() => {
+    if (syncSettings.data) setSyncForm(syncSettings.data)
+  }, [syncSettings.data])
   const addKeyword = useMutation({
     mutationFn: () =>
       api<ArtistKeyword>(
@@ -2060,6 +2070,26 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
       void queryClient.invalidateQueries({ queryKey: ['posts'] })
     },
   })
+  const updateSync = useMutation({
+    mutationFn: () =>
+      api<SyncSettings>(
+        '/admin/settings/sync',
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            enabled: syncForm?.enabled ?? true,
+            channel_interval_minutes: syncForm?.channel_interval_minutes ?? 30,
+            naver_interval_minutes: syncForm?.naver_interval_minutes ?? 60,
+            keyword_interval_minutes: syncForm?.keyword_interval_minutes ?? 360,
+          }),
+        },
+        token,
+      ),
+    onSuccess: (data) => {
+      setSyncForm(data)
+      queryClient.setQueryData(['sync-settings', token], data)
+    },
+  })
   if (user?.role !== 'admin') {
     return (
       <div className="emptyState">
@@ -2068,9 +2098,12 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
       </div>
     )
   }
-  if (!form) return <p className="muted">Loading...</p>
+  if (!form || !syncForm) return <p className="muted">Loading...</p>
   const setNumber = (key: keyof InfraCostSettings, value: string) => {
     setForm({ ...form, [key]: Number(value) || 0 })
+  }
+  const setSyncNumber = (key: keyof SyncSettings, value: string) => {
+    setSyncForm({ ...syncForm, [key]: Number(value) || 0 })
   }
   const ratio = Math.round(form.budget_ratio * 100)
   return (
@@ -2116,6 +2149,74 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
         </div>
         {addKeyword.error && <p className="error">{addKeyword.error.message}</p>}
         {deleteKeyword.error && <p className="error">{deleteKeyword.error.message}</p>}
+      </section>
+      <section className="adminBudget">
+        <div className="postHead">
+          <div>
+            <h2>Live feed sync</h2>
+            <p className="muted">외부 API는 이 주기마다 백그라운드에서 갱신하고, 사용자는 DB 캐시만 읽습니다.</p>
+          </div>
+          <span className="role">{syncForm.enabled ? 'auto' : 'paused'}</span>
+        </div>
+        <div className="budgetStats">
+          <span>Channel last {formatDateTime(syncForm.last_channel_sync_at)}</span>
+          <span>Naver last {formatDateTime(syncForm.last_naver_sync_at)}</span>
+          <span>Keyword last {formatDateTime(syncForm.last_keyword_sync_at)}</span>
+        </div>
+        <form
+          className="budgetForm"
+          onSubmit={(event) => {
+            event.preventDefault()
+            updateSync.mutate()
+          }}
+        >
+          <label>
+            <input
+              type="checkbox"
+              checked={syncForm.enabled}
+              onChange={(event) => setSyncForm({ ...syncForm, enabled: event.target.checked })}
+            />
+            Auto sync
+          </label>
+          <label>
+            Channel sources
+            <input
+              type="number"
+              min="15"
+              max="1440"
+              step="15"
+              value={syncForm.channel_interval_minutes}
+              onChange={(event) => setSyncNumber('channel_interval_minutes', event.target.value)}
+            />
+          </label>
+          <label>
+            Naver
+            <input
+              type="number"
+              min="15"
+              max="1440"
+              step="15"
+              value={syncForm.naver_interval_minutes}
+              onChange={(event) => setSyncNumber('naver_interval_minutes', event.target.value)}
+            />
+          </label>
+          <label>
+            Keyword search
+            <input
+              type="number"
+              min="60"
+              max="1440"
+              step="60"
+              value={syncForm.keyword_interval_minutes}
+              onChange={(event) => setSyncNumber('keyword_interval_minutes', event.target.value)}
+            />
+          </label>
+          <button className="primary" disabled={updateSync.isPending}>
+            Save sync
+          </button>
+        </form>
+        {syncSettings.error && <p className="error">{syncSettings.error.message}</p>}
+        {updateSync.error && <p className="error">{updateSync.error.message}</p>}
       </section>
       <section className={form.hard_stopped ? 'adminBudget stopped' : 'adminBudget'}>
         <div className="postHead">

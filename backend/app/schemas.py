@@ -172,6 +172,23 @@ class InfraCostSettingsUpdate(BaseModel):
     vercel_estimated_monthly_usd: float = Field(ge=0)
 
 
+class SyncSettings(BaseModel):
+    enabled: bool
+    channel_interval_minutes: int
+    naver_interval_minutes: int
+    keyword_interval_minutes: int
+    last_channel_sync_at: str | None
+    last_naver_sync_at: str | None
+    last_keyword_sync_at: str | None
+
+
+class SyncSettingsUpdate(BaseModel):
+    enabled: bool
+    channel_interval_minutes: int = Field(ge=15, le=1440)
+    naver_interval_minutes: int = Field(ge=15, le=1440)
+    keyword_interval_minutes: int = Field(ge=60, le=1440)
+
+
 class YoutubeSourceCreate(BaseModel):
     source_type: str = Field(min_length=1, max_length=40)
     source_value: str = Field(min_length=1, max_length=255)

@@ -9,6 +9,7 @@ from app.core.config import get_settings
 from app.core.db import check_db_ready, get_engine, get_session_factory
 from app.core.rate_limit import limiter
 from app.services.infra_budget import infra_hard_stop_active
+from app.services.scheduled_sync import install_scheduled_sync
 
 
 def _infra_budget_safe_path(path: str) -> bool:
@@ -72,6 +73,7 @@ def create_app() -> FastAPI:
     app.include_router(ai.router)
     app.include_router(artists.router)
     app.include_router(agent.router)
+    install_scheduled_sync(app)
     return app
 
 

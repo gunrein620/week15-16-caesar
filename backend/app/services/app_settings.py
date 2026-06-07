@@ -4,6 +4,18 @@ from app.core.config import get_settings
 from app.models import AppSetting
 
 PUBLIC_SIGNUP_SETTING_KEY = "public_signup_enabled"
+SYNC_ENABLED_KEY = "sync.enabled"
+SYNC_CHANNEL_INTERVAL_KEY = "sync.channel_interval_minutes"
+SYNC_NAVER_INTERVAL_KEY = "sync.naver_interval_minutes"
+SYNC_KEYWORD_INTERVAL_KEY = "sync.keyword_interval_minutes"
+SYNC_LAST_CHANNEL_KEY = "sync.last_channel_sync_at"
+SYNC_LAST_NAVER_KEY = "sync.last_naver_sync_at"
+SYNC_LAST_KEYWORD_KEY = "sync.last_keyword_sync_at"
+
+DEFAULT_SYNC_ENABLED = True
+DEFAULT_CHANNEL_INTERVAL_MINUTES = 30
+DEFAULT_NAVER_INTERVAL_MINUTES = 60
+DEFAULT_KEYWORD_INTERVAL_MINUTES = 360
 
 
 def _parse_bool(value: str) -> bool:
@@ -12,6 +24,26 @@ def _parse_bool(value: str) -> bool:
 
 def _serialize_bool(value: bool) -> str:
     return "true" if value else "false"
+
+
+def _parse_int(value: str | None, default: int) -> int:
+    try:
+        return int(value or "")
+    except ValueError:
+        return default
+
+
+def _setting(db: Session, key: str, default: str) -> str:
+    row = db.get(AppSetting, key)
+    return row.value if row is not None else default
+
+
+def _set_setting(db: Session, key: str, value: str) -> None:
+    row = db.get(AppSetting, key)
+    if row is None:
+        db.add(AppSetting(key=key, value=value))
+        return
+    row.value = value
 
 
 def get_public_signup_enabled(db: Session) -> bool:
@@ -30,3 +62,38 @@ def set_public_signup_enabled(db: Session, enabled: bool) -> bool:
         setting.value = _serialize_bool(enabled)
     db.flush()
     return enabled
+
+
+def get_sync_settings(db: Session) -> dict[str, int | bool | str | None]:
+    return {
+        "enabled": _parse_bool(_setting(db, SYNC_ENABLED_KEY, _serialize_bool(DEFAULT_SYNC_ENABLED))),
+        "channel_interval_minutes": _parse_int(
+            _setting(db, SYNC_CHANNEL_INTERVAL_KEY, str(DEFAULT_CHANNEL_INTERVAL_MINUTES)),
+            DEFAULT_CHANNEL_INTERVAL_MINUTES,
+        ),
+        "naver_interval_minutes": _parse_int(
+            _setting(db, SYNC_NAVER_INTERVAL_KEY, str(DEFAULT_NAVER_INTERVAL_MINUTES)),
+            DEFAULT_NAVER_INTERVAL_MINUTES,
+        ),
+        "keyword_interval_minutes": _parse_int(
+            _setting(db, SYNC_KEYWORD_INTERVAL_KEY, str(DEFAULT_KEYWORD_INTERVAL_MINUTES)),
+            DEFAULT_KEYWORD_INTERVAL_MINUTES,
+        ),
+        "last_channel_sync_at": _setting(db, SYNC_LAST_CHANNEL_KEY, "") or None,
+        "last_naver_sync_at": _setting(db, SYNC_LAST_NAVER_KEY, "") or None,
+        "last_keyword_sync_at": _setting(db, SYNC_LAST_KEYWORD_KEY, "") or None,
+    }
+
+
+def set_sync_settings(db: Session, payload: dict[str, int | bool]) -> dict[str, int | bool | str | None]:
+    _set_setting(db, SYNC_ENABLED_KEY, _serialize_bool(bool(payload["enabled"])))
+    _set_setting(db, SYNC_CHANNEL_INTERVAL_KEY, str(payload["channel_interval_minutes"]))
+    _set_setting(db, SYNC_NAVER_INTERVAL_KEY, str(payload["naver_interval_minutes"]))
+    _set_setting(db, SYNC_KEYWORD_INTERVAL_KEY, str(payload["keyword_interval_minutes"]))
+    db.flush()
+    return get_sync_settings(db)
+
+
+def set_sync_last_run(db: Session, key: str, value: str) -> None:
+    _set_setting(db, key, value)
+    db.flush()

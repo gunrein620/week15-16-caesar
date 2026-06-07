@@ -82,6 +82,48 @@ def test_infra_budget_hard_stop_blocks_public_api_but_allows_admin_recovery(clie
     assert client.get("/posts").status_code == 200
 
 
+def test_admin_can_manage_live_feed_sync_settings(client):
+    user_token = signup(client)
+    admin_token = login(client, "admin@example.com", "admin-password")
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    forbidden = client.get("/admin/settings/sync", headers=user_headers)
+    current = client.get("/admin/settings/sync", headers=admin_headers)
+    updated = client.put(
+        "/admin/settings/sync",
+        json={
+            "enabled": True,
+            "channel_interval_minutes": 45,
+            "naver_interval_minutes": 90,
+            "keyword_interval_minutes": 360,
+        },
+        headers=admin_headers,
+    )
+    invalid_keyword = client.put(
+        "/admin/settings/sync",
+        json={
+            "enabled": True,
+            "channel_interval_minutes": 30,
+            "naver_interval_minutes": 60,
+            "keyword_interval_minutes": 30,
+        },
+        headers=admin_headers,
+    )
+
+    assert forbidden.status_code == 403
+    assert current.status_code == 200, current.text
+    assert current.json()["enabled"] is True
+    assert current.json()["channel_interval_minutes"] == 30
+    assert current.json()["naver_interval_minutes"] == 60
+    assert current.json()["keyword_interval_minutes"] == 360
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["channel_interval_minutes"] == 45
+    assert updated.json()["naver_interval_minutes"] == 90
+    assert updated.json()["keyword_interval_minutes"] == 360
+    assert invalid_keyword.status_code == 422
+
+
 def test_sync_and_briefing_are_admin_only(client):
     user_token = signup(client)
     user_headers = {"Authorization": f"Bearer {user_token}"}

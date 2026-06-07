@@ -210,16 +210,25 @@ def _matches_fan_channel_keywords(db: Session, artist_id: int, item: dict[str, A
     return any(keyword in haystack for keyword in keywords)
 
 
-def sync_artist_videos(db: Session, artist_id: int) -> dict[str, int]:
+def sync_artist_videos(
+    db: Session,
+    artist_id: int,
+    *,
+    source_types: set[str] | None = None,
+) -> dict[str, int]:
     _require_youtube_key()
     lock_key = 50_000 + artist_id
     with advisory_lock(db, lock_key) as acquired:
         if not acquired:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Sync already running")
 
-        sources = db.scalars(
-            select(YoutubeSource).where(YoutubeSource.artist_id == artist_id, YoutubeSource.enabled.is_(True))
-        ).all()
+        statement = select(YoutubeSource).where(
+            YoutubeSource.artist_id == artist_id,
+            YoutubeSource.enabled.is_(True),
+        )
+        if source_types is not None:
+            statement = statement.where(YoutubeSource.source_type.in_(source_types))
+        sources = db.scalars(statement).all()
         now = datetime.now(UTC)
         for source in sources:
             if source.last_synced_at and now - source.last_synced_at < SYNC_COOLDOWN:

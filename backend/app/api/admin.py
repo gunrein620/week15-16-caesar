@@ -11,8 +11,15 @@ from app.schemas import (
     InfraCostSettingsUpdate,
     SignupSettingsRead,
     SignupSettingsUpdate,
+    SyncSettings,
+    SyncSettingsUpdate,
 )
-from app.services.app_settings import get_public_signup_enabled, set_public_signup_enabled
+from app.services.app_settings import (
+    get_public_signup_enabled,
+    get_sync_settings,
+    set_public_signup_enabled,
+    set_sync_settings,
+)
 from app.services.infra_budget import get_infra_cost_snapshot, update_infra_cost_settings
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -54,3 +61,22 @@ def update_infra_cost_settings_endpoint(
     snapshot = update_infra_cost_settings(db, payload.model_dump())
     db.commit()
     return snapshot
+
+
+@router.get("/settings/sync", response_model=SyncSettings)
+def get_live_feed_sync_settings(
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    return get_sync_settings(db)
+
+
+@router.put("/settings/sync", response_model=SyncSettings)
+def update_live_feed_sync_settings(
+    payload: SyncSettingsUpdate,
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    settings = set_sync_settings(db, payload.model_dump())
+    db.commit()
+    return settings
