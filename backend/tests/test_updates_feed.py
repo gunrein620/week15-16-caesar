@@ -1,7 +1,17 @@
 from datetime import UTC, date, datetime
 
 from app.core.db import get_session_factory
-from app.models import AgentRun, Briefing, Post, Tag, User, YoutubeSource, YoutubeVideo, YoutubeVideoSource
+from app.models import (
+    AgentRun,
+    Briefing,
+    ExternalUpdate,
+    Post,
+    Tag,
+    User,
+    YoutubeSource,
+    YoutubeVideo,
+    YoutubeVideoSource,
+)
 from app.services.rag import refresh_post_chunks
 
 
@@ -10,36 +20,8 @@ def _admin_id() -> int:
         return db.query(User).filter(User.email == "admin@example.com").one().id
 
 
-def test_updates_feed_merges_recent_sources_and_marks_briefings(client, monkeypatch):
+def test_updates_feed_merges_recent_sources_and_marks_briefings(client):
     admin_id = _admin_id()
-
-    def fake_news(query: str, display: int = 5):
-        return [
-            {
-                "title": "<b>RESCENE</b> comeback article",
-                "description": "Love Attack 기사",
-                "originallink": "https://news.example.com/rescene",
-                "link": "https://search.naver.com/news",
-                "pubDate": "Sat, 06 Jun 2030 12:00:00 +0900",
-            }
-        ]
-
-    def fake_blog(query: str, display: int = 5):
-        return [
-            {
-                "title": "Woni radio blog",
-                "description": "원이 라디오 후기",
-                "link": "https://blog.example.com/woni",
-                "postdate": "20300606",
-            }
-        ]
-
-    monkeypatch.setattr("app.services.updates.naver_news_search", fake_news)
-    monkeypatch.setattr("app.services.updates.naver_blog_search", fake_blog)
-    monkeypatch.setattr(
-        "app.services.updates.resolve_page_thumbnail",
-        lambda url: f"https://thumb.example.com/?url={url}",
-    )
 
     with get_session_factory()() as db:
         source = YoutubeSource(
@@ -62,6 +44,36 @@ def test_updates_feed_merges_recent_sources_and_marks_briefings(client, monkeypa
         db.add_all([source, video])
         db.flush()
         db.add(YoutubeVideoSource(video_id=video.id, source_id=source.id))
+        db.add_all(
+            [
+                ExternalUpdate(
+                    artist_id=1,
+                    source_type="naver_news",
+                    external_id="news-1",
+                    title="RESCENE comeback article",
+                    description="Love Attack 기사",
+                    url="https://news.example.com/rescene",
+                    thumbnail_url="https://thumb.example.com/news.jpg",
+                    source_label="Naver News",
+                    published_at=datetime(2030, 6, 6, 12, tzinfo=UTC),
+                    content_hash="news-hash",
+                    raw_payload={},
+                ),
+                ExternalUpdate(
+                    artist_id=1,
+                    source_type="naver_blog",
+                    external_id="blog-1",
+                    title="Woni radio blog",
+                    description="원이 라디오 후기",
+                    url="https://blog.example.com/woni",
+                    thumbnail_url="https://thumb.example.com/blog.jpg",
+                    source_label="Naver Blog",
+                    published_at=datetime(2030, 6, 6, 12, tzinfo=UTC),
+                    content_hash="blog-hash",
+                    raw_payload={},
+                ),
+            ]
+        )
 
         fan_post = Post(
             title="Liv comeback 후기",
@@ -126,12 +138,10 @@ def test_updates_feed_merges_recent_sources_and_marks_briefings(client, monkeypa
     news = next(item for item in body["items"] if item["item_type"] == "naver_news")
     assert news["title"] == "RESCENE comeback article"
     assert news["url"] == "https://news.example.com/rescene"
-    assert news["thumbnail_url"] == "https://thumb.example.com/?url=https://news.example.com/rescene"
+    assert news["thumbnail_url"] == "https://thumb.example.com/news.jpg"
 
 
-def test_updates_feed_filters_by_member_keyword_and_source(client, monkeypatch):
-    monkeypatch.setattr("app.services.updates.naver_news_search", lambda query, display=5: [])
-    monkeypatch.setattr("app.services.updates.naver_blog_search", lambda query, display=5: [])
+def test_updates_feed_filters_by_member_keyword_and_source(client):
     admin_id = _admin_id()
     with get_session_factory()() as db:
         source = YoutubeSource(
@@ -176,14 +186,8 @@ def test_updates_feed_filters_by_member_keyword_and_source(client, monkeypatch):
     assert {item["item_type"] for item in source_response.json()["items"]} == {"youtube"}
 
 
-def test_updates_feed_stays_public_when_naver_is_unavailable(client, monkeypatch):
-    def fail_naver(query: str, display: int = 5):
-        raise RuntimeError("naver unavailable")
-
-    monkeypatch.setattr("app.services.updates.naver_news_search", fail_naver)
-    monkeypatch.setattr("app.services.updates.naver_blog_search", fail_naver)
-
+def test_updates_feed_stays_public_without_naver_cache(client):
     response = client.get("/artists/1/updates")
 
     assert response.status_code == 200
-    assert response.json()["naver_available"] is False
+    assert response.json()["naver_available"] is True

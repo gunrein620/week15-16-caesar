@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -65,6 +66,7 @@ class MemberRead(BaseModel):
 
 
 class PostCreate(BaseModel):
+    category: str = Field(default="자유", min_length=1, max_length=40)
     title: str = Field(min_length=1, max_length=200)
     content: str = Field(min_length=1)
     artist_id: int = 1
@@ -72,6 +74,7 @@ class PostCreate(BaseModel):
 
 
 class PostUpdate(BaseModel):
+    category: str | None = Field(default=None, min_length=1, max_length=40)
     title: str | None = Field(default=None, min_length=1, max_length=200)
     content: str | None = Field(default=None, min_length=1)
     artist_id: int | None = None
@@ -100,8 +103,11 @@ class CommentRead(BaseModel):
 
 class PostRead(BaseModel):
     id: int
+    category: str
     title: str
     content: str
+    thumbnail_url: str = ""
+    embeds: list[dict[str, Any]] = Field(default_factory=list)
     author: UserRead
     artist: ArtistRead
     tags: list[str]
@@ -216,6 +222,8 @@ class UpdateFeedResponse(BaseModel):
     artist_id: int
     items: list[UpdateFeedItem]
     naver_available: bool
+    next_cursor: str | None = None
+    has_more: bool = False
 
 
 class BriefingPreviewResponse(BaseModel):
@@ -223,6 +231,7 @@ class BriefingPreviewResponse(BaseModel):
     preview_markdown: str
     briefing_date: date
     briefing_type: str
+    source_cards: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class AgentRunRead(BaseModel):
@@ -237,3 +246,25 @@ class AgentRunRead(BaseModel):
     preview_markdown: str
     created_post_id: int | None
     tool_calls: list[dict] = Field(default_factory=list)
+
+
+class SavedItemCreate(BaseModel):
+    item_type: str = Field(min_length=1, max_length=40)
+    item_id: str | None = Field(default=None, max_length=500)
+    url: str | None = Field(default=None, max_length=1000)
+    title: str = Field(min_length=1, max_length=255)
+    thumbnail_url: str = Field(default="", max_length=1000)
+    source_label: str = Field(default="", max_length=120)
+
+
+class SavedItemRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    item_type: str
+    item_key: str
+    title: str
+    url: str
+    thumbnail_url: str
+    source_label: str
+    saved_at: datetime

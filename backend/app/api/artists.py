@@ -20,6 +20,7 @@ from app.schemas import (
     YoutubeVideoRead,
 )
 from app.services.quota import consume_ai_quota
+from app.services.external_updates import sync_external_updates
 from app.services.updates import get_artist_updates
 from app.services.youtube import sync_artist_videos
 
@@ -69,6 +70,7 @@ def list_updates(
     keyword: str | None = None,
     q: str | None = None,
     limit: int = 30,
+    cursor: str | None = None,
 ) -> UpdateFeedResponse:
     _require_artist(db, artist_id)
     return get_artist_updates(
@@ -79,7 +81,39 @@ def list_updates(
         keyword=keyword,
         query=q,
         limit=min(max(limit, 1), 50),
+        cursor=cursor,
     )
+
+
+@router.post("/artists/{artist_id}/sync-updates")
+@limiter.limit("20/day")
+def sync_updates(
+    request: Request,
+    artist_id: int,
+    user: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, int | bool | str]:
+    _require_artist(db, artist_id)
+    consume_ai_quota(db, user, "updates_sync")
+    try:
+        youtube_result: dict[str, int | bool | str] = {
+            f"youtube_{key}": value for key, value in sync_artist_videos(db, artist_id).items()
+        }
+        youtube_result["youtube_available"] = True
+    except Exception as exc:
+        db.rollback()
+        youtube_result = {
+            "youtube_available": False,
+            "youtube_created": 0,
+            "youtube_updated": 0,
+            "youtube_linked": 0,
+            "youtube_error": str(exc),
+        }
+    naver_result = sync_external_updates(db, artist_id)
+    return {
+        **youtube_result,
+        **naver_result,
+    }
 
 
 @router.post("/artists/{artist_id}/sync")

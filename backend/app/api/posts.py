@@ -8,16 +8,25 @@ from app.core.db import get_db
 from app.dependencies import get_current_user
 from app.models import Artist, Comment, Post, PostTag, RagChunk, Tag, User
 from app.schemas import CommentCreate, CommentRead, PostCreate, PostList, PostRead, PostUpdate, TagRead
+from app.services.embeds import build_post_embeds
 from app.services.rag import refresh_post_chunks
 
 router = APIRouter(tags=["posts"])
 
 
+def _category(value: str | None) -> str:
+    normalized = (value or "자유").strip()
+    return normalized[:40] or "자유"
+
+
 def _post_read(post: Post) -> PostRead:
     return PostRead(
         id=post.id,
+        category=post.category,
         title=post.title,
         content=post.content,
+        thumbnail_url=post.thumbnail_url,
+        embeds=post.embeds or [],
         author=post.author,
         artist=post.artist,
         tags=sorted(post_tag.tag.name for post_tag in post.tags),
@@ -71,7 +80,11 @@ def list_posts(
         count_stmt = count_stmt.join(PostTag).join(Tag).where(Tag.name == tag.lower())
     total = db.scalar(count_stmt) or 0
     posts = (
-        db.scalars(stmt.order_by(Post.created_at.desc()).offset((page - 1) * page_size).limit(page_size))
+        db.scalars(
+            stmt.order_by(Post.created_at.desc(), Post.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
         .unique()
         .all()
     )
@@ -87,7 +100,16 @@ def create_post(
     artist = db.get(Artist, payload.artist_id)
     if artist is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
-    post = Post(title=payload.title, content=payload.content, author_id=user.id, artist_id=artist.id)
+    embeds, thumbnail_url = build_post_embeds(payload.content)
+    post = Post(
+        category=_category(payload.category),
+        title=payload.title,
+        content=payload.content,
+        thumbnail_url=thumbnail_url,
+        embeds=embeds,
+        author_id=user.id,
+        artist_id=artist.id,
+    )
     db.add(post)
     db.flush()
     _set_tags(db, post, payload.tags)
@@ -124,6 +146,9 @@ def update_post(
         post.title = payload.title
     if payload.content is not None:
         post.content = payload.content
+        post.embeds, post.thumbnail_url = build_post_embeds(payload.content)
+    if payload.category is not None:
+        post.category = _category(payload.category)
     if payload.artist_id is not None:
         post.artist_id = payload.artist_id
     if payload.tags is not None:

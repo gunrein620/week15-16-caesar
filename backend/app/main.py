@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from app.api import admin, agent, ai, artists, auth, posts
+from app.api import admin, agent, ai, artists, auth, posts, saved_items
 from app.core.config import get_settings
 from app.core.db import check_db_ready, get_engine, get_session_factory
 from app.core.rate_limit import limiter
@@ -68,6 +68,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(admin.router)
     app.include_router(posts.router)
+    app.include_router(saved_items.router)
     app.include_router(ai.router)
     app.include_router(artists.router)
     app.include_router(agent.router)

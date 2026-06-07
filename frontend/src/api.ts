@@ -14,10 +14,26 @@ export type Artist = {
   description: string
 }
 
+export type PostEmbed = {
+  type: 'image' | 'youtube' | 'link' | 'source_card'
+  item_type?: UpdateFeedItem['item_type']
+  url: string
+  title: string
+  description: string
+  thumbnail_url: string
+  provider?: string
+  source_label?: string
+  published_at?: string
+  video_id?: string
+}
+
 export type Post = {
   id: number
+  category: string
   title: string
   content: string
+  thumbnail_url: string
+  embeds: PostEmbed[]
   author: User
   artist: Artist
   tags: string[]
@@ -114,6 +130,8 @@ export type UpdateFeedResponse = {
   artist_id: number
   items: UpdateFeedItem[]
   naver_available: boolean
+  next_cursor: string | null
+  has_more: boolean
 }
 
 export type AuthResponse = {
@@ -147,6 +165,18 @@ export type BriefingPreview = {
   preview_markdown: string
   briefing_date: string
   briefing_type: string
+  source_cards: PostEmbed[]
+}
+
+export type SavedItem = {
+  id: number
+  item_type: UpdateFeedItem['item_type'] | 'post'
+  item_key: string
+  title: string
+  url: string
+  thumbnail_url: string
+  source_label: string
+  saved_at: string
 }
 
 export async function api<T>(

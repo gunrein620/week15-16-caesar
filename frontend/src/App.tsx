@@ -1,5 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  Bookmark,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -20,6 +21,7 @@ import {
   Trash2,
   Upload,
   UserPlus,
+  X,
 } from 'lucide-react'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import {
@@ -30,8 +32,10 @@ import {
   InfraCostSettings,
   Member,
   Post,
+  PostEmbed,
   PostList,
   QaSource,
+  SavedItem,
   SignupSettings,
   Tag,
   UpdateFeedItem,
@@ -43,7 +47,7 @@ import {
 } from './api'
 
 type AuthMode = 'login' | 'signup'
-type Panel = 'home' | 'board' | 'rag' | 'youtube' | 'briefing' | 'admin'
+type Panel = 'home' | 'board' | 'rag' | 'youtube' | 'briefing' | 'saved' | 'admin'
 type VideoSort = 'latest' | 'views' | 'title'
 type FeedSource = 'all' | 'youtube' | 'naver' | 'briefing' | 'post'
 
@@ -112,6 +116,7 @@ export default function App() {
   const [search, setSearch] = useState('')
   const [tagFilter, setTagFilter] = useState('')
   const [page, setPage] = useState(1)
+  const [authOpen, setAuthOpen] = useState(false)
 
   const me = useQuery({
     queryKey: ['me', token],
@@ -176,6 +181,8 @@ export default function App() {
     void queryClient.invalidateQueries()
   }
 
+  const requireAuth = () => setAuthOpen(true)
+
   return (
     <div className="shell">
       <header className="topbar">
@@ -207,7 +214,10 @@ export default function App() {
               </button>
             </>
           ) : (
-            <span className="muted">guest</span>
+            <button className="secondary" onClick={() => setAuthOpen(true)} title="로그인">
+              <LogIn size={17} />
+              로그인
+            </button>
           )}
         </div>
       </header>
@@ -228,6 +238,9 @@ export default function App() {
         <button className={panel === 'briefing' ? 'active' : ''} onClick={() => setPanel('briefing')}>
           오늘의 요약
         </button>
+        <button className={panel === 'saved' ? 'active' : ''} onClick={() => setPanel('saved')}>
+          저장한 떡밥
+        </button>
         {me.data?.role === 'admin' && (
           <button className={panel === 'admin' ? 'active' : ''} onClick={() => setPanel('admin')}>
             관리
@@ -235,7 +248,19 @@ export default function App() {
         )}
       </nav>
 
-      <main className={panel === 'home' ? 'layout homeLayout' : 'layout'}>
+      {authOpen && (
+        <AuthModal
+          publicSignupEnabled={signupStatus.data?.public_signup_enabled ?? false}
+          setToken={(nextToken) => {
+            setToken(nextToken)
+            if (nextToken) setAuthOpen(false)
+          }}
+          onClose={() => setAuthOpen(false)}
+        />
+      )}
+
+      <main className={panel === 'home' ? 'layout homeLayout singlePane' : 'layout'}>
+        {panel !== 'home' && (
         <section className="leftPane">
           <div className="sideTitle">
             <strong>팬 게시판</strong>
@@ -278,28 +303,18 @@ export default function App() {
             onPageChange={setPage}
           />
         </section>
+        )}
 
         <section className="mainPane">
-          {!me.data && panel !== 'home' && (
-            <AuthPanel
-              publicSignupEnabled={signupStatus.data?.public_signup_enabled ?? false}
-              setToken={setToken}
-            />
-          )}
           {panel === 'home' && (
             <HomePanel
               token={token}
               user={me.data}
+              onRequireAuth={requireAuth}
               onOpenPost={(postId) => {
                 setSelectedPostId(postId)
                 setPanel('board')
               }}
-            />
-          )}
-          {!me.data && panel === 'home' && (
-            <AuthPanel
-              publicSignupEnabled={signupStatus.data?.public_signup_enabled ?? false}
-              setToken={setToken}
             />
           )}
           {panel === 'board' && (
@@ -307,6 +322,7 @@ export default function App() {
               token={token}
               user={me.data}
               post={selectedPost}
+              onRequireAuth={requireAuth}
               onChanged={() => {
                 void queryClient.invalidateQueries({ queryKey: ['posts'] })
                 void queryClient.invalidateQueries({ queryKey: ['post', selectedPost?.id] })
@@ -321,6 +337,7 @@ export default function App() {
             <RagPanel
               token={token}
               selectedPost={selectedPost}
+              onRequireAuth={requireAuth}
               onOpenPost={(postId) => {
                 setSelectedPostId(postId)
                 setPanel('board')
@@ -329,6 +346,17 @@ export default function App() {
           )}
           {panel === 'youtube' && <YoutubePanel token={token} user={me.data} />}
           {panel === 'briefing' && <BriefingPanel token={token} user={me.data} />}
+          {panel === 'saved' && (
+            <SavedPanel
+              token={token}
+              user={me.data}
+              onRequireAuth={requireAuth}
+              onOpenPost={(postId) => {
+                setSelectedPostId(postId)
+                setPanel('board')
+              }}
+            />
+          )}
           {panel === 'admin' && <AdminPanel token={token} user={me.data} />}
         </section>
       </main>
@@ -339,27 +367,34 @@ export default function App() {
 function HomePanel({
   token,
   user,
+  onRequireAuth,
   onOpenPost,
 }: {
   token: string | null
   user?: User
+  onRequireAuth: () => void
   onOpenPost: (postId: number) => void
 }) {
+  const queryClient = useQueryClient()
   const [source, setSource] = useState<FeedSource>('all')
   const [member, setMember] = useState('')
   const [keyword, setKeyword] = useState('')
   const [feedQuery, setFeedQuery] = useState('')
   const [archiveQuestion, setArchiveQuestion] = useState('최근 원이 영상 뭐 있어?')
-  const updates = useQuery({
+  const updates = useInfiniteQuery({
     queryKey: ['updates', source, member, keyword, feedQuery],
-    queryFn: () => {
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) => {
       const params = new URLSearchParams({ limit: '30' })
+      if (pageParam) params.set('cursor', pageParam)
       if (source !== 'all') params.set('source', source)
       if (member) params.set('member', member)
       if (keyword) params.set('keyword', keyword)
       if (feedQuery) params.set('q', feedQuery)
       return api<UpdateFeedResponse>(`/artists/1/updates?${params.toString()}`)
     },
+    getNextPageParam: (lastPage) =>
+      lastPage.has_more && lastPage.next_cursor ? lastPage.next_cursor : undefined,
   })
   const members = useQuery({
     queryKey: ['members', 1],
@@ -377,6 +412,27 @@ function HomePanel({
         token,
       ),
   })
+  const saveItem = useMutation({
+    mutationFn: (item: UpdateFeedItem) =>
+      api<SavedItem>(
+        '/saved-items',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            item_type: item.item_type,
+            item_id: item.id,
+            url: item.url,
+            title: item.title,
+            thumbnail_url: item.thumbnail_url,
+            source_label: item.source_label,
+          }),
+        },
+        token,
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['saved-items'] })
+    },
+  })
   const keywordOptions = useMemo(() => {
     const fixed = ['컴백', '무대', '직캠', '라디오', 'Love Attack']
     const fromArtist = artistKeywords.data?.map((item) => item.keyword) ?? []
@@ -390,6 +446,8 @@ function HomePanel({
     { value: 'post', label: '팬글' },
   ]
   const examples = ['최근 원이 영상 뭐 있어?', '러브어택 무대 영상 모아줘', '이번 주 리센느 소식 요약해줘']
+  const feedItems = updates.data?.pages.flatMap((pageData) => pageData.items) ?? []
+  const naverAvailable = updates.data?.pages.every((pageData) => pageData.naver_available) ?? true
   return (
     <div className="homeStack">
       <section className="homeHero">
@@ -402,6 +460,10 @@ function HomePanel({
           className="archiveSearch"
           onSubmit={(event) => {
             event.preventDefault()
+            if (!token) {
+              onRequireAuth()
+              return
+            }
             qa.mutate()
           }}
         >
@@ -414,7 +476,7 @@ function HomePanel({
               onChange={(event) => setArchiveQuestion(event.target.value)}
               placeholder="예: 러브어택 무대 영상 모아줘"
             />
-            <button className="primary" disabled={!token || qa.isPending} title="아카이브 검색">
+            <button className="primary" disabled={qa.isPending} title="아카이브 검색">
               <Send size={17} />
               검색
             </button>
@@ -466,7 +528,7 @@ function HomePanel({
             <p className="eyebrow">Live feed</p>
             <h2>통합 업데이트</h2>
           </div>
-          <span className="feedCount">{formatNumber(updates.data?.items.length ?? 0)} items</span>
+          <span className="feedCount">{formatNumber(feedItems.length)} items</span>
         </div>
         <div className="feedControls">
           <div className="searchbar">
@@ -520,22 +582,44 @@ function HomePanel({
             ))}
           </div>
         </div>
-        {updates.data?.naver_available === false && (
+        {naverAvailable === false && (
           <p className="hint">Naver 키 또는 호출이 잠시 unavailable입니다. YouTube/게시글/브리핑은 계속 표시됩니다.</p>
         )}
         {updates.isLoading && <p className="muted">업데이트를 불러오는 중...</p>}
         {updates.error && <p className="error">{updates.error.message}</p>}
         <div className="feedList">
-          {updates.data?.items.map((item) => (
-            <UpdateFeedCard key={item.id} item={item} onOpenPost={onOpenPost} />
+          {feedItems.map((item) => (
+            <UpdateFeedCard
+              key={item.id}
+              item={item}
+              onOpenPost={onOpenPost}
+              onSave={() => {
+                if (!token) {
+                  onRequireAuth()
+                  return
+                }
+                saveItem.mutate(item)
+              }}
+              savePending={saveItem.isPending}
+            />
           ))}
         </div>
-        {!updates.isLoading && updates.data?.items.length === 0 && (
+        {!updates.isLoading && feedItems.length === 0 && (
           <div className="emptyState">
             <FileText size={24} />
             <p>조건에 맞는 업데이트가 없습니다.</p>
           </div>
         )}
+        {updates.hasNextPage && (
+          <button
+            className="loadMore"
+            onClick={() => updates.fetchNextPage()}
+            disabled={updates.isFetchingNextPage}
+          >
+            {updates.isFetchingNextPage ? '불러오는 중...' : '더 보기'}
+          </button>
+        )}
+        {saveItem.error && <p className="error">{saveItem.error.message}</p>}
       </section>
 
       {user?.role === 'admin' && (
@@ -545,7 +629,17 @@ function HomePanel({
   )
 }
 
-function UpdateFeedCard({ item, onOpenPost }: { item: UpdateFeedItem; onOpenPost: (postId: number) => void }) {
+function UpdateFeedCard({
+  item,
+  onOpenPost,
+  onSave,
+  savePending,
+}: {
+  item: UpdateFeedItem
+  onOpenPost: (postId: number) => void
+  onSave: () => void
+  savePending: boolean
+}) {
   const postId = postIdFromUrl(item.url)
   const isExternal = item.url.startsWith('http')
   const label =
@@ -590,25 +684,56 @@ function UpdateFeedCard({ item, onOpenPost }: { item: UpdateFeedItem; onOpenPost
           ))}
         </div>
       </div>
-      {isExternal && <ExternalLink className="sourceOpen" size={16} />}
     </>
   )
-  if (isExternal) {
-    return (
-      <a className="updateCard" href={item.url} target="_blank" rel="noreferrer">
-        {body}
-      </a>
-    )
-  }
   return (
-    <button
-      type="button"
-      className="updateCard"
-      onClick={() => postId && onOpenPost(postId)}
-      disabled={!postId}
-    >
-      {body}
-    </button>
+    <article className="updateCard">
+      {isExternal ? (
+        <a className="updateMainLink" href={item.url} target="_blank" rel="noreferrer">
+          {body}
+          <ExternalLink className="sourceOpen" size={16} />
+        </a>
+      ) : (
+        <button
+          type="button"
+          className="updateMainLink"
+          onClick={() => postId && onOpenPost(postId)}
+          disabled={!postId}
+        >
+          {body}
+        </button>
+      )}
+      <button className="saveButton" onClick={onSave} disabled={savePending} title="저장">
+        <Bookmark size={16} />
+      </button>
+    </article>
+  )
+}
+
+function AuthModal({
+  publicSignupEnabled,
+  setToken,
+  onClose,
+}: {
+  publicSignupEnabled: boolean
+  setToken: (token: string | null) => void
+  onClose: () => void
+}) {
+  return (
+    <div className="modalBackdrop" role="presentation" onMouseDown={onClose}>
+      <div className="authModal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="modalHead">
+          <div>
+            <p className="eyebrow">Account</p>
+            <h2>로그인</h2>
+          </div>
+          <button className="iconButton" onClick={onClose} title="닫기">
+            <X size={17} />
+          </button>
+        </div>
+        <AuthPanel publicSignupEnabled={publicSignupEnabled} setToken={setToken} />
+      </div>
+    </div>
   )
 }
 
@@ -700,6 +825,7 @@ function PostListView({
     <>
       <div className="boardTable">
         <div className="boardHeader">
+          <span>분류</span>
           <span>제목</span>
           <span>작성자</span>
           <span>댓글</span>
@@ -712,8 +838,10 @@ function PostListView({
             className={post.id === selectedId ? 'boardRow selected' : 'boardRow'}
             onClick={() => onSelect(post.id)}
           >
+            <span className="boardCategory">{post.category}</span>
             <span className="boardTitleCell">
               <strong>{post.title}</strong>
+              {post.thumbnail_url && <small className="thumbMark">이미지/링크</small>}
               {post.tags.length > 0 && (
                 <span className="miniTags">
                   {post.tags.slice(0, 2).map((tag) => (
@@ -757,29 +885,34 @@ function BoardPanel({
   token,
   user,
   post,
+  onRequireAuth,
   onChanged,
   onDeleted,
 }: {
   token: string | null
   user?: User
   post: Post | null
+  onRequireAuth: () => void
   onChanged: () => void
   onDeleted: () => void
 }) {
   const queryClient = useQueryClient()
   const [title, setTitle] = useState('')
+  const [category, setCategory] = useState('자유')
   const [content, setContent] = useState('')
   const [tags, setTags] = useState('')
   const [editing, setEditing] = useState(false)
   const [editTitle, setEditTitle] = useState('')
+  const [editCategory, setEditCategory] = useState('자유')
   const [editContent, setEditContent] = useState('')
   const [editTags, setEditTags] = useState('')
   useEffect(() => {
     setEditing(false)
     setEditTitle(post?.title ?? '')
+    setEditCategory(post?.category ?? '자유')
     setEditContent(post?.content ?? '')
     setEditTags(post?.tags.join(', ') ?? '')
-  }, [post?.id, post?.title, post?.content, post?.tags])
+  }, [post?.id, post?.title, post?.category, post?.content, post?.tags])
 
   const comments = useQuery({
     queryKey: ['comments', post?.id],
@@ -794,6 +927,7 @@ function BoardPanel({
           method: 'POST',
           body: JSON.stringify({
             title,
+            category,
             content,
             artist_id: 1,
             tags: tags.split(',').map((tag) => tag.trim()),
@@ -803,6 +937,7 @@ function BoardPanel({
       ),
     onSuccess: () => {
       setTitle('')
+      setCategory('자유')
       setContent('')
       setTags('')
       onChanged()
@@ -816,6 +951,7 @@ function BoardPanel({
           method: 'PUT',
           body: JSON.stringify({
             title: editTitle,
+            category: editCategory,
             content: editContent,
             tags: editTags.split(',').map((tag) => tag.trim()),
           }),
@@ -859,8 +995,23 @@ function BoardPanel({
             createPost.mutate()
           }}
         >
-          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="제목" />
-          <textarea value={content} onChange={(event) => setContent(event.target.value)} placeholder="내용" />
+          <div className="composerTop">
+            <select value={category} onChange={(event) => setCategory(event.target.value)}>
+              <option value="자유">자유</option>
+              <option value="질문">질문</option>
+              <option value="뉴스">뉴스</option>
+              <option value="영상">영상</option>
+              <option value="후기">후기</option>
+              <option value="정보">정보</option>
+            </select>
+            <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="제목을 입력해주세요" />
+          </div>
+          <textarea
+            value={content}
+            onChange={(event) => setContent(event.target.value)}
+            placeholder="내용을 입력해주세요. 이미지 URL, YouTube URL, 외부 링크는 저장 후 카드로 표시됩니다."
+          />
+          <UrlPreviewNote content={content} />
           <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="태그, 태그" />
           <button className="primary" disabled={createPost.isPending} title="글 작성">
             <MessageSquarePlus size={17} />
@@ -869,11 +1020,22 @@ function BoardPanel({
           {createPost.error && <p className="error">{createPost.error.message}</p>}
         </form>
       )}
+      {!user && (
+        <div className="emptyState compact">
+          <MessageSquarePlus size={22} />
+          <p>글쓰기와 댓글은 로그인 후 사용할 수 있습니다.</p>
+          <button className="primary" onClick={onRequireAuth}>
+            <LogIn size={17} />
+            로그인
+          </button>
+        </div>
+      )}
 
       {post && (
         <article className="postDetail">
           <div className="postHead">
             <div>
+              <span className="categoryBadge">{post.category}</span>
               <h2>{post.title}</h2>
               <div className="postMeta">
                 <span>{post.author.display_name}</span>
@@ -907,8 +1069,20 @@ function BoardPanel({
                 updatePost.mutate()
               }}
             >
-              <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} placeholder="제목" />
+              <div className="composerTop">
+                <select value={editCategory} onChange={(event) => setEditCategory(event.target.value)}>
+                  <option value="자유">자유</option>
+                  <option value="질문">질문</option>
+                  <option value="뉴스">뉴스</option>
+                  <option value="영상">영상</option>
+                  <option value="후기">후기</option>
+                  <option value="정보">정보</option>
+                  <option value="브리핑">브리핑</option>
+                </select>
+                <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} placeholder="제목" />
+              </div>
               <textarea value={editContent} onChange={(event) => setEditContent(event.target.value)} placeholder="내용" />
+              <UrlPreviewNote content={editContent} />
               <input value={editTags} onChange={(event) => setEditTags(event.target.value)} placeholder="태그, 태그" />
               <button className="primary" disabled={updatePost.isPending} title="수정 저장">
                 <Save size={17} />
@@ -917,7 +1091,8 @@ function BoardPanel({
             </form>
           ) : (
             <>
-              <p className="postContent">{post.content}</p>
+              <LinkedText className="postContent" text={post.content} />
+              {post.embeds.length > 0 && <EmbedList embeds={post.embeds} onOpenPost={() => undefined} />}
               <div className="tags">{post.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
             </>
           )}
@@ -944,19 +1119,134 @@ function BoardPanel({
               </button>
             </form>
           )}
+          {!user && (
+            <button className="secondary commentLogin" onClick={onRequireAuth}>
+              <LogIn size={17} />
+              로그인하고 댓글 쓰기
+            </button>
+          )}
         </article>
       )}
     </div>
   )
 }
 
+const CLIENT_URL_RE = /(https?:\/\/[^\s<>\]\)"']+)/g
+
+function clientUrls(content: string) {
+  return [...new Set([...content.matchAll(CLIENT_URL_RE)].map((match) => match[0].replace(/[.,!?;:]$/, '')))]
+}
+
+function UrlPreviewNote({ content }: { content: string }) {
+  const urls = clientUrls(content)
+  if (urls.length === 0) return null
+  return (
+    <div className="urlPreviewNote">
+      <span>감지된 링크 {urls.length}개</span>
+      {urls.slice(0, 3).map((url) => (
+        <em key={url}>{url}</em>
+      ))}
+    </div>
+  )
+}
+
+function LinkedText({ text, className }: { text: string; className?: string }) {
+  const parts = text.split(CLIENT_URL_RE)
+  return (
+    <p className={className}>
+      {parts.map((part, index) =>
+        part.match(/^https?:\/\//) ? (
+          <a key={`${part}-${index}`} href={part} target="_blank" rel="noreferrer">
+            {part}
+          </a>
+        ) : (
+          <span key={`${index}-${part.slice(0, 8)}`}>{part}</span>
+        ),
+      )}
+    </p>
+  )
+}
+
+function EmbedList({ embeds, onOpenPost }: { embeds: PostEmbed[]; onOpenPost: (postId: number) => void }) {
+  return (
+    <div className="embedList">
+      {embeds.map((embed, index) => (
+        <EmbedCard key={`${embed.type}-${embed.url}-${index}`} embed={embed} onOpenPost={onOpenPost} />
+      ))}
+    </div>
+  )
+}
+
+function EmbedCard({ embed, onOpenPost }: { embed: PostEmbed; onOpenPost: (postId: number) => void }) {
+  const [expanded, setExpanded] = useState(false)
+  const postId = postIdFromUrl(embed.url)
+  const title = embed.title || embed.url
+  const meta =
+    embed.type === 'youtube'
+      ? 'YouTube'
+      : embed.type === 'image'
+        ? 'Image'
+        : embed.source_label || embed.provider || 'Link'
+  const openAction = embed.url.startsWith('http') ? (
+    <a className="secondary" href={embed.url} target="_blank" rel="noreferrer">
+      <ExternalLink size={15} />
+      원문 보기
+    </a>
+  ) : (
+    <button className="secondary" onClick={() => postId && onOpenPost(postId)} disabled={!postId}>
+      <FileText size={15} />
+      게시글 보기
+    </button>
+  )
+
+  if (embed.type === 'image') {
+    return (
+      <a className="embedCard imageEmbed" href={embed.url} target="_blank" rel="noreferrer">
+        <img src={embed.url} alt="" loading="lazy" />
+      </a>
+    )
+  }
+
+  return (
+    <article className="embedCard">
+      <div className="embedThumb">
+        {embed.thumbnail_url ? (
+          <img src={embed.thumbnail_url} alt="" loading="lazy" />
+        ) : embed.type === 'youtube' ? (
+          <PlayCircle size={24} />
+        ) : (
+          <FileText size={22} />
+        )}
+      </div>
+      <div className="embedBody">
+        <div className="updateMeta">
+          <span className={`typeBadge ${embed.item_type ?? embed.type}`}>{meta}</span>
+          {embed.published_at && <span>{formatDateTime(embed.published_at)}</span>}
+        </div>
+        <strong>{title}</strong>
+        {embed.description && <p>{expanded ? embed.description : excerpt(embed.description, 120)}</p>}
+        <div className="embedActions">
+          {embed.description && (
+            <button className="secondary" onClick={() => setExpanded((value) => !value)}>
+              {expanded ? '접기' : '펼쳐보기'}
+            </button>
+          )}
+          {openAction}
+        </div>
+      </div>
+    </article>
+  )
+}
+
 function RagPanel({
   token,
   selectedPost,
+  onRequireAuth,
   onOpenPost,
 }: {
   token: string | null
   selectedPost: Post | null
+  onRequireAuth: () => void
   onOpenPost: (postId: number) => void
 }) {
   const [question, setQuestion] = useState('')
@@ -978,6 +1268,10 @@ function RagPanel({
         className="qaBox"
         onSubmit={(event) => {
           event.preventDefault()
+          if (!token) {
+            onRequireAuth()
+            return
+          }
           qa.mutate()
         }}
       >
@@ -990,7 +1284,7 @@ function RagPanel({
           onChange={(event) => setQuestion(event.target.value)}
           placeholder="예: 최근 원이 영상 뭐 있어? / 러브어택 무대 영상 모아줘"
         />
-        <button className="primary" disabled={!token || qa.isPending} title="질문 보내기">
+        <button className="primary" disabled={qa.isPending} title="질문 보내기">
           <Send size={17} />
           검색
         </button>
@@ -1011,7 +1305,17 @@ function RagPanel({
           </div>
         </section>
       )}
-      <button className="secondary" disabled={!token || !selectedPost} onClick={() => similar.mutate()}>
+      <button
+        className="secondary"
+        disabled={!selectedPost}
+        onClick={() => {
+          if (!token) {
+            onRequireAuth()
+            return
+          }
+          similar.mutate()
+        }}
+      >
         유사 글
       </button>
       {similar.data?.map((post) => <p key={post.id}>{post.title}</p>)}
@@ -1092,9 +1396,10 @@ function YoutubePanel({ token, user }: { token: string | null; user?: User }) {
     },
   })
   const sync = useMutation({
-    mutationFn: () => api<{ created: number; updated: number; linked: number }>('/artists/1/sync', { method: 'POST' }, token),
+    mutationFn: () => api<Record<string, number | boolean | string>>('/artists/1/sync-updates', { method: 'POST' }, token),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['videos', 1] })
+      void queryClient.invalidateQueries({ queryKey: ['updates'] })
     },
   })
   const deleteSource = useMutation({
@@ -1205,7 +1510,9 @@ function YoutubePanel({ token, user }: { token: string | null; user?: User }) {
 }
 
 function BriefingPanel({ token, user }: { token: string | null; user?: User }) {
+  const queryClient = useQueryClient()
   const [preview, setPreview] = useState<BriefingPreview | null>(null)
+  const [showRaw, setShowRaw] = useState(false)
   const previewMutation = useMutation({
     mutationFn: (refresh: boolean) =>
       api<BriefingPreview>(`/ai/briefing/preview?refresh=${refresh}`, { method: 'POST' }, token),
@@ -1213,6 +1520,10 @@ function BriefingPanel({ token, user }: { token: string | null; user?: User }) {
   })
   const publish = useMutation({
     mutationFn: () => api<Post>(`/ai/briefing/${preview?.run_id}/publish`, { method: 'POST' }, token),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['posts'] })
+      void queryClient.invalidateQueries({ queryKey: ['updates'] })
+    },
   })
   if (user?.role !== 'admin') {
     return (
@@ -1225,11 +1536,14 @@ function BriefingPanel({ token, user }: { token: string | null; user?: User }) {
   return (
     <div className="stack">
       <div className="briefingHeader">
-        <h2>브리핑 초안</h2>
+        <div>
+          <p className="eyebrow">오늘의 리센느 요약</p>
+          <h2>발행 전 미리보기</h2>
+        </div>
         <div className="sourceList">
           <span>Board RAG</span>
           <span>YouTube cache</span>
-          <span>Naver search</span>
+          <span>Naver cache/search</span>
         </div>
       </div>
       <div className="toolbar">
@@ -1246,8 +1560,130 @@ function BriefingPanel({ token, user }: { token: string | null; user?: User }) {
       {previewMutation.error && <p className="error">{previewMutation.error.message}</p>}
       {publish.error && <p className="error">{publish.error.message}</p>}
       {publish.data && <p className="success">Published: {publish.data.title}</p>}
-      {preview && <pre className="preview">{preview.preview_markdown}</pre>}
+      {preview && (
+        <section className="briefingPreview">
+          <div className="briefingSummary">
+            {preview.preview_markdown
+              .split('\n')
+              .filter(Boolean)
+              .slice(0, 8)
+              .map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+          </div>
+          {preview.source_cards.length > 0 && (
+            <>
+              <h3>출처 카드</h3>
+              <EmbedList embeds={preview.source_cards} onOpenPost={() => undefined} />
+            </>
+          )}
+          <button className="secondary" onClick={() => setShowRaw((value) => !value)}>
+            {showRaw ? '원문 접기' : '원문 펼쳐보기'}
+          </button>
+          {showRaw && <pre className="preview">{preview.preview_markdown}</pre>}
+        </section>
+      )}
     </div>
+  )
+}
+
+function SavedPanel({
+  token,
+  user,
+  onRequireAuth,
+  onOpenPost,
+}: {
+  token: string | null
+  user?: User
+  onRequireAuth: () => void
+  onOpenPost: (postId: number) => void
+}) {
+  const queryClient = useQueryClient()
+  const savedItems = useQuery({
+    queryKey: ['saved-items', token],
+    queryFn: () => api<SavedItem[]>('/saved-items', {}, token),
+    enabled: Boolean(token && user),
+  })
+  const remove = useMutation({
+    mutationFn: (id: number) => api<void>(`/saved-items/${id}`, { method: 'DELETE' }, token),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['saved-items'] })
+    },
+  })
+  if (!user) {
+    return (
+      <div className="emptyState">
+        <Bookmark size={24} />
+        <p>보고 싶은 피드와 게시글을 저장하려면 로그인이 필요합니다.</p>
+        <button className="primary" onClick={onRequireAuth}>
+          <LogIn size={17} />
+          로그인
+        </button>
+      </div>
+    )
+  }
+  return (
+    <div className="stack">
+      <div className="sectionHead">
+        <div>
+          <p className="eyebrow">Saved</p>
+          <h2>저장한 떡밥</h2>
+        </div>
+        <span className="feedCount">{formatNumber(savedItems.data?.length ?? 0)} items</span>
+      </div>
+      {savedItems.isLoading && <p className="muted">저장 항목을 불러오는 중...</p>}
+      {savedItems.error && <p className="error">{savedItems.error.message}</p>}
+      <div className="feedList">
+        {savedItems.data?.map((item) => {
+          const postId = postIdFromUrl(item.url)
+          const isExternal = item.url.startsWith('http')
+          return (
+            <article className="updateCard" key={item.id}>
+              {isExternal ? (
+                <a className="updateMainLink" href={item.url} target="_blank" rel="noreferrer">
+                  <SavedItemBody item={item} />
+                  <ExternalLink className="sourceOpen" size={16} />
+                </a>
+              ) : (
+                <button
+                  className="updateMainLink"
+                  onClick={() => postId && onOpenPost(postId)}
+                  disabled={!postId}
+                >
+                  <SavedItemBody item={item} />
+                </button>
+              )}
+              <button className="saveButton" onClick={() => remove.mutate(item.id)} disabled={remove.isPending} title="삭제">
+                <Trash2 size={16} />
+              </button>
+            </article>
+          )
+        })}
+      </div>
+      {!savedItems.isLoading && savedItems.data?.length === 0 && (
+        <div className="emptyState">
+          <Bookmark size={24} />
+          <p>아직 저장한 항목이 없습니다.</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SavedItemBody({ item }: { item: SavedItem }) {
+  return (
+    <>
+      <div className="updateThumb">
+        {item.thumbnail_url ? <img src={item.thumbnail_url} alt="" loading="lazy" /> : <Bookmark size={24} />}
+      </div>
+      <div className="updateBody">
+        <div className="updateMeta">
+          <span className={`typeBadge ${item.item_type}`}>{item.source_label || item.item_type}</span>
+          <span>{formatDateTime(item.saved_at)}</span>
+        </div>
+        <strong>{item.title}</strong>
+      </div>
+    </>
   )
 }
 

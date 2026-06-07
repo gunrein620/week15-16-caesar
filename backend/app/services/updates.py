@@ -1,8 +1,6 @@
 from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
 from html import unescape
 import re
-from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -11,6 +9,7 @@ from app.models import (
     Artist,
     ArtistKeyword,
     Briefing,
+    ExternalUpdate,
     Member,
     Post,
     PostTag,
@@ -19,8 +18,6 @@ from app.models import (
     YoutubeVideoSource,
 )
 from app.schemas import UpdateFeedItem, UpdateFeedResponse
-from app.services.link_preview import resolve_page_thumbnail
-from app.services.naver import naver_blog_search, naver_news_search
 
 
 TAG_RE = re.compile(r"<[^>]+>")
@@ -30,20 +27,19 @@ def _clean(value: str | None) -> str:
     return TAG_RE.sub("", unescape(value or "")).strip()
 
 
+def _excerpt(value: str, max_length: int = 260) -> str:
+    normalized = " ".join(_clean(value).split())
+    if len(normalized) <= max_length:
+        return normalized
+    return f"{normalized[:max_length].rstrip()}..."
+
+
 def _aware(value: datetime | None) -> datetime:
     if value is None:
         return datetime.now(UTC)
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value
-
-
-def _parse_naver_date(item: dict[str, Any]) -> datetime:
-    if item.get("pubDate"):
-        return _aware(parsedate_to_datetime(item["pubDate"]))
-    if item.get("postdate"):
-        return datetime.strptime(item["postdate"], "%Y%m%d").replace(tzinfo=UTC)
-    return datetime.now(UTC)
 
 
 def _matches(text: str, candidates: list[str]) -> list[str]:
@@ -98,6 +94,7 @@ def get_artist_updates(
     keyword: str | None = None,
     query: str | None = None,
     limit: int = 30,
+    cursor: str | None = None,
 ) -> UpdateFeedResponse:
     artist = db.get(Artist, artist_id)
     if artist is None:
@@ -116,7 +113,7 @@ def get_artist_updates(
         .join(YoutubeSource)
         .where(YoutubeSource.artist_id == artist_id)
         .order_by(YoutubeVideo.published_at.desc().nullslast())
-        .limit(30)
+        .limit(200)
     ).all()
     for video in videos:
         text = f"{video.title}\n{video.description}\n{video.channel_title}"
@@ -151,8 +148,9 @@ def get_artist_updates(
                 id=f"briefing:{briefing.id}",
                 item_type="briefing",
                 title="오늘의 리센느 요약",
-                description=_clean(post.content),
+                description=_excerpt(post.content),
                 url=f"/posts/{post.id}",
+                thumbnail_url=post.thumbnail_url,
                 source_label="Briefing",
                 published_at=_aware(post.created_at),
                 comment_count=len(post.comments),
@@ -171,7 +169,7 @@ def get_artist_updates(
             )
             .where(Post.artist_id == artist_id)
             .order_by(Post.created_at.desc())
-            .limit(30)
+            .limit(200)
         )
         .unique()
         .all()
@@ -186,8 +184,9 @@ def get_artist_updates(
                 id=f"post:{post.id}",
                 item_type="post",
                 title=post.title,
-                description=_clean(post.content),
+                description=_excerpt(post.content),
                 url=f"/posts/{post.id}",
+                thumbnail_url=post.thumbnail_url,
                 source_label="Fan post",
                 published_at=_aware(post.created_at),
                 comment_count=len(post.comments),
@@ -197,49 +196,29 @@ def get_artist_updates(
             )
         )
 
-    naver_available = True
     if source in {None, "naver", "naver_news", "naver_blog"}:
-        try:
-            for item in naver_news_search(artist.name, display=3):
-                title = _clean(item.get("title"))
-                description = _clean(item.get("description"))
-                url = item.get("originallink") or item.get("link") or ""
-                text = f"{title}\n{description}"
-                items.append(
-                    UpdateFeedItem(
-                        id=f"naver_news:{item.get('link', title)}",
-                        item_type="naver_news",
-                        title=title,
-                        description=description,
-                        url=url,
-                        thumbnail_url=resolve_page_thumbnail(url),
-                        source_label="Naver News",
-                        published_at=_parse_naver_date(item),
-                        matched_keywords=_matches(text, artist_keywords + ([keyword] if keyword else [])),
-                        member_names=_matches(text, members),
-                    )
+        external_rows = db.scalars(
+            select(ExternalUpdate)
+            .where(ExternalUpdate.artist_id == artist_id)
+            .order_by(ExternalUpdate.published_at.desc())
+            .limit(200)
+        ).all()
+        for row in external_rows:
+            text = f"{row.title}\n{row.description}\n{row.source_label}"
+            items.append(
+                UpdateFeedItem(
+                    id=f"{row.source_type}:{row.id}",
+                    item_type=row.source_type,
+                    title=row.title,
+                    description=_excerpt(row.description),
+                    url=row.url,
+                    thumbnail_url=row.thumbnail_url,
+                    source_label=row.source_label,
+                    published_at=_aware(row.published_at),
+                    matched_keywords=_matches(text, artist_keywords + ([keyword] if keyword else [])),
+                    member_names=_matches(text, members),
                 )
-            for item in naver_blog_search(artist.name, display=3):
-                title = _clean(item.get("title"))
-                description = _clean(item.get("description"))
-                url = item.get("link") or ""
-                text = f"{title}\n{description}"
-                items.append(
-                    UpdateFeedItem(
-                        id=f"naver_blog:{item.get('link', title)}",
-                        item_type="naver_blog",
-                        title=title,
-                        description=description,
-                        url=url,
-                        thumbnail_url=resolve_page_thumbnail(url),
-                        source_label="Naver Blog",
-                        published_at=_parse_naver_date(item),
-                        matched_keywords=_matches(text, artist_keywords + ([keyword] if keyword else [])),
-                        member_names=_matches(text, members),
-                    )
-                )
-        except Exception:
-            naver_available = False
+            )
 
     filtered = [
         item
@@ -247,8 +226,17 @@ def get_artist_updates(
         if _item_passes(item, source=source, member=member, keyword=keyword, query=query)
     ]
     filtered.sort(key=lambda item: item.published_at, reverse=True)
+    if cursor:
+        try:
+            cursor_index = next(index for index, item in enumerate(filtered) if item.id == cursor)
+            filtered = filtered[cursor_index + 1 :]
+        except StopIteration:
+            filtered = []
+    page_items = filtered[:limit]
     return UpdateFeedResponse(
         artist_id=artist_id,
-        items=filtered[:limit],
-        naver_available=naver_available,
+        items=page_items,
+        naver_available=True,
+        next_cursor=page_items[-1].id if len(filtered) > limit and page_items else None,
+        has_more=len(filtered) > limit,
     )

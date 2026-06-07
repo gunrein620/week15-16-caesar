@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy import (
     CheckConstraint,
@@ -50,6 +50,9 @@ class User(Base, TimestampMixin):
 
     posts: Mapped[list["Post"]] = relationship(back_populates="author")
     comments: Mapped[list["Comment"]] = relationship(back_populates="author")
+    saved_items: Mapped[list["SavedItem"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
     auth_identities: Mapped[list["AuthIdentity"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
@@ -93,6 +96,9 @@ class Artist(Base, TimestampMixin):
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
 
     posts: Mapped[list["Post"]] = relationship(back_populates="artist")
+    external_updates: Mapped[list["ExternalUpdate"]] = relationship(
+        back_populates="artist", cascade="all, delete-orphan"
+    )
     members: Mapped[list["Member"]] = relationship(
         back_populates="artist", cascade="all, delete-orphan"
     )
@@ -134,8 +140,11 @@ class Post(Base, TimestampMixin):
     __tablename__ = "posts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    category: Mapped[str] = mapped_column(String(40), default="자유", nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    thumbnail_url: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    embeds: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
     author_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), index=True)
 
@@ -148,6 +157,57 @@ class Post(Base, TimestampMixin):
     rag_chunks: Mapped[list["RagChunk"]] = relationship(
         back_populates="post", cascade="all, delete-orphan"
     )
+
+
+class ExternalUpdate(Base, TimestampMixin):
+    __tablename__ = "external_updates"
+    __table_args__ = (
+        UniqueConstraint("artist_id", "source_type", "external_id", name="uq_external_update_source"),
+        CheckConstraint(
+            "source_type IN ('naver_news', 'naver_blog')",
+            name="ck_external_update_source_type",
+        ),
+        CheckConstraint("length(trim(external_id)) > 0", name="ck_external_update_external_id"),
+        Index("ix_external_updates_artist_published", "artist_id", "published_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), index=True)
+    source_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    external_id: Mapped[str] = mapped_column(String(500), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    thumbnail_url: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    source_label: Mapped[str] = mapped_column(String(120), nullable=False)
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
+    artist: Mapped[Artist] = relationship(back_populates="external_updates")
+
+
+class SavedItem(Base, TimestampMixin):
+    __tablename__ = "saved_items"
+    __table_args__ = (
+        UniqueConstraint("user_id", "item_type", "item_key", name="uq_saved_item_user_target"),
+        CheckConstraint("length(trim(item_type)) > 0", name="ck_saved_item_type"),
+        CheckConstraint("length(trim(item_key)) > 0", name="ck_saved_item_key"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    item_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    item_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    url: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    thumbnail_url: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    source_label: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    saved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    user: Mapped[User] = relationship(back_populates="saved_items")
 
 
 class Comment(Base, TimestampMixin):

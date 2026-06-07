@@ -18,6 +18,7 @@ from app.schemas import AgentRunRead, BriefingPreviewResponse, PostRead
 from app.services.mcp_client import McpToolClient
 from app.services.quota import consume_ai_quota
 from app.services.rag import refresh_post_chunks, search_chunks
+from app.services.updates import get_artist_updates
 
 router = APIRouter(tags=["agent"])
 HTML_RE = re.compile(r"<[^>]+>")
@@ -154,6 +155,29 @@ def _briefing_markdown(
     return result["markdown"]
 
 
+def _briefing_source_cards(db: Session, artist_id: int, limit: int = 8) -> list[dict[str, Any]]:
+    feed = get_artist_updates(db, artist_id, limit=limit + 5)
+    cards: list[dict[str, Any]] = []
+    for item in feed.items:
+        if item.item_type == "briefing":
+            continue
+        cards.append(
+            {
+                "type": "source_card",
+                "item_type": item.item_type,
+                "title": item.title,
+                "description": _clip(item.description, 140),
+                "url": item.url,
+                "thumbnail_url": item.thumbnail_url,
+                "source_label": item.source_label,
+                "published_at": item.published_at.isoformat(),
+            }
+        )
+        if len(cards) >= limit:
+            break
+    return cards
+
+
 @router.post("/ai/briefing/preview", response_model=BriefingPreviewResponse)
 @limiter.limit("10/day")
 def preview_briefing(
@@ -184,6 +208,7 @@ def preview_briefing(
         preview_markdown=run.preview_markdown,
         briefing_date=run.briefing_date,
         briefing_type=run.briefing_type,
+        source_cards=_briefing_source_cards(db, artist_id),
     )
 
 
@@ -210,7 +235,16 @@ def publish_briefing(
     consume_ai_quota(db, user, "briefing_publish")
     artist = db.get(Artist, run.artist_id)
     title = f"{artist.name if artist else 'Artist'} {run.briefing_date} 브리핑"
-    post = Post(title=title, content=run.preview_markdown, author_id=user.id, artist_id=run.artist_id)
+    source_cards = _briefing_source_cards(db, run.artist_id)
+    post = Post(
+        category="브리핑",
+        title=title,
+        content=run.preview_markdown,
+        thumbnail_url=source_cards[0]["thumbnail_url"] if source_cards else "",
+        embeds=source_cards,
+        author_id=user.id,
+        artist_id=run.artist_id,
+    )
     db.add(post)
     db.flush()
     refresh_post_chunks(db, post)

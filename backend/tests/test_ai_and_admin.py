@@ -3,7 +3,15 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func, select
 
 from app.core.db import get_session_factory
-from app.models import AiUsageCounter, McpCallLog, Post, YoutubeSource
+from app.models import (
+    AiUsageCounter,
+    ExternalUpdate,
+    McpCallLog,
+    Post,
+    YoutubeSource,
+    YoutubeVideo,
+    YoutubeVideoSource,
+)
 from app.services.mcp_client import McpToolClient
 from tests.conftest import login, signup
 
@@ -82,18 +90,66 @@ def test_sync_and_briefing_are_admin_only(client):
 
     admin_token = login(client, "admin@example.com", "admin-password")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    with get_session_factory()() as db:
+        source = YoutubeSource(
+            artist_id=1,
+            source_type="curated_video",
+            source_value="briefing-video",
+            title="official",
+            last_synced_at=datetime.now(UTC),
+        )
+        video = YoutubeVideo(
+            id="briefing-video",
+            title="RESCENE briefing video",
+            description="오늘 볼 영상",
+            channel_title="RESCENE",
+            published_at=datetime.now(UTC),
+            thumbnail_url="https://img.example.com/briefing.jpg",
+            url="https://youtube.example.com/briefing-video",
+            view_count=100,
+            content_hash="briefing-video-hash",
+        )
+        db.add_all(
+            [
+                source,
+                video,
+                ExternalUpdate(
+                    artist_id=1,
+                    source_type="naver_news",
+                    external_id="briefing-news",
+                    title="RESCENE briefing news",
+                    description="읽기 좋은 기사 요약",
+                    url="https://news.example.com/briefing",
+                    thumbnail_url="https://img.example.com/news.jpg",
+                    source_label="Naver News",
+                    published_at=datetime.now(UTC),
+                    content_hash="briefing-news-hash",
+                    raw_payload={},
+                ),
+            ]
+        )
+        db.flush()
+        db.add(YoutubeVideoSource(video_id=video.id, source_id=source.id))
+        db.commit()
+
     preview = client.post("/ai/briefing/preview", headers=admin_headers)
     assert preview.status_code == 200, preview.text
     preview_markdown = preview.json()["preview_markdown"]
+    source_cards = preview.json()["source_cards"]
     assert "핵심 요약" in preview_markdown
     assert "최근 영상" in preview_markdown
     assert "팬 반응" in preview_markdown
     assert "Naver 소식" in preview_markdown
     assert not any(line.startswith("#") for line in preview_markdown.splitlines())
+    assert {"youtube", "naver_news"} <= {card["item_type"] for card in source_cards}
+    assert all(card["url"] for card in source_cards)
     run_id = preview.json()["run_id"]
 
     publish = client.post(f"/ai/briefing/{run_id}/publish", headers=admin_headers)
     assert publish.status_code == 200, publish.text
+    published_body = publish.json()
+    assert published_body["category"] == "브리핑"
+    assert any(embed["type"] == "source_card" for embed in published_body["embeds"])
     with get_session_factory()() as db:
         publish_features = set(db.scalars(select(AiUsageCounter.feature)).all())
     assert "briefing_publish" in publish_features
