@@ -1539,11 +1539,51 @@ button:disabled {
   .updateCard {
     gap: 10px;
     grid-template-columns: minmax(0, 1fr) 40px;
-    min-height: 104px;
+    min-height: 92px;
+  }
+
+  .updateMainLink {
+    grid-template-columns: 104px minmax(0, 1fr);
+  }
+
+  .updateThumb {
+    align-self: center;
+    aspect-ratio: 16 / 9;
+    min-height: 0;
   }
 
   .updateBody {
-    padding: 10px 10px 10px 0;
+    gap: 6px;
+    justify-content: center;
+    min-height: 92px;
+    padding: 9px 10px 9px 0;
+  }
+
+  .updateBody strong {
+    display: -webkit-box;
+    font-size: 15px;
+    line-height: 1.35;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .updateBody p {
+    display: none;
+  }
+
+  .updateMeta,
+  .updateFoot {
+    max-height: 24px;
+    overflow: hidden;
+  }
+
+  .updateFoot {
+    margin-top: 0;
+  }
+
+  .updateFoot em:nth-of-type(n + 3) {
+    display: none;
   }
 
   .sourceBody strong {
