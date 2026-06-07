@@ -186,6 +186,109 @@ def test_updates_feed_filters_by_member_keyword_and_source(client):
     assert {item["item_type"] for item in source_response.json()["items"]} == {"youtube"}
 
 
+def test_updates_feed_member_filter_does_not_match_liv_inside_live(client):
+    with get_session_factory()() as db:
+        source = YoutubeSource(
+            artist_id=1,
+            source_type="curated_video",
+            source_value="member-boundary-video",
+            title="official",
+        )
+        live_video = YoutubeVideo(
+            id="member-boundary-live",
+            title="Woni radio live",
+            description="원이 라디오 라이브",
+            channel_title="RESCENE",
+            published_at=datetime(2030, 6, 6, 13, tzinfo=UTC),
+            thumbnail_url="",
+            url="https://youtube.example.com/member-boundary-live",
+            view_count=77,
+            content_hash="member-boundary-live-hash",
+        )
+        liv_video = YoutubeVideo(
+            id="member-boundary-liv",
+            title="리브 radio clip",
+            description="RESCENE Liv solo moment",
+            channel_title="RESCENE",
+            published_at=datetime(2030, 6, 6, 12, tzinfo=UTC),
+            thumbnail_url="",
+            url="https://youtube.example.com/member-boundary-liv",
+            view_count=55,
+            content_hash="member-boundary-liv-hash",
+        )
+        title_member_video = YoutubeVideo(
+            id="member-boundary-woni-title",
+            title="리센느 원이 데자부",
+            description="#LIV #리브 #MAY #메이 #ZENA #제나",
+            channel_title="RESCENE",
+            published_at=datetime(2030, 6, 6, 11, tzinfo=UTC),
+            thumbnail_url="",
+            url="https://youtube.example.com/member-boundary-woni-title",
+            view_count=44,
+            content_hash="member-boundary-woni-title-hash",
+        )
+        db.add_all([source, live_video, liv_video, title_member_video])
+        db.flush()
+        db.add_all(
+            [
+                YoutubeVideoSource(video_id=live_video.id, source_id=source.id),
+                YoutubeVideoSource(video_id=liv_video.id, source_id=source.id),
+                YoutubeVideoSource(video_id=title_member_video.id, source_id=source.id),
+            ]
+        )
+        db.commit()
+
+    response = client.get("/artists/1/updates", params={"member": "Liv"})
+    woni_response = client.get("/artists/1/updates", params={"member": "Woni"})
+
+    assert response.status_code == 200, response.text
+    ids = {item["id"] for item in response.json()["items"]}
+    assert "youtube:member-boundary-liv" in ids
+    assert "youtube:member-boundary-live" not in ids
+    assert "youtube:member-boundary-woni-title" not in ids
+    assert woni_response.status_code == 200, woni_response.text
+    assert "youtube:member-boundary-woni-title" in {
+        item["id"] for item in woni_response.json()["items"]
+    }
+
+
+def test_updates_feed_keyword_filter_supports_korean_ui_aliases(client):
+    with get_session_factory()() as db:
+        source = YoutubeSource(
+            artist_id=1,
+            source_type="curated_video",
+            source_value="keyword-alias-video",
+            title="official",
+        )
+        video = YoutubeVideo(
+            id="keyword-alias-video",
+            title="RESCENE comeback stage fancam",
+            description="radio performance",
+            channel_title="RESCENE",
+            published_at=datetime(2030, 6, 6, 13, tzinfo=UTC),
+            thumbnail_url="",
+            url="https://youtube.example.com/keyword-alias-video",
+            view_count=77,
+            content_hash="keyword-alias-video-hash",
+        )
+        db.add_all([source, video])
+        db.flush()
+        db.add(YoutubeVideoSource(video_id=video.id, source_id=source.id))
+        db.commit()
+
+    comeback_response = client.get("/artists/1/updates", params={"keyword": "컴백"})
+    fancam_response = client.get("/artists/1/updates", params={"keyword": "직캠"})
+
+    assert comeback_response.status_code == 200, comeback_response.text
+    assert "youtube:keyword-alias-video" in {
+        item["id"] for item in comeback_response.json()["items"]
+    }
+    assert fancam_response.status_code == 200, fancam_response.text
+    assert "youtube:keyword-alias-video" in {
+        item["id"] for item in fancam_response.json()["items"]
+    }
+
+
 def test_updates_feed_filters_loose_naver_blog_snippet_matches(client):
     with get_session_factory()() as db:
         db.add_all(
