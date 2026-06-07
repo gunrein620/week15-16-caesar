@@ -64,6 +64,7 @@ import {
 } from './archiveSearch'
 import { buildFeedFooterParts, buildFeedMetaParts } from './feedMeta'
 import { sortYoutubeVideos, type VideoSort } from './videoSorting'
+import { youtubeAppUrl } from './youtubeLinks'
 import { buildYoutubeSourcePayload } from './youtubeSourceForm'
 
 type AuthMode = 'login' | 'signup'
@@ -158,6 +159,23 @@ function archiveTermTypeLabel(type: ArtistArchiveTerm['term_type']) {
 function postIdFromUrl(url: string) {
   const match = url.match(/^\/posts\/(\d+)$/)
   return match ? Number(match[1]) : null
+}
+
+function YoutubeAppLink({ url, className = 'youtubeAppButton' }: { url: string; className?: string }) {
+  const appUrl = youtubeAppUrl(url)
+  if (!appUrl) return null
+  return (
+    <a
+      className={className}
+      href={appUrl}
+      onClick={(event) => event.stopPropagation()}
+      title="YouTube 앱으로 열기"
+      aria-label="YouTube 앱으로 열기"
+    >
+      <PlayCircle size={16} />
+      <span>앱</span>
+    </a>
+  )
 }
 
 export default function App() {
@@ -679,6 +697,7 @@ function UpdateFeedCard({
 }) {
   const postId = postIdFromUrl(item.url)
   const isExternal = item.url.startsWith('http')
+  const isYoutube = item.item_type === 'youtube'
   const label =
     item.item_type === 'youtube'
       ? 'YouTube'
@@ -745,9 +764,12 @@ function UpdateFeedCard({
           {body}
         </button>
       )}
-      <button className="saveButton" onClick={onSave} disabled={savePending} title="저장">
-        <Bookmark size={16} />
-      </button>
+      <div className={isYoutube ? 'cardActions multi' : 'cardActions'}>
+        {isYoutube && <YoutubeAppLink url={item.url} />}
+        <button className="saveButton" onClick={onSave} disabled={savePending} title="저장">
+          <Bookmark size={16} />
+        </button>
+      </div>
     </article>
   )
 }
@@ -1584,6 +1606,7 @@ function archiveSourceTypeLabel(source: QaSource) {
 
 function SourceCard({ source, onOpenPost }: { source: QaSource; onOpenPost: (postId: number) => void }) {
   const isExternal = source.url.startsWith('http')
+  const isYoutube = source.source_type === 'youtube'
   const display = buildArchiveSourceDisplay(source)
   const metaParts = [
     source.channel_title || source.source_label || '',
@@ -1611,10 +1634,13 @@ function SourceCard({ source, onOpenPost }: { source: QaSource; onOpenPost: (pos
   )
   if (isExternal) {
     return (
-      <a className="sourceCard" href={source.url} target="_blank" rel="noreferrer">
-        {body}
-        <ExternalLink className="sourceOpen" size={16} />
-      </a>
+      <article className={isYoutube ? 'sourceCard sourceCardShell sourceCardWithActions' : 'sourceCard sourceCardShell'}>
+        <a className="sourceMainLink" href={source.url} target="_blank" rel="noreferrer">
+          {body}
+          <ExternalLink className="sourceOpen" size={16} />
+        </a>
+        {isYoutube && <YoutubeAppLink url={source.url} className="youtubeAppButton sourceAppButton" />}
+      </article>
     )
   }
   return (
@@ -1763,25 +1789,28 @@ function YoutubePanel({ token, user }: { token: string | null; user?: User }) {
       </div>
       <div className="videoGrid">
         {sortedVideos.map((video) => (
-          <a key={video.id} className="videoItem" href={video.url} target="_blank" rel="noreferrer">
-            <div className="videoThumb">
-              {video.thumbnail_url ? (
-                <img src={video.thumbnail_url} alt="" loading="lazy" />
-              ) : (
-                <PlayCircle size={24} />
-              )}
-            </div>
-            <div className="videoBody">
-              <strong>{video.title}</strong>
-              <small>{video.channel_title}</small>
-              <span className="videoStats">
-                <Eye size={14} />
-                {formatNumber(video.view_count)}
-                <CalendarDays size={14} />
-                {formatDate(video.published_at)}
-              </span>
-            </div>
-          </a>
+          <article key={video.id} className="videoItem">
+            <a className="videoMainLink" href={video.url} target="_blank" rel="noreferrer">
+              <div className="videoThumb">
+                {video.thumbnail_url ? (
+                  <img src={video.thumbnail_url} alt="" loading="lazy" />
+                ) : (
+                  <PlayCircle size={24} />
+                )}
+              </div>
+              <div className="videoBody">
+                <strong>{video.title}</strong>
+                <small>{video.channel_title}</small>
+                <span className="videoStats">
+                  <Eye size={14} />
+                  {formatNumber(video.view_count)}
+                  <CalendarDays size={14} />
+                  {formatDate(video.published_at)}
+                </span>
+              </div>
+            </a>
+            <YoutubeAppLink url={video.url} className="youtubeAppButton videoAppButton" />
+          </article>
         ))}
       </div>
       {!videos.isLoading && !videos.data?.length && <p className="muted">No cached videos yet.</p>}
@@ -1917,6 +1946,7 @@ function SavedPanel({
         {savedItems.data?.map((item) => {
           const postId = postIdFromUrl(item.url)
           const isExternal = item.url.startsWith('http')
+          const isYoutube = item.item_type === 'youtube'
           return (
             <article className="updateCard" key={item.id}>
               {isExternal ? (
@@ -1933,9 +1963,12 @@ function SavedPanel({
                   <SavedItemBody item={item} />
                 </button>
               )}
-              <button className="saveButton" onClick={() => remove.mutate(item.id)} disabled={remove.isPending} title="삭제">
-                <Trash2 size={16} />
-              </button>
+              <div className={isYoutube ? 'cardActions multi' : 'cardActions'}>
+                {isYoutube && <YoutubeAppLink url={item.url} />}
+                <button className="saveButton" onClick={() => remove.mutate(item.id)} disabled={remove.isPending} title="삭제">
+                  <Trash2 size={16} />
+                </button>
+              </div>
             </article>
           )
         })}

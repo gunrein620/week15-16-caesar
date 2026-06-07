@@ -677,18 +677,48 @@ h2 {
   width: 100%;
 }
 
-.saveButton {
-  align-items: center;
+.cardActions {
   align-self: stretch;
   background: #f6f8f4;
-  border: 0;
   border-left: 1px solid #e0e6df;
-  color: #49624f;
-  display: flex;
-  justify-content: center;
+  display: grid;
+  grid-template-rows: 1fr;
   min-width: 42px;
 }
 
+.cardActions.multi {
+  grid-template-rows: auto 1fr;
+}
+
+.youtubeAppButton,
+.saveButton {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: #49624f;
+  display: flex;
+  gap: 3px;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.youtubeAppButton {
+  border-bottom: 1px solid #e0e6df;
+  font-size: 11px;
+  font-weight: 700;
+  min-height: 36px;
+  padding: 0 4px;
+}
+
+.youtubeAppButton span {
+  line-height: 1;
+}
+
+.saveButton {
+  min-height: 42px;
+}
+
+.youtubeAppButton:hover,
 .saveButton:hover {
   background: #e8f0ea;
   color: #17201b;
@@ -1057,6 +1087,34 @@ textarea {
   cursor: default;
 }
 
+.sourceCardShell {
+  gap: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.sourceCardWithActions {
+  grid-template-columns: minmax(0, 1fr) 44px;
+}
+
+.sourceMainLink {
+  align-items: center;
+  color: inherit;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 112px minmax(0, 1fr) 18px;
+  min-height: 92px;
+  text-decoration: none;
+  width: 100%;
+}
+
+.sourceAppButton {
+  align-self: stretch;
+  border-bottom: 0;
+  border-left: 1px solid #e0e6df;
+  flex-direction: column;
+  min-height: 100%;
+}
+
 .sourceThumb,
 .videoThumb {
   align-items: center;
@@ -1167,10 +1225,16 @@ textarea {
   color: inherit;
   display: grid;
   gap: 0;
-  grid-template-columns: 112px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 44px;
   min-height: 96px;
   overflow: hidden;
   padding: 0;
+}
+
+.videoMainLink {
+  color: inherit;
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
   text-decoration: none;
 }
 
@@ -1191,6 +1255,14 @@ textarea {
   display: flex;
   gap: 5px;
   margin-top: auto;
+}
+
+.videoAppButton {
+  align-self: stretch;
+  border-bottom: 0;
+  border-left: 1px solid #e0e6df;
+  flex-direction: column;
+  min-height: 100%;
 }
 
 .briefingHeader {
@@ -1545,14 +1617,28 @@ button:disabled {
 
 @media (max-width: 520px) {
   .sourceCard,
-  .videoItem,
+  .sourceMainLink,
+  .videoMainLink,
   .updateMainLink,
   .embedCard {
     grid-template-columns: 96px minmax(0, 1fr);
   }
 
+  .sourceCardShell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sourceCardWithActions,
+  .videoItem {
+    grid-template-columns: minmax(0, 1fr) 40px;
+  }
+
   .sourceCard {
     gap: 10px;
+  }
+
+  .sourceCardShell {
+    gap: 0;
   }
 
   .sourceOpen {
