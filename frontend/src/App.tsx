@@ -9,8 +9,10 @@ import {
   Eye,
   FileText,
   Gauge,
+  Home,
   LogIn,
   LogOut,
+  MessageSquare,
   MessageSquarePlus,
   PlayCircle,
   RefreshCw,
@@ -45,9 +47,15 @@ import {
   YoutubeVideo,
   api,
 } from './api'
+import {
+  MOBILE_BOTTOM_TAB_PANELS,
+  nextBoardMode,
+  shouldShowDesktopBoardSidebar,
+  type AppPanel,
+  type BoardMode,
+} from './boardNavigation'
 
 type AuthMode = 'login' | 'signup'
-type Panel = 'home' | 'board' | 'rag' | 'youtube' | 'briefing' | 'saved' | 'admin'
 type VideoSort = 'latest' | 'views' | 'title'
 type FeedSource = 'all' | 'youtube' | 'naver' | 'briefing' | 'post'
 
@@ -111,7 +119,8 @@ function postIdFromUrl(url: string) {
 export default function App() {
   const queryClient = useQueryClient()
   const [token, setToken] = useStoredToken()
-  const [panel, setPanel] = useState<Panel>('home')
+  const [panel, setPanel] = useState<AppPanel>('home')
+  const [boardMode, setBoardMode] = useState<BoardMode>('list')
   const [selectedPostId, setSelectedPostId] = useState<number | null>(null)
   const [search, setSearch] = useState('')
   const [tagFilter, setTagFilter] = useState('')
@@ -182,6 +191,26 @@ export default function App() {
   }
 
   const requireAuth = () => setAuthOpen(true)
+  const openPanel = (nextPanel: AppPanel) => {
+    setPanel(nextPanel)
+    if (nextPanel === 'board') setBoardMode('list')
+  }
+  const openPost = (postId: number) => {
+    setSelectedPostId(postId)
+    setBoardMode((current) => nextBoardMode(current, 'open-post'))
+    setPanel('board')
+  }
+  const showSideBoard =
+    shouldShowDesktopBoardSidebar(panel) &&
+    !(panel === 'board' && ['list', 'write', 'edit'].includes(boardMode))
+  const layoutClassName = [
+    'layout',
+    panel === 'home' ? 'homeLayout' : '',
+    !showSideBoard ? 'singlePane' : '',
+    panel === 'board' ? `boardLayout board-${boardMode}` : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return (
     <div className="shell">
@@ -223,26 +252,26 @@ export default function App() {
       </header>
 
       <nav className="tabs">
-        <button className={panel === 'home' ? 'active' : ''} onClick={() => setPanel('home')}>
+        <button className={panel === 'home' ? 'active' : ''} onClick={() => openPanel('home')}>
           홈
         </button>
-        <button className={panel === 'board' ? 'active' : ''} onClick={() => setPanel('board')}>
+        <button className={panel === 'board' ? 'active' : ''} onClick={() => openPanel('board')}>
           팬 게시판
         </button>
-        <button className={panel === 'rag' ? 'active' : ''} onClick={() => setPanel('rag')}>
+        <button className={panel === 'rag' ? 'active' : ''} onClick={() => openPanel('rag')}>
           아카이브
         </button>
-        <button className={panel === 'youtube' ? 'active' : ''} onClick={() => setPanel('youtube')}>
+        <button className={panel === 'youtube' ? 'active' : ''} onClick={() => openPanel('youtube')}>
           YouTube
         </button>
-        <button className={panel === 'briefing' ? 'active' : ''} onClick={() => setPanel('briefing')}>
+        <button className={panel === 'briefing' ? 'active' : ''} onClick={() => openPanel('briefing')}>
           오늘의 요약
         </button>
-        <button className={panel === 'saved' ? 'active' : ''} onClick={() => setPanel('saved')}>
+        <button className={panel === 'saved' ? 'active' : ''} onClick={() => openPanel('saved')}>
           저장한 떡밥
         </button>
         {me.data?.role === 'admin' && (
-          <button className={panel === 'admin' ? 'active' : ''} onClick={() => setPanel('admin')}>
+          <button className={panel === 'admin' ? 'active' : ''} onClick={() => openPanel('admin')}>
             관리
           </button>
         )}
@@ -259,48 +288,39 @@ export default function App() {
         />
       )}
 
-      <main className={panel === 'home' ? 'layout homeLayout singlePane' : 'layout'}>
-        {panel !== 'home' && (
+      <main className={layoutClassName}>
+        {showSideBoard && (
         <section className="leftPane">
-          <div className="sideTitle">
-            <strong>팬 게시판</strong>
-            <span>후기와 댓글</span>
-          </div>
-          <div className="searchbar">
-            <Search size={17} />
-            <input
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value)
-                setPage(1)
-              }}
-              placeholder="검색"
-            />
-          </div>
-          <select
-            className="filterSelect"
-            value={tagFilter}
-            onChange={(event) => {
-              setTagFilter(event.target.value)
-              setPage(1)
-            }}
-          >
-            <option value="">All tags</option>
-            {tags.data?.map((tag) => (
-              <option key={tag.id} value={tag.name}>
-                {tag.name}
-              </option>
-            ))}
-          </select>
-          <PostListView
+          <BoardListPanel
+            compact
             posts={posts.data?.items ?? []}
             loading={posts.isLoading}
             selectedId={selectedPost?.id ?? null}
-            onSelect={setSelectedPostId}
             total={posts.data?.total ?? 0}
             page={page}
             pageSize={posts.data?.page_size ?? 10}
+            search={search}
+            tagFilter={tagFilter}
+            tags={tags.data ?? []}
+            user={me.data}
+            onSearchChange={(value) => {
+              setSearch(value)
+              setPage(1)
+            }}
+            onTagChange={(value) => {
+              setTagFilter(value)
+              setPage(1)
+            }}
+            onSelect={(id) => {
+              setSelectedPostId(id)
+              if (panel === 'board') setBoardMode('detail')
+            }}
             onPageChange={setPage}
+            onWrite={() => {
+              setPanel('board')
+              setBoardMode('write')
+            }}
+            onRequireAuth={requireAuth}
           />
         </section>
         )}
@@ -311,18 +331,39 @@ export default function App() {
               token={token}
               user={me.data}
               onRequireAuth={requireAuth}
-              onOpenPost={(postId) => {
-                setSelectedPostId(postId)
-                setPanel('board')
-              }}
+              onOpenPost={openPost}
             />
           )}
           {panel === 'board' && (
             <BoardPanel
               token={token}
               user={me.data}
+              mode={boardMode}
               post={selectedPost}
+              posts={posts.data?.items ?? []}
+              postsLoading={posts.isLoading}
+              selectedPostId={selectedPost?.id ?? null}
+              total={posts.data?.total ?? 0}
+              page={page}
+              pageSize={posts.data?.page_size ?? 10}
+              search={search}
+              tagFilter={tagFilter}
+              tags={tags.data ?? []}
               onRequireAuth={requireAuth}
+              onSearchChange={(value) => {
+                setSearch(value)
+                setPage(1)
+              }}
+              onTagChange={(value) => {
+                setTagFilter(value)
+                setPage(1)
+              }}
+              onSelectPost={openPost}
+              onPageChange={setPage}
+              onBackToList={() => setBoardMode((current) => nextBoardMode(current, 'back-to-list'))}
+              onStartWrite={() => setBoardMode((current) => nextBoardMode(current, 'start-write'))}
+              onStartEdit={() => setBoardMode((current) => nextBoardMode(current, 'start-edit'))}
+              onCancel={() => setBoardMode((current) => nextBoardMode(current, 'cancel'))}
               onChanged={() => {
                 void queryClient.invalidateQueries({ queryKey: ['posts'] })
                 void queryClient.invalidateQueries({ queryKey: ['post', selectedPost?.id] })
@@ -330,7 +371,14 @@ export default function App() {
                 void queryClient.invalidateQueries({ queryKey: ['comments', selectedPost?.id] })
                 void queryClient.invalidateQueries({ queryKey: ['tags'] })
               }}
-              onDeleted={() => setSelectedPostId(null)}
+              onSaved={(postId) => {
+                setSelectedPostId(postId)
+                setBoardMode((current) => nextBoardMode(current, 'saved'))
+              }}
+              onDeleted={() => {
+                setSelectedPostId(null)
+                setBoardMode((current) => nextBoardMode(current, 'deleted'))
+              }}
             />
           )}
           {panel === 'rag' && (
@@ -338,10 +386,7 @@ export default function App() {
               token={token}
               selectedPost={selectedPost}
               onRequireAuth={requireAuth}
-              onOpenPost={(postId) => {
-                setSelectedPostId(postId)
-                setPanel('board')
-              }}
+              onOpenPost={openPost}
             />
           )}
           {panel === 'youtube' && <YoutubePanel token={token} user={me.data} />}
@@ -351,16 +396,45 @@ export default function App() {
               token={token}
               user={me.data}
               onRequireAuth={requireAuth}
-              onOpenPost={(postId) => {
-                setSelectedPostId(postId)
-                setPanel('board')
-              }}
+              onOpenPost={openPost}
             />
           )}
           {panel === 'admin' && <AdminPanel token={token} user={me.data} />}
         </section>
       </main>
+      <BottomTabBar panel={panel} onSelect={openPanel} />
     </div>
+  )
+}
+
+const bottomTabMeta: Record<
+  (typeof MOBILE_BOTTOM_TAB_PANELS)[number],
+  { label: string; icon: typeof Home }
+> = {
+  home: { label: '홈', icon: Home },
+  board: { label: '게시판', icon: MessageSquare },
+  rag: { label: '검색', icon: Search },
+  youtube: { label: 'YouTube', icon: PlayCircle },
+  saved: { label: '저장', icon: Bookmark },
+}
+
+function BottomTabBar({ panel, onSelect }: { panel: AppPanel; onSelect: (panel: AppPanel) => void }) {
+  return (
+    <nav className="bottomTabBar" aria-label="모바일 하단 탭">
+      {MOBILE_BOTTOM_TAB_PANELS.map((tabPanel) => {
+        const Icon = bottomTabMeta[tabPanel].icon
+        return (
+          <button
+            key={tabPanel}
+            className={panel === tabPanel ? 'active' : ''}
+            onClick={() => onSelect(tabPanel)}
+          >
+            <Icon size={20} />
+            <span>{bottomTabMeta[tabPanel].label}</span>
+          </button>
+        )
+      })}
+    </nav>
   )
 }
 
@@ -800,7 +874,95 @@ function AuthPanel({
   )
 }
 
+function BoardListPanel({
+  compact = false,
+  posts,
+  loading,
+  selectedId,
+  total,
+  page,
+  pageSize,
+  search,
+  tagFilter,
+  tags,
+  user,
+  onSearchChange,
+  onTagChange,
+  onSelect,
+  onPageChange,
+  onWrite,
+  onRequireAuth,
+}: {
+  compact?: boolean
+  posts: Post[]
+  loading: boolean
+  selectedId: number | null
+  total: number
+  page: number
+  pageSize: number
+  search: string
+  tagFilter: string
+  tags: Tag[]
+  user?: User
+  onSearchChange: (value: string) => void
+  onTagChange: (value: string) => void
+  onSelect: (id: number) => void
+  onPageChange: (page: number) => void
+  onWrite: () => void
+  onRequireAuth: () => void
+}) {
+  return (
+    <section className={compact ? 'boardListPanel compact' : 'boardListPanel'}>
+      <div className="boardListHead">
+        <div>
+          <p className="eyebrow">RESCENE BOARD</p>
+          <h2>팬 게시판</h2>
+        </div>
+        <button
+          className="primary"
+          onClick={() => {
+            if (!user) {
+              onRequireAuth()
+              return
+            }
+            onWrite()
+          }}
+        >
+          <MessageSquarePlus size={17} />
+          글쓰기
+        </button>
+      </div>
+      <div className="boardListTools">
+        <div className="searchbar">
+          <Search size={17} />
+          <input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="검색" />
+        </div>
+        <select className="filterSelect" value={tagFilter} onChange={(event) => onTagChange(event.target.value)}>
+          <option value="">All tags</option>
+          {tags.map((tag) => (
+            <option key={tag.id} value={tag.name}>
+              {tag.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <PostListView
+        compact={compact}
+        posts={posts}
+        loading={loading}
+        selectedId={selectedId}
+        onSelect={onSelect}
+        total={total}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={onPageChange}
+      />
+    </section>
+  )
+}
+
 function PostListView({
+  compact = false,
   posts,
   loading,
   selectedId,
@@ -810,6 +972,7 @@ function PostListView({
   pageSize,
   onPageChange,
 }: {
+  compact?: boolean
   posts: Post[]
   loading: boolean
   selectedId: number | null
@@ -823,21 +986,23 @@ function PostListView({
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   return (
     <>
-      <div className="boardTable">
+      <div className={compact ? 'boardTable compact' : 'boardTable'}>
         <div className="boardHeader">
+          {!compact && <span>번호</span>}
           <span>분류</span>
           <span>제목</span>
-          <span>작성자</span>
+          {!compact && <span>작성자</span>}
           <span>댓글</span>
           <span>날짜</span>
         </div>
-        {posts.map((post) => (
+        {posts.map((post, index) => (
           <button
             key={post.id}
             type="button"
             className={post.id === selectedId ? 'boardRow selected' : 'boardRow'}
             onClick={() => onSelect(post.id)}
           >
+            {!compact && <span className="boardNumber">{Math.max(total - ((page - 1) * pageSize + index), 1)}</span>}
             <span className="boardCategory">{post.category}</span>
             <span className="boardTitleCell">
               <strong>{post.title}</strong>
@@ -850,9 +1015,9 @@ function PostListView({
                 </span>
               )}
             </span>
-            <span>{post.author.display_name}</span>
-            <span>{post.comment_count}</span>
-            <span>{formatDate(post.created_at)}</span>
+            {!compact && <span className="boardAuthor">{post.author.display_name}</span>}
+            <span className="boardComments">{post.comment_count}</span>
+            <span className="boardDate">{formatDate(post.created_at)}</span>
           </button>
         ))}
       </div>
@@ -884,16 +1049,54 @@ function PostListView({
 function BoardPanel({
   token,
   user,
+  mode,
   post,
+  posts,
+  postsLoading,
+  selectedPostId,
+  total,
+  page,
+  pageSize,
+  search,
+  tagFilter,
+  tags: tagOptions,
   onRequireAuth,
+  onSearchChange,
+  onTagChange,
+  onSelectPost,
+  onPageChange,
+  onBackToList,
+  onStartWrite,
+  onStartEdit,
+  onCancel,
   onChanged,
+  onSaved,
   onDeleted,
 }: {
   token: string | null
   user?: User
+  mode: BoardMode
   post: Post | null
+  posts: Post[]
+  postsLoading: boolean
+  selectedPostId: number | null
+  total: number
+  page: number
+  pageSize: number
+  search: string
+  tagFilter: string
+  tags: Tag[]
   onRequireAuth: () => void
+  onSearchChange: (value: string) => void
+  onTagChange: (value: string) => void
+  onSelectPost: (id: number) => void
+  onPageChange: (page: number) => void
+  onBackToList: () => void
+  onStartWrite: () => void
+  onStartEdit: () => void
+  onCancel: () => void
   onChanged: () => void
+  onSaved: (postId: number) => void
   onDeleted: () => void
 }) {
   const queryClient = useQueryClient()
@@ -901,13 +1104,11 @@ function BoardPanel({
   const [category, setCategory] = useState('자유')
   const [content, setContent] = useState('')
   const [tags, setTags] = useState('')
-  const [editing, setEditing] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editCategory, setEditCategory] = useState('자유')
   const [editContent, setEditContent] = useState('')
   const [editTags, setEditTags] = useState('')
   useEffect(() => {
-    setEditing(false)
     setEditTitle(post?.title ?? '')
     setEditCategory(post?.category ?? '자유')
     setEditContent(post?.content ?? '')
@@ -935,12 +1136,13 @@ function BoardPanel({
         },
         token,
       ),
-    onSuccess: () => {
+    onSuccess: (createdPost) => {
       setTitle('')
       setCategory('자유')
       setContent('')
       setTags('')
       onChanged()
+      onSaved(createdPost.id)
     },
   })
   const updatePost = useMutation({
@@ -958,9 +1160,9 @@ function BoardPanel({
         },
         token,
       ),
-    onSuccess: () => {
-      setEditing(false)
+    onSuccess: (updatedPost) => {
       onChanged()
+      onSaved(updatedPost.id)
     },
   })
   const deletePost = useMutation({
@@ -985,149 +1187,216 @@ function BoardPanel({
     },
   })
 
-  return (
-    <div className="stack">
-      {user && (
-        <form
-          className="composer"
-          onSubmit={(event) => {
-            event.preventDefault()
-            createPost.mutate()
-          }}
-        >
-          <div className="composerTop">
-            <select value={category} onChange={(event) => setCategory(event.target.value)}>
-              <option value="자유">자유</option>
-              <option value="질문">질문</option>
-              <option value="뉴스">뉴스</option>
-              <option value="영상">영상</option>
-              <option value="후기">후기</option>
-              <option value="정보">정보</option>
-            </select>
-            <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="제목을 입력해주세요" />
-          </div>
-          <textarea
-            value={content}
-            onChange={(event) => setContent(event.target.value)}
-            placeholder="내용을 입력해주세요. 이미지 URL, YouTube URL, 외부 링크는 저장 후 카드로 표시됩니다."
-          />
-          <UrlPreviewNote content={content} />
-          <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="태그, 태그" />
-          <button className="primary" disabled={createPost.isPending} title="글 작성">
-            <MessageSquarePlus size={17} />
-            글쓰기
-          </button>
-          {createPost.error && <p className="error">{createPost.error.message}</p>}
-        </form>
-      )}
-      {!user && (
-        <div className="emptyState compact">
-          <MessageSquarePlus size={22} />
-          <p>글쓰기와 댓글은 로그인 후 사용할 수 있습니다.</p>
+  if (mode === 'list') {
+    return (
+      <BoardListPanel
+        posts={posts}
+        loading={postsLoading}
+        selectedId={selectedPostId}
+        total={total}
+        page={page}
+        pageSize={pageSize}
+        search={search}
+        tagFilter={tagFilter}
+        tags={tagOptions}
+        user={user}
+        onSearchChange={onSearchChange}
+        onTagChange={onTagChange}
+        onSelect={onSelectPost}
+        onPageChange={onPageChange}
+        onWrite={onStartWrite}
+        onRequireAuth={onRequireAuth}
+      />
+    )
+  }
+
+  if (mode === 'write') {
+    if (!user) {
+      return (
+        <div className="emptyState">
+          <MessageSquarePlus size={24} />
+          <p>글쓰기는 로그인 후 사용할 수 있습니다.</p>
           <button className="primary" onClick={onRequireAuth}>
             <LogIn size={17} />
             로그인
           </button>
         </div>
-      )}
+      )
+    }
+    return (
+      <form
+        className="composer boardEditor"
+        onSubmit={(event) => {
+          event.preventDefault()
+          createPost.mutate()
+        }}
+      >
+        <div className="boardPageHead">
+          <div>
+            <p className="eyebrow">WRITE</p>
+            <h2>글쓰기</h2>
+          </div>
+          <button type="button" className="secondary" onClick={onCancel}>
+            목록으로
+          </button>
+        </div>
+        <div className="composerTop">
+          <select value={category} onChange={(event) => setCategory(event.target.value)}>
+            <option value="자유">자유</option>
+            <option value="질문">질문</option>
+            <option value="뉴스">뉴스</option>
+            <option value="영상">영상</option>
+            <option value="후기">후기</option>
+            <option value="정보">정보</option>
+          </select>
+          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="제목을 입력해주세요" />
+        </div>
+        <textarea
+          value={content}
+          onChange={(event) => setContent(event.target.value)}
+          placeholder="내용을 입력해주세요. 이미지 URL, YouTube URL, 외부 링크는 저장 후 카드로 표시됩니다."
+        />
+        <UrlPreviewNote content={content} />
+        <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="태그, 태그" />
+        <div className="editorActionBar">
+          <button type="button" className="secondary" onClick={onCancel}>
+            취소
+          </button>
+          <button className="primary" disabled={createPost.isPending} title="글 작성">
+            <MessageSquarePlus size={17} />
+            등록하기
+          </button>
+        </div>
+        {createPost.error && <p className="error">{createPost.error.message}</p>}
+      </form>
+    )
+  }
 
-      {post && (
-        <article className="postDetail">
-          <div className="postHead">
-            <div>
-              <span className="categoryBadge">{post.category}</span>
-              <h2>{post.title}</h2>
-              <div className="postMeta">
-                <span>{post.author.display_name}</span>
-                <span>{formatDate(post.created_at)}</span>
-                <span>댓글 {post.comment_count}</span>
-              </div>
-            </div>
+  if (!post) {
+    return (
+      <div className="emptyState">
+        <FileText size={24} />
+        <p>선택된 게시글이 없습니다.</p>
+        <button className="secondary" onClick={onBackToList}>
+          목록으로
+        </button>
+      </div>
+    )
+  }
+
+  if (mode === 'edit') {
+    return (
+      <form
+        className="composer boardEditor"
+        onSubmit={(event) => {
+          event.preventDefault()
+          updatePost.mutate()
+        }}
+      >
+        <div className="boardPageHead">
+          <div>
+            <p className="eyebrow">EDIT</p>
+            <h2>글 수정</h2>
           </div>
-          {(user?.id === post.author.id || user?.role === 'admin') && (
-            <div className="toolbar">
-              <button className="secondary" onClick={() => setEditing((value) => !value)} title="글 수정">
-                <Edit3 size={17} />
-                수정
-              </button>
-              <button
-                className="danger"
-                onClick={() => deletePost.mutate()}
-                disabled={deletePost.isPending}
-                title="글 삭제"
-              >
-                <Trash2 size={17} />
-                삭제
-              </button>
-            </div>
-          )}
-          {editing ? (
-            <form
-              className="composer"
-              onSubmit={(event) => {
-                event.preventDefault()
-                updatePost.mutate()
-              }}
-            >
-              <div className="composerTop">
-                <select value={editCategory} onChange={(event) => setEditCategory(event.target.value)}>
-                  <option value="자유">자유</option>
-                  <option value="질문">질문</option>
-                  <option value="뉴스">뉴스</option>
-                  <option value="영상">영상</option>
-                  <option value="후기">후기</option>
-                  <option value="정보">정보</option>
-                  <option value="브리핑">브리핑</option>
-                </select>
-                <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} placeholder="제목" />
-              </div>
-              <textarea value={editContent} onChange={(event) => setEditContent(event.target.value)} placeholder="내용" />
-              <UrlPreviewNote content={editContent} />
-              <input value={editTags} onChange={(event) => setEditTags(event.target.value)} placeholder="태그, 태그" />
-              <button className="primary" disabled={updatePost.isPending} title="수정 저장">
-                <Save size={17} />
-                저장
-              </button>
-            </form>
-          ) : (
-            <>
-              <LinkedText className="postContent" text={post.content} />
-              {post.embeds.length > 0 && <EmbedList embeds={post.embeds} onOpenPost={() => undefined} />}
-              <div className="tags">{post.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
-            </>
-          )}
-          {updatePost.error && <p className="error">{updatePost.error.message}</p>}
-          {deletePost.error && <p className="error">{deletePost.error.message}</p>}
-          <div className="comments">
-            {comments.data?.map((item) => (
-              <p key={item.id}>
-                <b>{item.author.display_name}</b> {item.content}
-              </p>
-            ))}
-          </div>
-          {user && (
-            <form
-              className="inlineForm"
-              onSubmit={(event) => {
-                event.preventDefault()
-                createComment.mutate()
-              }}
-            >
-              <input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="댓글" />
-              <button className="iconButton" title="댓글 작성">
-                <Send size={17} />
-              </button>
-            </form>
-          )}
-          {!user && (
-            <button className="secondary commentLogin" onClick={onRequireAuth}>
-              <LogIn size={17} />
-              로그인하고 댓글 쓰기
+          <button type="button" className="secondary" onClick={onCancel}>
+            취소
+          </button>
+        </div>
+        <div className="composerTop">
+          <select value={editCategory} onChange={(event) => setEditCategory(event.target.value)}>
+            <option value="자유">자유</option>
+            <option value="질문">질문</option>
+            <option value="뉴스">뉴스</option>
+            <option value="영상">영상</option>
+            <option value="후기">후기</option>
+            <option value="정보">정보</option>
+            <option value="브리핑">브리핑</option>
+          </select>
+          <input value={editTitle} onChange={(event) => setEditTitle(event.target.value)} placeholder="제목" />
+        </div>
+        <textarea value={editContent} onChange={(event) => setEditContent(event.target.value)} placeholder="내용" />
+        <UrlPreviewNote content={editContent} />
+        <input value={editTags} onChange={(event) => setEditTags(event.target.value)} placeholder="태그, 태그" />
+        <div className="editorActionBar">
+          <button type="button" className="secondary" onClick={onCancel}>
+            취소
+          </button>
+          <button className="primary" disabled={updatePost.isPending} title="수정 저장">
+            <Save size={17} />
+            저장
+          </button>
+        </div>
+        {updatePost.error && <p className="error">{updatePost.error.message}</p>}
+      </form>
+    )
+  }
+
+  return (
+    <article className="postDetail boardDetailPage">
+      <div className="boardPageHead">
+        <button className="secondary" onClick={onBackToList}>
+          목록으로
+        </button>
+        {(user?.id === post.author.id || user?.role === 'admin') && (
+          <div className="toolbar">
+            <button className="secondary" onClick={onStartEdit} title="글 수정">
+              <Edit3 size={17} />
+              수정
             </button>
-          )}
-        </article>
+            <button
+              className="danger"
+              onClick={() => deletePost.mutate()}
+              disabled={deletePost.isPending}
+              title="글 삭제"
+            >
+              <Trash2 size={17} />
+              삭제
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="postHead">
+        <div>
+          <span className="categoryBadge">{post.category}</span>
+          <h2>{post.title}</h2>
+          <div className="postMeta">
+            <span>{post.author.display_name}</span>
+            <span>{formatDate(post.created_at)}</span>
+            <span>댓글 {post.comment_count}</span>
+          </div>
+        </div>
+      </div>
+      <LinkedText className="postContent" text={post.content} />
+      {post.embeds.length > 0 && <EmbedList embeds={post.embeds} onOpenPost={() => undefined} />}
+      <div className="tags">{post.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
+      {deletePost.error && <p className="error">{deletePost.error.message}</p>}
+      <div className="comments">
+        {comments.data?.map((item) => (
+          <p key={item.id}>
+            <b>{item.author.display_name}</b> {item.content}
+          </p>
+        ))}
+      </div>
+      {user ? (
+        <form
+          className="inlineForm"
+          onSubmit={(event) => {
+            event.preventDefault()
+            createComment.mutate()
+          }}
+        >
+          <input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="댓글" />
+          <button className="iconButton" title="댓글 작성">
+            <Send size={17} />
+          </button>
+        </form>
+      ) : (
+        <button className="secondary commentLogin" onClick={onRequireAuth}>
+          <LogIn size={17} />
+          로그인하고 댓글 쓰기
+        </button>
       )}
-    </div>
+    </article>
   )
 }
 
