@@ -85,11 +85,21 @@ import { buildFeedFooterParts, buildFeedMetaParts } from './feedMeta'
 import { sortYoutubeVideos, type VideoSort } from './videoSorting'
 import { youtubeAppUrl } from './youtubeLinks'
 import { buildYoutubeSourcePayload } from './youtubeSourceForm'
-import { MEMBER_ORDER, memberColor, memberOn } from './memberColors'
+import { MEMBER_COLORS, MEMBER_ORDER, memberColor, memberOn } from './memberColors'
 
 type AuthMode = 'login' | 'signup'
 type FeedSource = 'all' | 'youtube' | 'naver' | 'briefing' | 'post'
 type Theme = 'light' | 'dark'
+
+const CATEGORY_COLORS: Record<string, { color: string; lightText: string; darkText: string }> = {
+  자유: { color: '#64748B', lightText: '#334155', darkText: '#CBD5E1' },
+  질문: { color: '#2563EB', lightText: '#1D4ED8', darkText: '#93C5FD' },
+  뉴스: { color: '#16A34A', lightText: '#166534', darkText: '#86EFAC' },
+  영상: { color: '#DC2626', lightText: '#B91C1C', darkText: '#FCA5A5' },
+  후기: { color: '#D97706', lightText: '#92400E', darkText: '#FCD34D' },
+  정보: { color: '#7C3AED', lightText: '#6D28D9', darkText: '#C4B5FD' },
+  브리핑: { color: 'var(--accent)', lightText: 'var(--accent)', darkText: 'var(--accent)' },
+}
 
 const youtubeSourceOptions: { value: YoutubeSourceType; label: string; placeholder: string }[] = [
   {
@@ -203,6 +213,38 @@ function MemberAvatar({ name, theme, size = 24 }: { name: string; theme: Theme; 
 
 function memberNamesText(names: string[]) {
   return names.length ? names.map(memberLabel).join(', ') : 'RESCENE'
+}
+
+function memberNamesFromText(...parts: Array<string | null | undefined>) {
+  const haystack = parts.filter(Boolean).join(' ').toLowerCase()
+  return MEMBER_ORDER.filter((name) => {
+    const member = MEMBER_COLORS[name]
+    return haystack.includes(name.toLowerCase()) || haystack.includes(member.ko)
+  })
+}
+
+function categoryBadgeStyle(category: string, theme: Theme) {
+  const palette = CATEGORY_COLORS[category] ?? CATEGORY_COLORS.자유
+  return {
+    '--cat-color': palette.color,
+    '--cat-text': theme === 'dark' ? palette.darkText : palette.lightText,
+  } as CSSProperties
+}
+
+function CategoryBadge({
+  category,
+  theme,
+  className = 'categoryBadge',
+}: {
+  category: string
+  theme: Theme
+  className?: string
+}) {
+  return (
+    <span className={className} style={categoryBadgeStyle(category, theme)}>
+      {category}
+    </span>
+  )
 }
 
 function archiveTermTypeLabel(type: ArtistArchiveTerm['term_type']) {
@@ -494,6 +536,7 @@ export default function App() {
             tagFilter={tagFilter}
             tags={tags.data ?? []}
             user={me.data}
+            theme={theme}
             onSearchChange={(value) => {
               setSearch(value)
               setPage(1)
@@ -555,6 +598,7 @@ export default function App() {
               search={search}
               tagFilter={tagFilter}
               tags={tags.data ?? []}
+              theme={theme}
               onRequireAuth={requireAuth}
               onRequireVerified={requireVerified}
               onSearchChange={(value) => {
@@ -597,12 +641,13 @@ export default function App() {
               onOpenPost={openPost}
             />
           )}
-          {panel === 'youtube' && <YoutubePanel token={token} user={me.data} />}
+          {panel === 'youtube' && <YoutubePanel token={token} user={me.data} theme={theme} />}
           {panel === 'briefing' && <BriefingPanel token={token} user={me.data} />}
           {panel === 'saved' && (
             <SavedPanel
               token={token}
               user={me.data}
+              theme={theme}
               onRequireAuth={requireAuth}
               onOpenPost={openPost}
             />
@@ -1229,6 +1274,7 @@ function BoardListPanel({
   tagFilter,
   tags,
   user,
+  theme,
   onSearchChange,
   onTagChange,
   onSelect,
@@ -1247,6 +1293,7 @@ function BoardListPanel({
   tagFilter: string
   tags: Tag[]
   user?: User
+  theme: Theme
   onSearchChange: (value: string) => void
   onTagChange: (value: string) => void
   onSelect: (id: number) => void
@@ -1294,6 +1341,7 @@ function BoardListPanel({
         posts={posts}
         loading={loading}
         selectedId={selectedId}
+        theme={theme}
         onSelect={onSelect}
         total={total}
         page={page}
@@ -1309,6 +1357,7 @@ function PostListView({
   posts,
   loading,
   selectedId,
+  theme,
   onSelect,
   total,
   page,
@@ -1319,6 +1368,7 @@ function PostListView({
   posts: Post[]
   loading: boolean
   selectedId: number | null
+  theme: Theme
   onSelect: (id: number) => void
   total: number
   page: number
@@ -1346,9 +1396,15 @@ function PostListView({
             onClick={() => onSelect(post.id)}
           >
             {!compact && <span className="boardNumber">{Math.max(total - ((page - 1) * pageSize + index), 1)}</span>}
-            <span className="boardCategory">{post.category}</span>
+            <CategoryBadge category={post.category} theme={theme} className="boardCategory" />
             <span className="boardTitleCell">
               <strong>{post.title}</strong>
+              <span className="boardMobileMeta">
+                <CategoryBadge category={post.category} theme={theme} className="boardCategory mobileCategory" />
+                <span>{post.author.display_name}</span>
+                <span>댓글 {post.comment_count}</span>
+                <span>{formatDate(post.created_at)}</span>
+              </span>
               {post.thumbnail_url && <small className="thumbMark">이미지/링크</small>}
               {post.tags.length > 0 && (
                 <span className="miniTags">
@@ -1403,6 +1459,7 @@ function BoardPanel({
   search,
   tagFilter,
   tags: tagOptions,
+  theme,
   onRequireAuth,
   onRequireVerified,
   onSearchChange,
@@ -1430,6 +1487,7 @@ function BoardPanel({
   search: string
   tagFilter: string
   tags: Tag[]
+  theme: Theme
   onRequireAuth: () => void
   onRequireVerified: () => boolean
   onSearchChange: (value: string) => void
@@ -1557,6 +1615,7 @@ function BoardPanel({
         tagFilter={tagFilter}
         tags={tagOptions}
         user={user}
+        theme={theme}
         onSearchChange={onSearchChange}
         onTagChange={onTagChange}
         onSelect={onSelectPost}
@@ -1718,7 +1777,7 @@ function BoardPanel({
       </div>
       <div className="postHead">
         <div>
-          <span className="categoryBadge">{post.category}</span>
+          <CategoryBadge category={post.category} theme={theme} />
           <h2>{post.title}</h2>
           <div className="postMeta">
             <span>{post.author.display_name}</span>
@@ -1731,13 +1790,21 @@ function BoardPanel({
       {post.embeds.length > 0 && <EmbedList embeds={post.embeds} onOpenPost={() => undefined} />}
       <div className="tags">{post.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
       {deletePost.error && <p className="error">{deletePost.error.message}</p>}
-      <div className="comments">
+      <section className="comments" aria-label="댓글">
+        <div className="commentsHead">
+          <strong>댓글</strong>
+          <span>{formatNumber(comments.data?.length ?? post.comment_count)}</span>
+        </div>
         {comments.data?.map((item) => (
-          <p key={item.id}>
-            <b>{item.author.display_name}</b> {item.content}
-          </p>
+          <article className="commentItem" key={item.id}>
+            <div>
+              <strong>{item.author.display_name}</strong>
+              <span>{formatDateTime(item.created_at)}</span>
+            </div>
+            <p>{item.content}</p>
+          </article>
         ))}
-      </div>
+      </section>
       {user ? (
         <form
           className="inlineForm"
@@ -1920,7 +1987,7 @@ function RagPanel({
   return (
     <div className="stack">
       <form
-        className="qaBox"
+        className="qaBox archiveSearchCard"
         onSubmit={(event) => {
           event.preventDefault()
           if (!token) {
@@ -1940,7 +2007,7 @@ function RagPanel({
       >
         <div>
           <p className="eyebrow">Archive search</p>
-          <h2>리센느 자료 검색</h2>
+          <h2 className="serif">리센느 자료 검색</h2>
         </div>
         <textarea
           value={question}
@@ -1955,7 +2022,7 @@ function RagPanel({
       </form>
       {qa.error && <p className="error">{qa.error.message}</p>}
       {qaResult && (
-        <section className="answer">
+        <section className="answer archiveResults">
           <h2>검색 결과</h2>
           {qaResult.answer && <ArchiveAnswerBlock answer={qaResult.answer} />}
           <div className="sourceCards">
@@ -2078,7 +2145,7 @@ function SourceCard({ source, onOpenPost }: { source: QaSource; onOpenPost: (pos
   )
 }
 
-function YoutubePanel({ token, user }: { token: string | null; user?: User }) {
+function YoutubePanel({ token, user, theme }: { token: string | null; user?: User; theme: Theme }) {
   const queryClient = useQueryClient()
   const [videoSort, setVideoSort] = useState<VideoSort>('latest')
   const videos = useQuery({
@@ -2150,93 +2217,15 @@ function YoutubePanel({ token, user }: { token: string | null; user?: User }) {
     return sortYoutubeVideos(videos.data ?? [], videoSort)
   }, [videos.data, videoSort])
   return (
-    <div className="stack">
-      {user?.role !== 'admin' && (
-        <div className="emptyState">
-          <ShieldCheck size={24} />
-          <p>관리자가 동기화한 YouTube 캐시를 보여줍니다.</p>
+    <div className="stack youtubePanel">
+      <div className="sectionHead">
+        <div>
+          <p className="eyebrow">YouTube</p>
+          <h2 className="serif">영상 모아보기</h2>
         </div>
-      )}
-      {user?.role === 'admin' && (
-        <form
-          className="sourceForm"
-          onSubmit={(event) => {
-            event.preventDefault()
-            addSource.mutate()
-          }}
-        >
-          <select
-            value={sourceType}
-            onChange={(event) => setSourceType(event.target.value as YoutubeSourceType)}
-          >
-            {youtubeSourceOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <input
-            value={sourceTitle}
-            onChange={(event) => setSourceTitle(event.target.value)}
-            placeholder={sourceType === 'keyword_search' ? '소스 이름 (비워두면 자동 생성)' : '소스 이름'}
-          />
-          <input
-            value={sourceValue}
-            onChange={(event) => setSourceValue(event.target.value)}
-            placeholder={selectedSourceOption?.placeholder ?? "channel or video id"}
-          />
-          <button className="secondary" disabled={addSource.isPending || !sourceValue.trim()} title="소스 추가">
-            <Upload size={17} />
-            Add
-          </button>
-          <button type="button" className="primary" onClick={() => sync.mutate()} disabled={sync.isPending} title="동기화">
-            <RefreshCw size={17} />
-            Sync
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => backfill.mutate()}
-            disabled={backfill.isPending}
-            title="데뷔일부터 과거 YouTube 자료 가져오기"
-          >
-            <RefreshCw size={17} />
-            Backfill
-          </button>
-        </form>
-      )}
-      {addSource.error && <p className="error">{addSource.error.message}</p>}
-      {sync.error && <p className="error">{sync.error.message}</p>}
-      {backfill.error && <p className="error">{backfill.error.message}</p>}
-      {backfillResult && (
-        <p className="hint">
-          Backfill: {formatNumber(backfillResult.created)} new, {formatNumber(backfillResult.updated)} updated,
-          {` ${formatNumber(backfillResult.pages_fetched)} pages`}
-          {backfillResult.has_more ? ' · 더 가져올 수 있음' : ' · 완료'}
-        </p>
-      )}
-      <div className="sourceList">
-        {sources.data?.map((source) => (
-          <span key={source.id}>
-            {source.title}
-            {source.backfill_status && source.backfill_status !== 'idle' && (
-              <em>{source.backfill_status}</em>
-            )}
-            {user?.role === 'admin' && (
-              <button
-                className="chipButton"
-                onClick={() => deleteSource.mutate(source.id)}
-                disabled={deleteSource.isPending}
-                title="소스 삭제"
-              >
-                <Trash2 size={13} />
-              </button>
-            )}
-          </span>
-        ))}
+        <span className="feedCount">{formatNumber(videos.data?.length ?? 0)} videos</span>
       </div>
       <div className="videoToolbar">
-        <span>{formatNumber(videos.data?.length ?? 0)} videos</span>
         <div className="sortGroup">
           <button className={videoSort === 'latest' ? 'active' : ''} onClick={() => setVideoSort('latest')}>
             최신순
@@ -2250,32 +2239,132 @@ function YoutubePanel({ token, user }: { token: string | null; user?: User }) {
         </div>
       </div>
       <div className="videoGrid">
-        {sortedVideos.map((video) => (
-          <article key={video.id} className="videoItem">
-            <a className="videoMainLink" href={video.url} target="_blank" rel="noreferrer">
-              <div className="videoThumb">
-                {video.thumbnail_url ? (
-                  <img src={video.thumbnail_url} alt="" loading="lazy" />
-                ) : (
-                  <PlayCircle size={24} />
-                )}
+        {sortedVideos.map((video) => {
+          const members = memberNamesFromText(video.title, video.channel_title, video.description)
+          const cardStyle = {
+            '--mcol': members[0] ? memberColor(members[0], theme) : 'var(--border)',
+          } as CSSProperties
+          return (
+            <article key={video.id} className="updateCard videoPoster" style={cardStyle}>
+              <a className="updateMainLink videoMainLink" href={video.url} target="_blank" rel="noreferrer">
+                <div className="videoThumb">
+                  <span className="typeBadge youtube">YouTube</span>
+                  {video.thumbnail_url ? (
+                    <img src={video.thumbnail_url} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                  ) : (
+                    <PlayCircle size={28} />
+                  )}
+                </div>
+                <div className="videoBody">
+                  <strong>{video.title}</strong>
+                  <div className="cardMembers">
+                    {members.slice(0, 5).map((name) => (
+                      <MemberAvatar key={name} name={name} theme={theme} size={22} />
+                    ))}
+                    <small>{members.length ? memberNamesText(members) : video.channel_title}</small>
+                  </div>
+                  <span className="videoStats">
+                    <span>
+                      <Eye size={14} />
+                      {formatNumber(video.view_count)}
+                    </span>
+                    <span>
+                      <CalendarDays size={14} />
+                      {formatDate(video.published_at)}
+                    </span>
+                  </span>
+                </div>
+              </a>
+              <div className="cardActions">
+                <YoutubeAppLink url={video.url} />
               </div>
-              <div className="videoBody">
-                <strong>{video.title}</strong>
-                <small>{video.channel_title}</small>
-                <span className="videoStats">
-                  <Eye size={14} />
-                  {formatNumber(video.view_count)}
-                  <CalendarDays size={14} />
-                  {formatDate(video.published_at)}
-                </span>
-              </div>
-            </a>
-            <YoutubeAppLink url={video.url} className="youtubeAppButton videoAppButton" />
-          </article>
-        ))}
+            </article>
+          )
+        })}
       </div>
       {!videos.isLoading && !videos.data?.length && <p className="muted">No cached videos yet.</p>}
+      {user?.role === 'admin' && (
+        <details className="adminTools">
+          <summary>
+            <span>관리 도구</span>
+            <small>Sync, Backfill, source management</small>
+          </summary>
+          <form
+            className="sourceForm"
+            onSubmit={(event) => {
+              event.preventDefault()
+              addSource.mutate()
+            }}
+          >
+            <select
+              value={sourceType}
+              onChange={(event) => setSourceType(event.target.value as YoutubeSourceType)}
+            >
+              {youtubeSourceOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <input
+              value={sourceTitle}
+              onChange={(event) => setSourceTitle(event.target.value)}
+              placeholder={sourceType === 'keyword_search' ? '소스 이름 (비워두면 자동 생성)' : '소스 이름'}
+            />
+            <input
+              value={sourceValue}
+              onChange={(event) => setSourceValue(event.target.value)}
+              placeholder={selectedSourceOption?.placeholder ?? "channel or video id"}
+            />
+            <button className="secondary" disabled={addSource.isPending || !sourceValue.trim()} title="소스 추가">
+              <Upload size={17} />
+              Add
+            </button>
+            <button type="button" className="primary" onClick={() => sync.mutate()} disabled={sync.isPending} title="동기화">
+              <RefreshCw size={17} />
+              Sync
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => backfill.mutate()}
+              disabled={backfill.isPending}
+              title="데뷔일부터 과거 YouTube 자료 가져오기"
+            >
+              <RefreshCw size={17} />
+              Backfill
+            </button>
+          </form>
+          {addSource.error && <p className="error">{addSource.error.message}</p>}
+          {sync.error && <p className="error">{sync.error.message}</p>}
+          {backfill.error && <p className="error">{backfill.error.message}</p>}
+          {backfillResult && (
+            <p className="hint">
+              Backfill: {formatNumber(backfillResult.created)} new, {formatNumber(backfillResult.updated)} updated,
+              {` ${formatNumber(backfillResult.pages_fetched)} pages`}
+              {backfillResult.has_more ? ' · 더 가져올 수 있음' : ' · 완료'}
+            </p>
+          )}
+          <div className="sourceList">
+            {sources.data?.map((source) => (
+              <span key={source.id}>
+                {source.title}
+                {source.backfill_status && source.backfill_status !== 'idle' && (
+                  <em>{source.backfill_status}</em>
+                )}
+                <button
+                  className="chipButton"
+                  onClick={() => deleteSource.mutate(source.id)}
+                  disabled={deleteSource.isPending}
+                  title="소스 삭제"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </span>
+            ))}
+          </div>
+        </details>
+      )}
     </div>
   )
 }
@@ -2361,11 +2450,13 @@ function BriefingPanel({ token, user }: { token: string | null; user?: User }) {
 function SavedPanel({
   token,
   user,
+  theme,
   onRequireAuth,
   onOpenPost,
 }: {
   token: string | null
   user?: User
+  theme: Theme
   onRequireAuth: () => void
   onOpenPost: (postId: number) => void
 }) {
@@ -2394,7 +2485,7 @@ function SavedPanel({
     )
   }
   return (
-    <div className="stack">
+    <div className="stack savedPanel">
       <div className="sectionHead">
         <div>
           <p className="eyebrow">Saved</p>
@@ -2404,16 +2495,20 @@ function SavedPanel({
       </div>
       {savedItems.isLoading && <p className="muted">저장 항목을 불러오는 중...</p>}
       {savedItems.error && <p className="error">{savedItems.error.message}</p>}
-      <div className="feedList">
+      <div className="feedList savedGrid">
         {savedItems.data?.map((item) => {
           const postId = postIdFromUrl(item.url)
           const isExternal = item.url.startsWith('http')
           const isYoutube = item.item_type === 'youtube'
+          const members = memberNamesFromText(item.title, item.source_label)
+          const cardStyle = {
+            '--mcol': members[0] ? memberColor(members[0], theme) : 'var(--border)',
+          } as CSSProperties
           return (
-            <article className="updateCard" key={item.id}>
+            <article className="updateCard" key={item.id} style={cardStyle}>
               {isExternal ? (
                 <a className="updateMainLink" href={item.url} target="_blank" rel="noreferrer">
-                  <SavedItemBody item={item} />
+                  <SavedItemBody item={item} members={members} theme={theme} />
                   <ExternalLink className="sourceOpen" size={16} />
                 </a>
               ) : (
@@ -2422,7 +2517,7 @@ function SavedPanel({
                   onClick={() => postId && onOpenPost(postId)}
                   disabled={!postId}
                 >
-                  <SavedItemBody item={item} />
+                  <SavedItemBody item={item} members={members} theme={theme} />
                 </button>
               )}
               <div className={isYoutube ? 'cardActions multi' : 'cardActions'}>
@@ -2445,18 +2540,34 @@ function SavedPanel({
   )
 }
 
-function SavedItemBody({ item }: { item: SavedItem }) {
+function savedItemTypeLabel(item: SavedItem) {
+  if (item.item_type === 'youtube') return 'YouTube'
+  if (item.item_type === 'briefing') return '오늘의 요약'
+  if (item.item_type === 'naver_blog') return 'Naver Blog'
+  if (item.item_type === 'naver_news') return 'Naver News'
+  if (item.item_type === 'post') return '팬글'
+  return item.source_label || item.item_type
+}
+
+function SavedItemBody({ item, members, theme }: { item: SavedItem; members: string[]; theme: Theme }) {
+  const label = savedItemTypeLabel(item)
   return (
     <>
       <div className="updateThumb">
+        <span className={`typeBadge ${item.item_type}`}>{label}</span>
         {item.thumbnail_url ? <img src={item.thumbnail_url} alt="" loading="lazy" /> : <Bookmark size={24} />}
       </div>
       <div className="updateBody">
         <div className="updateMeta">
-          <span className={`typeBadge ${item.item_type}`}>{item.source_label || item.item_type}</span>
           <span>{formatDateTime(item.saved_at)}</span>
         </div>
         <strong>{item.title}</strong>
+        <div className="cardMembers">
+          {members.slice(0, 5).map((name) => (
+            <MemberAvatar key={name} name={name} theme={theme} size={22} />
+          ))}
+          <small>{members.length ? memberNamesText(members) : item.source_label || label}</small>
+        </div>
       </div>
     </>
   )
