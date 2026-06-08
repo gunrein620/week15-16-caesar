@@ -1707,7 +1707,7 @@ function YoutubePanel({ token, user }: { token: string | null; user?: User }) {
         '/artists/1/youtube-backfill',
         {
           method: 'POST',
-          body: JSON.stringify({ pages_per_source: 20 }),
+          body: JSON.stringify({ pages_per_source: 20, metadata_only: true }),
         },
         token,
       ),

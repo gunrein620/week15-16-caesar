@@ -241,6 +241,7 @@ class YoutubeBackfillRequest(BaseModel):
     published_after: datetime | None = None
     pages_per_source: int = Field(default=5, ge=1, le=20)
     reset: bool = False
+    metadata_only: bool = True
 
 
 class YoutubeBackfillResult(BaseModel):

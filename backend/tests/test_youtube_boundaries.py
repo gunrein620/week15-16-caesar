@@ -747,3 +747,71 @@ def test_backfill_resumes_from_saved_cursor(client, monkeypatch):
             "video-a",
             "video-b",
         }
+
+
+def test_backfill_metadata_only_skips_embedding_refresh(client, monkeypatch):
+    monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
+    reset_settings_cache()
+    admin_token = login(client, "admin@example.com", "admin-password")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    created = client.post(
+        "/artists/1/youtube-sources",
+        json={"source_type": "official_channel", "source_value": "channel-id", "title": "official"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    source_id = created.json()["id"]
+
+    def fake_youtube_get(path: str, params: dict):
+        if path == "channels":
+            return {
+                "items": [
+                    {
+                        "contentDetails": {
+                            "relatedPlaylists": {
+                                "uploads": "UUuploads",
+                            }
+                        }
+                    }
+                ]
+            }
+        if path == "playlistItems":
+            return {"items": [{"snippet": {"resourceId": {"videoId": "metadata-video"}}}]}
+        if path == "videos":
+            return {
+                "items": [
+                    {
+                        "id": "metadata-video",
+                        "snippet": {
+                            "title": "RESCENE metadata only",
+                            "description": "metadata backfill",
+                            "channelTitle": "RESCENE",
+                            "publishedAt": "2024-04-01T00:00:00Z",
+                            "thumbnails": {},
+                        },
+                        "statistics": {"viewCount": "10"},
+                    }
+                ]
+            }
+        raise AssertionError(path)
+
+    monkeypatch.setattr("app.services.youtube._youtube_get", fake_youtube_get)
+
+    response = client.post(
+        "/artists/1/youtube-backfill",
+        json={"source_id": source_id, "pages_per_source": 1, "metadata_only": True},
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["created"] == 1
+    with get_session_factory()() as db:
+        assert db.get(YoutubeVideo, "metadata-video") is not None
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(RagChunk)
+                .where(RagChunk.youtube_video_id == "metadata-video")
+            )
+            == 0
+        )

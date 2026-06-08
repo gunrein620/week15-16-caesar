@@ -317,6 +317,8 @@ def _store_source_video(
     artist_id: int,
     source: YoutubeSource,
     item: dict[str, Any],
+    *,
+    refresh_chunks: bool = True,
 ) -> tuple[int, int, int]:
     hashed = content_hash(f"{item['title']}\n{item['description']}")
     video = db.get(YoutubeVideo, item["id"])
@@ -360,7 +362,7 @@ def _store_source_video(
     if link is None:
         db.add(YoutubeVideoSource(video_id=video.id, source_id=source.id))
         linked = 1
-    if should_refresh:
+    if refresh_chunks and should_refresh:
         refresh_video_chunks(db, video, artist_id)
     return created, updated, linked
 
@@ -420,6 +422,7 @@ def backfill_artist_videos(
     published_after: datetime | None = None,
     pages_per_source: int = 5,
     reset: bool = False,
+    metadata_only: bool = True,
 ) -> dict[str, int | bool]:
     _require_youtube_key()
     cutoff = _aware_utc(published_after or RESCENE_DEBUT_CUTOFF)
@@ -483,6 +486,7 @@ def backfill_artist_videos(
                             artist_id,
                             source,
                             item,
+                            refresh_chunks=not metadata_only,
                         )
                         created += item_created
                         updated += item_updated

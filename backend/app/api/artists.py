@@ -190,6 +190,7 @@ def backfill_videos(
         published_after=payload.published_after,
         pages_per_source=payload.pages_per_source,
         reset=payload.reset,
+        metadata_only=payload.metadata_only,
     )
 
 
