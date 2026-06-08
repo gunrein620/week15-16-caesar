@@ -88,7 +88,7 @@ def search_archive_candidates(
         chunks = db.scalars(
             select(RagChunk)
             .where(RagChunk.artist_id == artist_id)
-            .order_by(RagChunk.embedding.cosine_distance(query_embedding))
+            .order_by(RagChunk.embedding.op("<=>")(query_embedding))
             .limit(fetch_limit)
         ).all()
     else:
