@@ -2723,6 +2723,11 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
     queryFn: () => api<ArtistArchiveTerm[]>('/artists/1/archive-terms'),
     enabled: Boolean(token && user?.role === 'admin'),
   })
+  const youtubeSources = useQuery({
+    queryKey: ['sources', 1],
+    queryFn: () => api<YoutubeSource[]>('/artists/1/youtube-sources'),
+    enabled: Boolean(token && user?.role === 'admin'),
+  })
   const adminUsers = useQuery({
     queryKey: ['admin-users', token],
     queryFn: () => api<User[]>('/admin/users', {}, token),
@@ -2756,6 +2761,9 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
   const [termTitle, setTermTitle] = useState('')
   const [termAliases, setTermAliases] = useState('')
   const [editingTermId, setEditingTermId] = useState<number | null>(null)
+  const [adminSourceType, setAdminSourceType] = useState<YoutubeSourceType>('keyword_search')
+  const [adminSourceTitle, setAdminSourceTitle] = useState('')
+  const [adminSourceValue, setAdminSourceValue] = useState('')
   const [editingUserId, setEditingUserId] = useState<number | null>(null)
   const [userEmail, setUserEmail] = useState('')
   const [userDisplayName, setUserDisplayName] = useState('')
@@ -2822,6 +2830,36 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
     mutationFn: (termId: number) => api<void>(`/artist-archive-terms/${termId}`, { method: 'DELETE' }, token),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['artist-archive-terms', 1] })
+    },
+  })
+  const addYoutubeSource = useMutation({
+    mutationFn: () =>
+      api<YoutubeSource>(
+        '/artists/1/youtube-sources',
+        {
+          method: 'POST',
+          body: JSON.stringify(
+            buildYoutubeSourcePayload({
+              sourceType: adminSourceType,
+              sourceTitle: adminSourceTitle,
+              sourceValue: adminSourceValue,
+            }),
+          ),
+        },
+        token,
+      ),
+    onSuccess: () => {
+      setAdminSourceTitle('')
+      setAdminSourceValue('')
+      void queryClient.invalidateQueries({ queryKey: ['sources', 1] })
+      void queryClient.invalidateQueries({ queryKey: ['updates'] })
+    },
+  })
+  const deleteYoutubeSource = useMutation({
+    mutationFn: (sourceId: number) => api<void>(`/youtube-sources/${sourceId}`, { method: 'DELETE' }, token),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['sources', 1] })
+      void queryClient.invalidateQueries({ queryKey: ['updates'] })
     },
   })
   const resetUserForm = () => {
@@ -2983,6 +3021,8 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
   }
   const ratio = Math.round(form.budget_ratio * 100)
   const currentRagJob = ragJob.data
+  const selectedAdminSourceOption = youtubeSourceOptions.find((option) => option.value === adminSourceType)
+  const keywordSearchSources = (youtubeSources.data ?? []).filter((source) => source.source_type === 'keyword_search')
   const userPasswordRules = getPasswordRuleStatus(userPassword)
   const userPasswordAllowed =
     userPassword.length === 0
@@ -3308,6 +3348,77 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
         {archiveTerms.error && <p className="error">{archiveTerms.error.message}</p>}
         {saveArchiveTerm.error && <p className="error">{saveArchiveTerm.error.message}</p>}
         {deleteArchiveTerm.error && <p className="error">{deleteArchiveTerm.error.message}</p>}
+      </section>
+      <section className="adminBudget">
+        <div className="postHead">
+          <div>
+            <h2>YouTube search sources</h2>
+            <p className="muted">YouTube 자동 수집에 사용할 채널, 단일 영상, 키워드 검색 쿼리를 관리합니다.</p>
+          </div>
+          <span className="role">{formatNumber(keywordSearchSources.length)} keyword queries</span>
+        </div>
+        <form
+          className="budgetForm"
+          onSubmit={(event) => {
+            event.preventDefault()
+            addYoutubeSource.mutate()
+          }}
+        >
+          <label>
+            Source type
+            <select
+              value={adminSourceType}
+              onChange={(event) => setAdminSourceType(event.target.value as YoutubeSourceType)}
+            >
+              {youtubeSourceOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            관리 이름
+            <input
+              value={adminSourceTitle}
+              onChange={(event) => setAdminSourceTitle(event.target.value)}
+              placeholder={adminSourceType === 'keyword_search' ? '비워두면 검색어로 자동 생성' : '소스 이름'}
+            />
+          </label>
+          <label>
+            검색어 또는 ID
+            <input
+              value={adminSourceValue}
+              onChange={(event) => setAdminSourceValue(event.target.value)}
+              placeholder={selectedAdminSourceOption?.placeholder ?? 'YouTube 검색어, channel ID, video ID'}
+            />
+          </label>
+          <button className="primary" disabled={!adminSourceValue.trim() || addYoutubeSource.isPending}>
+            <Upload size={17} />
+            추가
+          </button>
+        </form>
+        <div className="sourceList archiveTermList">
+          {youtubeSources.data?.map((source) => (
+            <span key={source.id}>
+              <strong>{youtubeSourceOptions.find((option) => option.value === source.source_type)?.label}</strong>
+              {source.title}
+              <em>{source.source_value}</em>
+              {source.backfill_status && source.backfill_status !== 'idle' && <em>{source.backfill_status}</em>}
+              <button
+                className="chipButton"
+                onClick={() => deleteYoutubeSource.mutate(source.id)}
+                disabled={deleteYoutubeSource.isPending}
+                title="YouTube 소스 삭제"
+              >
+                <Trash2 size={13} />
+              </button>
+            </span>
+          ))}
+        </div>
+        {youtubeSources.error && <p className="error">{youtubeSources.error.message}</p>}
+        {addYoutubeSource.error && <p className="error">{addYoutubeSource.error.message}</p>}
+        {deleteYoutubeSource.error && <p className="error">{deleteYoutubeSource.error.message}</p>}
       </section>
       <section className="adminBudget">
         <div className="postHead">
