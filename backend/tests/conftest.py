@@ -36,7 +36,7 @@ def client(tmp_path, monkeypatch):
 def signup(client: TestClient, email: str = "user@example.com") -> str:
     response = client.post(
         "/auth/signup",
-        json={"email": email, "password": "password123", "display_name": "User"},
+        json={"email": email, "password": "Password123!", "display_name": "User"},
     )
     assert response.status_code == 201, response.text
     from app.core.db import get_session_factory

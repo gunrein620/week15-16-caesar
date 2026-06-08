@@ -94,6 +94,7 @@ import { youtubeAppUrl } from './youtubeLinks'
 import { buildYoutubeSourcePayload } from './youtubeSourceForm'
 import { MEMBER_COLORS, MEMBER_ORDER, memberColor, memberOn } from './memberColors'
 import { compactMemberNamesText, memberLabel, memberNamesText } from './memberDisplay'
+import { getPasswordRuleStatus, isStrongPassword, passwordRequirementText } from './passwordRules'
 
 type AuthMode = 'login' | 'signup'
 type FeedSource = 'all' | 'youtube' | 'naver' | 'briefing' | 'post'
@@ -1201,8 +1202,11 @@ function AuthPanel({
   })
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    if (mode === 'signup' && !isStrongPassword(password)) return
     mutation.mutate()
   }
+  const passwordRules = getPasswordRuleStatus(password)
+  const signupPasswordReady = mode !== 'signup' || isStrongPassword(password)
   return (
     <form className="authPanel" onSubmit={submit}>
       {oauthProviders.map((provider) => (
@@ -1234,9 +1238,19 @@ function AuthPanel({
       <input
         value={password}
         onChange={(event) => setPassword(event.target.value)}
-        placeholder="password"
+        placeholder={mode === 'signup' ? passwordRequirementText : 'password'}
         type="password"
+        maxLength={72}
       />
+      {mode === 'signup' && (
+        <div className="passwordRules" aria-label="비밀번호 규칙">
+          {passwordRules.map((rule) => (
+            <span key={rule.id} className={rule.valid ? 'valid' : ''}>
+              {rule.label}
+            </span>
+          ))}
+        </div>
+      )}
       {mode === 'signup' && (
         <input
           value={displayName}
@@ -1244,7 +1258,7 @@ function AuthPanel({
           placeholder="display name"
         />
       )}
-      <button className="primary" type="submit" disabled={mutation.isPending} title={mode}>
+      <button className="primary" type="submit" disabled={mutation.isPending || !signupPasswordReady} title={mode}>
         <LogIn size={17} />
         {mode === 'signup' ? 'Create account' : 'Login'}
       </button>
@@ -2969,6 +2983,11 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
   }
   const ratio = Math.round(form.budget_ratio * 100)
   const currentRagJob = ragJob.data
+  const userPasswordRules = getPasswordRuleStatus(userPassword)
+  const userPasswordAllowed =
+    userPassword.length === 0
+      ? Boolean(editingUserId)
+      : isStrongPassword(userPassword)
   return (
     <div className="stack">
       <section className="adminBudget">
@@ -3072,9 +3091,19 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
               type="password"
               value={userPassword}
               onChange={(event) => setUserPassword(event.target.value)}
-              placeholder={editingUserId ? '변경 시에만 입력' : '8자 이상'}
+              placeholder={editingUserId ? '변경 시에만 입력' : passwordRequirementText}
+              maxLength={72}
             />
           </label>
+          {userPassword.length > 0 && (
+            <div className="passwordRules" aria-label="비밀번호 규칙">
+              {userPasswordRules.map((rule) => (
+                <span key={rule.id} className={rule.valid ? 'valid' : ''}>
+                  {rule.label}
+                </span>
+              ))}
+            </div>
+          )}
           <label>
             권한
             <select value={userRole} onChange={(event) => setUserRole(event.target.value as User['role'])}>
@@ -3087,8 +3116,7 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
             disabled={
               !userEmail.trim() ||
               !userDisplayName.trim() ||
-              (!editingUserId && userPassword.length < 8) ||
-              (Boolean(editingUserId) && userPassword.length > 0 && userPassword.length < 8) ||
+              !userPasswordAllowed ||
               saveUser.isPending
             }
           >

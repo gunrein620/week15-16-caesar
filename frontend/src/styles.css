@@ -226,6 +226,28 @@ h2 {
   padding: 12px;
 }
 
+.passwordRules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.passwordRules span {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1;
+  padding: 5px 7px;
+}
+
+.passwordRules span.valid {
+  background: color-mix(in srgb, var(--ok) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--ok) 28%, var(--border));
+  color: var(--ok);
+}
+
 .tabs {
   background: var(--surface);
   border-bottom: 1px solid var(--border);

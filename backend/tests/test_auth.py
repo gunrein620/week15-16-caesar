@@ -24,9 +24,19 @@ def test_duplicate_signup_returns_409(client):
     signup(client)
     response = client.post(
         "/auth/signup",
-        json={"email": "user@example.com", "password": "password123", "display_name": "Again"},
+        json={"email": "user@example.com", "password": "Password123!", "display_name": "Again"},
     )
     assert response.status_code == 409
+
+
+def test_signup_rejects_password_without_required_mix(client):
+    response = client.post(
+        "/auth/signup",
+        json={"email": "weak@example.com", "password": "password123", "display_name": "Weak"},
+    )
+
+    assert response.status_code == 422
+    assert "special character" in response.text
 
 
 def test_signup_can_be_disabled(client, monkeypatch):
@@ -36,7 +46,7 @@ def test_signup_can_be_disabled(client, monkeypatch):
     reset_settings_cache()
     response = client.post(
         "/auth/signup",
-        json={"email": "closed@example.com", "password": "password123", "display_name": "Closed"},
+        json={"email": "closed@example.com", "password": "Password123!", "display_name": "Closed"},
     )
     reset_settings_cache()
 
@@ -53,7 +63,7 @@ def test_admin_can_toggle_public_signup(client, monkeypatch):
     admin_token = login(client, "admin@example.com", "admin-password")
     blocked = client.post(
         "/auth/signup",
-        json={"email": "blocked@example.com", "password": "password123", "display_name": "Blocked"},
+        json={"email": "blocked@example.com", "password": "Password123!", "display_name": "Blocked"},
     )
     status = client.get("/auth/signup-status")
 
@@ -68,7 +78,7 @@ def test_admin_can_toggle_public_signup(client, monkeypatch):
     )
     created = client.post(
         "/auth/signup",
-        json={"email": "opened@example.com", "password": "password123", "display_name": "Opened"},
+        json={"email": "opened@example.com", "password": "Password123!", "display_name": "Opened"},
     )
 
     assert enabled.status_code == 200, enabled.text
@@ -88,7 +98,7 @@ def test_admin_can_toggle_public_signup(client, monkeypatch):
     )
     blocked_again = client.post(
         "/auth/signup",
-        json={"email": "blocked-again@example.com", "password": "password123", "display_name": "Blocked"},
+        json={"email": "blocked-again@example.com", "password": "Password123!", "display_name": "Blocked"},
     )
     reset_settings_cache()
 
@@ -110,7 +120,7 @@ def test_admin_can_manage_user_accounts_when_public_signup_is_closed(client, mon
         "/admin/users",
         json={
             "email": "managed@example.com",
-            "password": "password123",
+            "password": "Password123!",
             "display_name": "Managed User",
             "role": "user",
         },
@@ -120,7 +130,7 @@ def test_admin_can_manage_user_accounts_when_public_signup_is_closed(client, mon
         "/admin/users",
         json={
             "email": "managed@example.com",
-            "password": "password123",
+            "password": "Password123!",
             "display_name": "Duplicate",
             "role": "user",
         },
@@ -132,7 +142,7 @@ def test_admin_can_manage_user_accounts_when_public_signup_is_closed(client, mon
     assert duplicate.status_code == 409
     user_id = created.json()["id"]
     user_login = client.post(
-        "/auth/login", json={"email": "managed@example.com", "password": "password123"}
+        "/auth/login", json={"email": "managed@example.com", "password": "Password123!"}
     )
     assert user_login.status_code == 200, user_login.text
     user_headers = {"Authorization": f"Bearer {user_login.json()['access_token']}"}
@@ -144,7 +154,7 @@ def test_admin_can_manage_user_accounts_when_public_signup_is_closed(client, mon
 
     updated = client.put(
         f"/admin/users/{user_id}",
-        json={"display_name": "Managed Admin", "role": "admin", "password": "newpassword123"},
+        json={"display_name": "Managed Admin", "role": "admin", "password": "newPassword123!"},
         headers=admin_headers,
     )
     assert updated.status_code == 200, updated.text
@@ -152,7 +162,7 @@ def test_admin_can_manage_user_accounts_when_public_signup_is_closed(client, mon
     assert updated.json()["role"] == "admin"
     assert (
         client.post(
-            "/auth/login", json={"email": "managed@example.com", "password": "newpassword123"}
+            "/auth/login", json={"email": "managed@example.com", "password": "newPassword123!"}
         ).status_code
         == 200
     )
@@ -190,7 +200,7 @@ def test_admin_delete_user_removes_owned_posts_and_blocks_login(client):
     assert client.get(f"/posts/{post_id}").status_code == 404
     assert (
         client.post(
-            "/auth/login", json={"email": "delete-me@example.com", "password": "password123"}
+            "/auth/login", json={"email": "delete-me@example.com", "password": "Password123!"}
         ).status_code
         == 401
     )
@@ -209,7 +219,7 @@ def test_admin_user_list_allows_legacy_local_email_accounts(client):
             User(
                 email="admin@week15-16-caesar.local",
                 display_name="Legacy Admin",
-                hashed_password=hash_password("password123"),
+                hashed_password=hash_password("Password123!"),
                 role="admin",
             )
         )

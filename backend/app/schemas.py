@@ -1,7 +1,9 @@
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+
+from app.core.password_policy import validate_password_strength
 
 
 class UserRead(BaseModel):
@@ -17,22 +19,39 @@ class UserRead(BaseModel):
 
 class AdminUserCreate(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=8, max_length=72)
     display_name: str = Field(min_length=1, max_length=80)
     role: Literal["user", "admin"] = "user"
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return validate_password_strength(value)
 
 
 class AdminUserUpdate(BaseModel):
     email: EmailStr | None = None
-    password: str | None = Field(default=None, min_length=8)
+    password: str | None = Field(default=None, min_length=8, max_length=72)
     display_name: str | None = Field(default=None, min_length=1, max_length=80)
     role: Literal["user", "admin"] | None = None
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_password_strength(value)
 
 
 class AuthSignup(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=8, max_length=72)
     display_name: str = Field(min_length=1, max_length=80)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return validate_password_strength(value)
 
 
 class AuthLogin(BaseModel):

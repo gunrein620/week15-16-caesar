@@ -40,7 +40,7 @@ def test_logout_revokes_refresh_session_and_clears_cookie(client):
 def test_unverified_email_user_cannot_write_save_or_use_ai(client):
     signup_response = client.post(
         "/auth/signup",
-        json={"email": "unverified@example.com", "password": "password123", "display_name": "Unverified"},
+        json={"email": "unverified@example.com", "password": "Password123!", "display_name": "Unverified"},
     )
     headers = {"Authorization": f"Bearer {signup_response.json()['access_token']}"}
 
@@ -67,7 +67,7 @@ def test_email_verification_token_is_hashed_single_use_and_verifies_user(client,
     )
     signup_response = client.post(
         "/auth/signup",
-        json={"email": "verify@example.com", "password": "password123", "display_name": "Verify"},
+        json={"email": "verify@example.com", "password": "Password123!", "display_name": "Verify"},
     )
     headers = {"Authorization": f"Bearer {signup_response.json()['access_token']}"}
 
@@ -94,13 +94,13 @@ def test_admin_user_delete_revokes_user_sessions(client):
         "/admin/users",
         json={
             "email": "session-delete@example.com",
-            "password": "password123",
+            "password": "Password123!",
             "display_name": "Session Delete",
             "role": "user",
         },
         headers={"Authorization": f"Bearer {admin_token}"},
     )
-    client.post("/auth/login", json={"email": "session-delete@example.com", "password": "password123"})
+    client.post("/auth/login", json={"email": "session-delete@example.com", "password": "Password123!"})
     user_id = created.json()["id"]
 
     deleted = client.delete(f"/admin/users/{user_id}", headers={"Authorization": f"Bearer {admin_token}"})
@@ -118,13 +118,13 @@ def test_admin_can_revoke_user_sessions_without_deleting_user(client):
         "/admin/users",
         json={
             "email": "revoke-session@example.com",
-            "password": "password123",
+            "password": "Password123!",
             "display_name": "Revoke Session",
             "role": "user",
         },
         headers=admin_headers,
     )
-    client.post("/auth/login", json={"email": "revoke-session@example.com", "password": "password123"})
+    client.post("/auth/login", json={"email": "revoke-session@example.com", "password": "Password123!"})
     user_id = created.json()["id"]
 
     response = client.delete(f"/admin/users/{user_id}/sessions", headers=admin_headers)
