@@ -27,7 +27,7 @@ import {
   UserPlus,
   X,
 } from 'lucide-react'
-import { FormEvent, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   ArtistArchiveTerm,
   ArtistKeyword,
@@ -91,7 +91,7 @@ import {
 import { buildFeedFooterParts, buildFeedMetaParts } from './feedMeta'
 import { selectHomeHeroItem } from './homeHero'
 import { sortYoutubeVideos, type VideoSort } from './videoSorting'
-import { youtubeAppUrl } from './youtubeLinks'
+import { canUseYoutubeHoverPreview, youtubeAppUrl, youtubeEmbedPreviewUrl } from './youtubeLinks'
 import { buildYoutubeSourcePayload } from './youtubeSourceForm'
 import { MEMBER_COLORS, MEMBER_ORDER, memberColor, memberOn } from './memberColors'
 import { compactMemberNamesText, memberLabel, memberNamesText } from './memberDisplay'
@@ -726,6 +726,9 @@ function HomeHero({
   const postId = postIdFromUrl(item.url)
   const isExternal = item.url.startsWith('http')
   const isYoutube = item.item_type === 'youtube'
+  const previewUrl = isYoutube ? youtubeEmbedPreviewUrl(item.url) : null
+  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [previewVisible, setPreviewVisible] = useState(false)
   const ctaLabel = heroCtaLabel(item)
   const analyticsMetadata = {
     item_type: item.item_type,
@@ -741,9 +744,39 @@ function HomeHero({
       metadata: analyticsMetadata,
     })
   }
+  const clearPreviewTimer = () => {
+    if (!previewTimerRef.current) return
+    clearTimeout(previewTimerRef.current)
+    previewTimerRef.current = null
+  }
+  const schedulePreview = () => {
+    if (!previewUrl || !canUseYoutubeHoverPreview()) return
+    clearPreviewTimer()
+    previewTimerRef.current = setTimeout(() => {
+      setPreviewVisible(true)
+      previewTimerRef.current = null
+    }, 500)
+  }
+  const hidePreview = () => {
+    clearPreviewTimer()
+    setPreviewVisible(false)
+  }
+  useEffect(() => {
+    hidePreview()
+    return clearPreviewTimer
+  }, [previewUrl])
   return (
     <section
       className="hero"
+      onMouseEnter={schedulePreview}
+      onMouseLeave={hidePreview}
+      onFocus={schedulePreview}
+      onBlur={(event) => {
+        const nextTarget = event.relatedTarget
+        if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+          hidePreview()
+        }
+      }}
       style={{ '--mcol': primaryMember ? memberColor(primaryMember, theme) : 'var(--border-strong)' } as CSSProperties}
     >
       {item.thumbnail_url ? (
@@ -752,6 +785,15 @@ function HomeHero({
         <div className="heroFallback">
           <FileText size={36} />
         </div>
+      )}
+      {previewVisible && previewUrl && (
+        <iframe
+          className="heroPreviewFrame"
+          src={previewUrl}
+          title={`${item.title} 미리보기`}
+          allow="autoplay; encrypted-media; picture-in-picture"
+          referrerPolicy="strict-origin-when-cross-origin"
+        />
       )}
       <div className="heroOverlay" />
       <div className="heroContent">

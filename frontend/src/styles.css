@@ -1151,12 +1151,16 @@ h2 {
 }
 
 .hero > img,
-.heroFallback {
-  width: 100%;
+.heroFallback,
+.heroPreviewFrame {
   height: 100%;
+  inset: 0;
+  position: absolute;
+  width: 100%;
 }
 
-.hero > img {
+.hero > img,
+.heroPreviewFrame {
   object-fit: cover;
   object-position: 50% 30%;
 }
@@ -1167,6 +1171,13 @@ h2 {
   color: var(--text-faint);
   display: flex;
   justify-content: center;
+}
+
+.heroPreviewFrame {
+  background: #000;
+  border: 0;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .heroOverlay {
@@ -3051,6 +3062,10 @@ button:disabled {
   .heroCta {
     bottom: 20px;
     right: 20px;
+  }
+
+  .heroPreviewFrame {
+    display: none;
   }
 
   .heroMeta {
