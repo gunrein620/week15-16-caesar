@@ -166,6 +166,68 @@ def test_oauth_callback_creates_and_reuses_identity(client, monkeypatch):
         assert db.query(AuthIdentity).filter(AuthIdentity.provider == "google").count() == 1
 
 
+def test_oauth_callback_creates_kakao_identity_without_email(client, monkeypatch):
+    monkeypatch.setenv("KAKAO_CLIENT_ID", "kakao-client")
+    monkeypatch.setenv("KAKAO_CLIENT_SECRET", "kakao-secret")
+    monkeypatch.setenv("OAUTH_REDIRECT_BASE_URL", "https://backend.example.com")
+    from app.core.config import reset_settings_cache
+
+    reset_settings_cache()
+    monkeypatch.setattr(
+        "app.api.auth.exchange_oauth_code",
+        lambda provider, code, redirect_uri: {
+            "provider_subject": "987654321",
+            "email": None,
+            "email_verified": False,
+            "display_name": "Kakao User",
+        },
+    )
+    state = client.get("/auth/oauth/kakao/start", follow_redirects=False).headers["location"].split("state=")[1].split("&")[0]
+
+    response = client.get(f"/auth/oauth/kakao/callback?code=ok&state={state}", follow_redirects=False)
+
+    reset_settings_cache()
+    assert response.status_code == 307, response.text
+    with get_session_factory()() as db:
+        user = db.query(User).filter(User.email == "kakao_987654321@oauth.local").one()
+        identity = db.query(AuthIdentity).filter(AuthIdentity.provider == "kakao").one()
+        assert user.display_name == "Kakao User"
+        assert user.email_verified_at is not None
+        assert identity.user_id == user.id
+        assert identity.email is None
+
+
+def test_kakao_oauth_exchange_allows_profile_without_email(monkeypatch):
+    monkeypatch.setenv("KAKAO_CLIENT_ID", "kakao-client")
+    monkeypatch.setenv("KAKAO_CLIENT_SECRET", "kakao-secret")
+    from app.core.config import reset_settings_cache
+    from app.services.oauth import exchange_oauth_code
+
+    class JsonResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    reset_settings_cache()
+    monkeypatch.setattr("app.services.oauth.httpx.post", lambda *args, **kwargs: JsonResponse({"access_token": "token"}))
+    monkeypatch.setattr(
+        "app.services.oauth.httpx.get",
+        lambda *args, **kwargs: JsonResponse({"id": 987654321, "properties": {"nickname": "Kakao User"}}),
+    )
+
+    profile = exchange_oauth_code("kakao", "code", "https://backend.example.com/auth/oauth/kakao/callback")
+
+    reset_settings_cache()
+    assert profile == {
+        "provider_subject": "987654321",
+        "email": None,
+        "email_verified": False,
+        "display_name": "Kakao User",
+    }
+
+
 def test_oauth_status_reports_configured_providers(client, monkeypatch):
     default_status = client.get("/auth/oauth/status")
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "google-client")

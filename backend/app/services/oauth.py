@@ -90,12 +90,11 @@ def exchange_oauth_code(provider: str, code: str, redirect_uri: str) -> dict:
         ).json()
         account = profile.get("kakao_account", {})
         email = account.get("email")
-        if not email:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Kakao email is required")
         return {
             "provider_subject": str(profile["id"]),
             "email": email,
-            "email_verified": bool(account.get("is_email_verified")),
-            "display_name": profile.get("properties", {}).get("nickname") or email.split("@")[0],
+            "email_verified": bool(email and account.get("is_email_verified")),
+            "display_name": profile.get("properties", {}).get("nickname")
+            or (email.split("@")[0] if email else f"Kakao {profile['id']}"),
         }
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unsupported OAuth provider")

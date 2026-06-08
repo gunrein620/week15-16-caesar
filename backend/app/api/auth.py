@@ -46,6 +46,13 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 OAUTH_STATE_COOKIE_PREFIX = "oauth_state_"
 
 
+def _oauth_account_email(provider: str, provider_subject: str, raw_email: object) -> tuple[str, bool]:
+    if raw_email:
+        return str(raw_email).strip().lower(), False
+    safe_subject = "".join(ch if ch.isalnum() else "_" for ch in str(provider_subject)).strip("_")
+    return f"{provider}_{safe_subject or uuid4().hex}@oauth.local".lower(), True
+
+
 def _auth_token_for(response: Response, db: Session, user: User, provider: str = "password") -> AuthToken:
     _, refresh_token = create_user_session(db, user, provider=provider)
     set_refresh_cookie(response, refresh_token)
@@ -224,7 +231,8 @@ def oauth_callback(
     if identity is not None:
         user = identity.user
     else:
-        email = str(profile["email"]).strip().lower()
+        email, synthetic_email = _oauth_account_email(provider, profile["provider_subject"], profile.get("email"))
+        verified_identity = bool(profile.get("email_verified") or synthetic_email)
         user = db.scalar(select(User).where(User.email == email))
         if user is None:
             user = User(
@@ -232,20 +240,20 @@ def oauth_callback(
                 display_name=profile.get("display_name") or email.split("@")[0],
                 hashed_password=None,
                 role="user",
-                email_verified_at=utc_now() if profile.get("email_verified") else None,
+                email_verified_at=utc_now() if verified_identity else None,
             )
             db.add(user)
             db.flush()
-        elif user.email_verified_at is None and not profile.get("email_verified"):
+        elif user.email_verified_at is None and not verified_identity:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Verified provider email is required")
-        if profile.get("email_verified") and user.email_verified_at is None:
+        if verified_identity and user.email_verified_at is None:
             user.email_verified_at = utc_now()
         db.add(
             AuthIdentity(
                 user_id=user.id,
                 provider=provider,
                 provider_subject=profile["provider_subject"],
-                email=email,
+                email=None if synthetic_email else email,
             )
         )
     redirect = RedirectResponse(get_settings().frontend_origin)
