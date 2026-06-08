@@ -340,6 +340,8 @@ export default function App() {
   })
   const signupEnabled =
     adminSignupSettings.data?.public_signup_enabled ?? signupStatus.data?.public_signup_enabled ?? false
+  const emailVerificationEnabled =
+    adminSignupSettings.data?.email_verification_enabled ?? signupStatus.data?.email_verification_enabled ?? false
   const updateSignupSettings = useMutation({
     mutationFn: (enabled: boolean) =>
       api<SignupSettings>(
@@ -417,7 +419,7 @@ export default function App() {
       requireAuth()
       return false
     }
-    if (shouldShowVerificationPrompt(me.data)) {
+    if (shouldShowVerificationPrompt(me.data, emailVerificationEnabled)) {
       resendVerification.mutate()
       return false
     }
@@ -574,7 +576,7 @@ export default function App() {
         )}
 
         <section className="mainPane">
-          {shouldShowVerificationPrompt(me.data) && (
+          {shouldShowVerificationPrompt(me.data, emailVerificationEnabled) && (
             <div className="verifyBanner">
               <span>이메일 인증 후 글쓰기, 댓글, 저장, AI 검색을 사용할 수 있습니다.</span>
               <button

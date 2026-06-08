@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     youtube_api_key: str | None = None
     naver_client_id: str | None = None
     naver_client_secret: str | None = None
+    email_verification_enabled: bool = False
     resend_api_key: str | None = None
     email_from: str = "RESCENE <noreply@example.com>"
     google_client_id: str | None = None

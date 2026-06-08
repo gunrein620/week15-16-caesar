@@ -4,6 +4,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.security import decode_access_token
 from app.models import User
@@ -44,6 +45,8 @@ def require_admin(user: Annotated[User, Depends(get_current_user)]) -> User:
 
 
 def require_verified_user(user: Annotated[User, Depends(get_current_user)]) -> User:
+    if not get_settings().email_verification_enabled:
+        return user
     if user.role == "admin" or user.email_verified_at is not None:
         return user
     raise HTTPException(

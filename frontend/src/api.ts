@@ -190,6 +190,7 @@ export type AuthResponse = {
 
 export type SignupSettings = {
   public_signup_enabled: boolean
+  email_verification_enabled: boolean
 }
 
 export type InfraCostSettings = {

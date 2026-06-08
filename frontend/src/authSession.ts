@@ -25,6 +25,6 @@ export function configuredOauthProviders(status?: OAuthStatus | null): OAuthProv
   return (['google', 'kakao'] as const).filter((provider) => status[provider])
 }
 
-export function shouldShowVerificationPrompt(user?: User | null): boolean {
-  return Boolean(user && user.role !== 'admin' && !user.email_verified_at)
+export function shouldShowVerificationPrompt(user?: User | null, emailVerificationEnabled = true): boolean {
+  return Boolean(emailVerificationEnabled && user && user.role !== 'admin' && !user.email_verified_at)
 }

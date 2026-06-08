@@ -211,6 +211,7 @@ class SimilarRequest(BaseModel):
 
 class SignupSettingsRead(BaseModel):
     public_signup_enabled: bool
+    email_verification_enabled: bool
 
 
 class SignupSettingsUpdate(BaseModel):

@@ -59,6 +59,7 @@ Required backend variables:
 - `YOUTUBE_API_KEY`
 - `NAVER_CLIENT_ID`
 - `NAVER_CLIENT_SECRET`
+- `EMAIL_VERIFICATION_ENABLED`
 - `RESEND_API_KEY`
 - `EMAIL_FROM`
 - `GOOGLE_CLIENT_ID`
@@ -108,7 +109,7 @@ Beta constraints:
 - Public signup defaults to `PUBLIC_SIGNUP_ENABLED`; admins can toggle it at runtime from the app.
 - Repeated failed login attempts are locked by email/IP for the configured lockout window.
 - Access tokens are short-lived and refresh sessions are stored in HttpOnly cookies. Production/preview uses `SameSite=None; Secure` because the Vercel frontend and Railway backend are cross-site.
-- Email/password signup requires email verification before write, save, comment, and AI features. Existing users are marked verified during migration to avoid breaking beta access.
+- Email verification is controlled by `EMAIL_VERIFICATION_ENABLED`. It is disabled for the current social-login beta until a verified mail domain is ready.
 - Public beta collects anonymous usage events for service improvement. Raw IP, raw user-agent, emails, tokens, API keys, and search result bodies are not stored in analytics events.
 - Social login supports Google/Kakao OAuth when the provider client env vars are configured.
 - Infra cost hard stop uses admin-managed monthly estimates. It blocks public API traffic with 503 when the elapsed monthly estimate exceeds the budget, while keeping login and admin recovery endpoints open.

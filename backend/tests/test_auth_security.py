@@ -40,7 +40,38 @@ def test_logout_revokes_refresh_session_and_clears_cookie(client):
         assert db.query(UserSession).one().revoked_at is not None
 
 
-def test_unverified_email_user_cannot_write_save_or_use_ai(client):
+def test_email_verification_disabled_allows_unverified_user_to_write_save_or_use_ai(client, monkeypatch):
+    monkeypatch.setenv("EMAIL_VERIFICATION_ENABLED", "false")
+    reset_settings_cache()
+    signup_response = client.post(
+        "/auth/signup",
+        json={"email": "unverified-allowed@example.com", "password": "Password123!", "display_name": "Allowed"},
+    )
+    headers = {"Authorization": f"Bearer {signup_response.json()['access_token']}"}
+
+    post = client.post("/posts", json={"title": "allowed", "content": "allowed"}, headers=headers)
+    save = client.post(
+        "/saved-items",
+        json={"item_type": "youtube", "item_id": "allowed", "title": "allowed"},
+        headers=headers,
+    )
+    ai = client.post(
+        "/ai/qa",
+        json={"question": "리센느", "artist_id": 1, "include_answer": False},
+        headers=headers,
+    )
+
+    assert signup_response.status_code == 201, signup_response.text
+    assert signup_response.json()["user"]["email_verified_at"] is None
+    assert post.status_code == 201, post.text
+    assert save.status_code == 201, save.text
+    assert ai.status_code == 200, ai.text
+    reset_settings_cache()
+
+
+def test_email_verification_enabled_blocks_unverified_user_write_save_or_ai(client, monkeypatch):
+    monkeypatch.setenv("EMAIL_VERIFICATION_ENABLED", "true")
+    reset_settings_cache()
     signup_response = client.post(
         "/auth/signup",
         json={"email": "unverified@example.com", "password": "Password123!", "display_name": "Unverified"},
@@ -60,10 +91,12 @@ def test_unverified_email_user_cannot_write_save_or_use_ai(client):
     assert post.status_code == 403
     assert save.status_code == 403
     assert ai.status_code == 403
+    reset_settings_cache()
 
 
 def test_email_verification_token_is_hashed_single_use_and_verifies_user(client, monkeypatch):
     sent_tokens: list[str] = []
+    monkeypatch.setenv("EMAIL_VERIFICATION_ENABLED", "true")
     monkeypatch.setenv("RESEND_API_KEY", "test-resend-key")
     reset_settings_cache()
     monkeypatch.setattr(
@@ -95,6 +128,7 @@ def test_email_verification_token_is_hashed_single_use_and_verifies_user(client,
 
 def test_signup_auto_sends_email_verification_when_email_is_configured(client, monkeypatch):
     sent_tokens: list[str] = []
+    monkeypatch.setenv("EMAIL_VERIFICATION_ENABLED", "true")
     monkeypatch.setenv("RESEND_API_KEY", "test-resend-key")
     reset_settings_cache()
     monkeypatch.setattr(
@@ -117,6 +151,7 @@ def test_signup_auto_sends_email_verification_when_email_is_configured(client, m
 
 def test_email_verification_resend_is_limited_by_cooldown_and_daily_count(client, monkeypatch):
     sent_tokens: list[str] = []
+    monkeypatch.setenv("EMAIL_VERIFICATION_ENABLED", "true")
     monkeypatch.setenv("RESEND_API_KEY", "test-resend-key")
     reset_settings_cache()
     monkeypatch.setattr(

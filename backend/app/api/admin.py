@@ -5,6 +5,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.core.config import get_settings
 from app.core.security import hash_password, utc_now
 from app.dependencies import require_admin
 from app.models import (
@@ -220,7 +221,10 @@ def get_signup_settings(
     _: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ) -> SignupSettingsRead:
-    return SignupSettingsRead(public_signup_enabled=get_public_signup_enabled(db))
+    return SignupSettingsRead(
+        public_signup_enabled=get_public_signup_enabled(db),
+        email_verification_enabled=get_settings().email_verification_enabled,
+    )
 
 
 @router.put("/settings/signup", response_model=SignupSettingsRead)
@@ -231,7 +235,10 @@ def update_signup_settings(
 ) -> SignupSettingsRead:
     enabled = set_public_signup_enabled(db, payload.public_signup_enabled)
     db.commit()
-    return SignupSettingsRead(public_signup_enabled=enabled)
+    return SignupSettingsRead(
+        public_signup_enabled=enabled,
+        email_verification_enabled=get_settings().email_verification_enabled,
+    )
 
 
 @router.get("/settings/infra-cost", response_model=InfraCostSettings)

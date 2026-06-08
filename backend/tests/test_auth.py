@@ -70,6 +70,7 @@ def test_admin_can_toggle_public_signup(client, monkeypatch):
     assert blocked.status_code == 403
     assert status.status_code == 200
     assert status.json()["public_signup_enabled"] is False
+    assert status.json()["email_verification_enabled"] is False
 
     enabled = client.put(
         "/admin/settings/signup",
@@ -83,6 +84,7 @@ def test_admin_can_toggle_public_signup(client, monkeypatch):
 
     assert enabled.status_code == 200, enabled.text
     assert enabled.json()["public_signup_enabled"] is True
+    assert enabled.json()["email_verification_enabled"] is False
     assert created.status_code == 201, created.text
 
     user_token = created.json()["access_token"]

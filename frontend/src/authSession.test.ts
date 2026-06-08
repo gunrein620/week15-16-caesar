@@ -59,7 +59,7 @@ test('configuredOauthProviders only returns configured providers', () => {
   assert.deepEqual(configuredOauthProviders({ google: true, kakao: true }), ['google', 'kakao'])
 })
 
-test('unverified non-admin users should see verification prompt', () => {
+test('unverified non-admin users should see verification prompt when verification is enabled', () => {
   const user: User = {
     id: 1,
     email: 'user@example.com',
@@ -69,7 +69,19 @@ test('unverified non-admin users should see verification prompt', () => {
   }
   const admin: User = { ...user, role: 'admin' }
 
-  assert.equal(shouldShowVerificationPrompt(user), true)
-  assert.equal(shouldShowVerificationPrompt({ ...user, email_verified_at: '2026-06-08T00:00:00Z' }), false)
-  assert.equal(shouldShowVerificationPrompt(admin), false)
+  assert.equal(shouldShowVerificationPrompt(user, true), true)
+  assert.equal(shouldShowVerificationPrompt({ ...user, email_verified_at: '2026-06-08T00:00:00Z' }, true), false)
+  assert.equal(shouldShowVerificationPrompt(admin, true), false)
+})
+
+test('unverified non-admin users should not see verification prompt when verification is disabled', () => {
+  const user: User = {
+    id: 1,
+    email: 'user@example.com',
+    display_name: 'User',
+    role: 'user',
+    email_verified_at: null,
+  }
+
+  assert.equal(shouldShowVerificationPrompt(user, false), false)
 })

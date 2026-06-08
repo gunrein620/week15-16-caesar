@@ -28,7 +28,8 @@ class EmailVerificationRateLimitError(Exception):
 
 
 def is_email_verification_configured() -> bool:
-    return bool(get_settings().resend_api_key)
+    settings = get_settings()
+    return settings.email_verification_enabled and bool(settings.resend_api_key)
 
 
 def _seconds_until(target) -> int:
@@ -120,7 +121,7 @@ def verify_email_token(db: Session, raw_token: str) -> User | None:
 
 def send_verification_email(email: str, token: str) -> bool:
     settings = get_settings()
-    if not settings.resend_api_key:
+    if not settings.email_verification_enabled or not settings.resend_api_key:
         return False
     verify_url = f"{settings.frontend_origin.rstrip('/')}/?verify_email={token}"
     httpx.post(

@@ -91,7 +91,10 @@ def signup(
 
 @router.get("/signup-status", response_model=SignupSettingsRead)
 def signup_status(db: Annotated[Session, Depends(get_db)]) -> SignupSettingsRead:
-    return SignupSettingsRead(public_signup_enabled=get_public_signup_enabled(db))
+    return SignupSettingsRead(
+        public_signup_enabled=get_public_signup_enabled(db),
+        email_verification_enabled=get_settings().email_verification_enabled,
+    )
 
 
 @router.post("/login", response_model=AuthToken)
