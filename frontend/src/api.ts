@@ -9,6 +9,10 @@ export type User = {
   active_session_count?: number | null
 }
 
+export type EmailVerificationSendResponse = {
+  status: 'sent' | 'already_verified' | 'email_disabled'
+}
+
 export type Artist = {
   id: number
   slug: string

@@ -1,5 +1,8 @@
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import select
+
+from app.core.config import reset_settings_cache
 from app.core.db import get_session_factory
 from app.models import AuthIdentity, EmailVerificationToken, User, UserSession
 from tests.conftest import login
@@ -61,9 +64,11 @@ def test_unverified_email_user_cannot_write_save_or_use_ai(client):
 
 def test_email_verification_token_is_hashed_single_use_and_verifies_user(client, monkeypatch):
     sent_tokens: list[str] = []
+    monkeypatch.setenv("RESEND_API_KEY", "test-resend-key")
+    reset_settings_cache()
     monkeypatch.setattr(
-        "app.api.auth.send_verification_email",
-        lambda email, token: sent_tokens.append(token),
+        "app.services.email_verification.send_verification_email",
+        lambda email, token: sent_tokens.append(token) or True,
     )
     signup_response = client.post(
         "/auth/signup",
@@ -71,12 +76,11 @@ def test_email_verification_token_is_hashed_single_use_and_verifies_user(client,
     )
     headers = {"Authorization": f"Bearer {signup_response.json()['access_token']}"}
 
-    send_response = client.post("/auth/email/verification", headers=headers)
     raw_token = sent_tokens[-1]
     verify_response = client.post("/auth/email/verify", json={"token": raw_token}, headers=headers)
     second_response = client.post("/auth/email/verify", json={"token": raw_token}, headers=headers)
 
-    assert send_response.status_code == 202
+    assert signup_response.status_code == 201, signup_response.text
     assert raw_token
     with get_session_factory()() as db:
         stored = db.query(EmailVerificationToken).one()
@@ -86,6 +90,82 @@ def test_email_verification_token_is_hashed_single_use_and_verifies_user(client,
     assert verify_response.status_code == 200, verify_response.text
     assert verify_response.json()["email_verified_at"] is not None
     assert second_response.status_code == 400
+    reset_settings_cache()
+
+
+def test_signup_auto_sends_email_verification_when_email_is_configured(client, monkeypatch):
+    sent_tokens: list[str] = []
+    monkeypatch.setenv("RESEND_API_KEY", "test-resend-key")
+    reset_settings_cache()
+    monkeypatch.setattr(
+        "app.services.email_verification.send_verification_email",
+        lambda email, token: sent_tokens.append(token) or True,
+    )
+
+    signup_response = client.post(
+        "/auth/signup",
+        json={"email": "auto-verify@example.com", "password": "Password123!", "display_name": "Auto"},
+    )
+
+    assert signup_response.status_code == 201, signup_response.text
+    assert len(sent_tokens) == 1
+    with get_session_factory()() as db:
+        stored = db.query(EmailVerificationToken).filter(EmailVerificationToken.used_at.is_(None)).one()
+        assert stored.token_hash != sent_tokens[0]
+    reset_settings_cache()
+
+
+def test_email_verification_resend_is_limited_by_cooldown_and_daily_count(client, monkeypatch):
+    sent_tokens: list[str] = []
+    monkeypatch.setenv("RESEND_API_KEY", "test-resend-key")
+    reset_settings_cache()
+    monkeypatch.setattr(
+        "app.services.email_verification.send_verification_email",
+        lambda email, token: sent_tokens.append(token) or True,
+    )
+    signup_response = client.post(
+        "/auth/signup",
+        json={"email": "limited-verify@example.com", "password": "Password123!", "display_name": "Limited"},
+    )
+    headers = {"Authorization": f"Bearer {signup_response.json()['access_token']}"}
+
+    cooldown = client.post("/auth/email/verification", headers=headers)
+    with get_session_factory()() as db:
+        user = db.scalar(select(User).where(User.email == "limited-verify@example.com"))
+        assert user is not None
+        db.query(EmailVerificationToken).filter(EmailVerificationToken.user_id == user.id).update(
+            {EmailVerificationToken.created_at: datetime.now(UTC) - timedelta(minutes=10)}
+        )
+        db.commit()
+    resend = client.post("/auth/email/verification", headers=headers)
+    with get_session_factory()() as db:
+        user = db.scalar(select(User).where(User.email == "limited-verify@example.com"))
+        assert user is not None
+        db.add_all(
+            [
+                EmailVerificationToken(
+                    user_id=user.id,
+                    token_hash=f"extra_hash_{index}",
+                    expires_at=datetime.now(UTC) + timedelta(hours=1),
+                    used_at=datetime.now(UTC),
+                    created_at=datetime.now(UTC) - timedelta(minutes=15 + index),
+                )
+                for index in range(2)
+            ]
+        )
+        db.query(EmailVerificationToken).filter(EmailVerificationToken.user_id == user.id).update(
+            {EmailVerificationToken.created_at: datetime.now(UTC) - timedelta(minutes=10)}
+        )
+        db.commit()
+    daily_limit = client.post("/auth/email/verification", headers=headers)
+
+    assert cooldown.status_code == 429
+    assert "5분" in cooldown.json()["detail"]
+    assert resend.status_code == 202, resend.text
+    assert daily_limit.status_code == 429
+    assert "하루 3회" in daily_limit.json()["detail"]
+    assert len(sent_tokens) == 2
+    reset_settings_cache()
 
 
 def test_admin_user_delete_revokes_user_sessions(client):

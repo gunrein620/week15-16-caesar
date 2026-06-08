@@ -226,6 +226,11 @@ h2 {
   padding: 12px;
 }
 
+.verifyBanner small {
+  color: var(--text-soft);
+  font-weight: 600;
+}
+
 .passwordRules {
   display: flex;
   flex-wrap: wrap;

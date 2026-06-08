@@ -1,6 +1,7 @@
 from typing import Annotated
 from uuid import uuid4
 
+import httpx
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
@@ -36,8 +37,8 @@ from app.services.auth_lockout import (
     record_login_failure,
 )
 from app.services.email_verification import (
-    create_email_verification_token,
-    send_verification_email,
+    EmailVerificationRateLimitError,
+    send_email_verification,
     verify_email_token,
 )
 from app.services.oauth import exchange_oauth_code, oauth_authorize_url, oauth_redirect_uri
@@ -79,6 +80,10 @@ def signup(
     db.add(user)
     db.commit()
     db.refresh(user)
+    try:
+        send_email_verification(db, user, enforce_limits=True)
+    except httpx.HTTPError:
+        db.rollback()
     token = _auth_token_for(response, db, user)
     db.commit()
     return token
@@ -166,10 +171,16 @@ def request_email_verification(
 ) -> dict[str, str]:
     if user.email_verified_at is not None:
         return {"status": "already_verified"}
-    raw_token = create_email_verification_token(db, user)
-    send_verification_email(user.email, raw_token)
+    try:
+        result = send_email_verification(db, user, enforce_limits=True)
+    except EmailVerificationRateLimitError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=exc.message,
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
     db.commit()
-    return {"status": "sent"}
+    return {"status": result.status}
 
 
 @router.post("/email/verify", response_model=UserRead)

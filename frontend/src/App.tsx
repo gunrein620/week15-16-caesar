@@ -36,6 +36,7 @@ import {
   AuthResponse,
   BriefingPreview,
   Comment,
+  EmailVerificationSendResponse,
   InfraCostSettings,
   Member,
   Post,
@@ -95,6 +96,7 @@ import { buildYoutubeSourcePayload } from './youtubeSourceForm'
 import { MEMBER_COLORS, MEMBER_ORDER, memberColor, memberOn } from './memberColors'
 import { compactMemberNamesText, memberLabel, memberNamesText } from './memberDisplay'
 import { getPasswordRuleStatus, isStrongPassword, passwordRequirementText } from './passwordRules'
+import { emailVerificationStatusText } from './emailVerification'
 
 type AuthMode = 'login' | 'signup'
 type FeedSource = 'all' | 'youtube' | 'naver' | 'briefing' | 'post'
@@ -300,6 +302,7 @@ export default function App() {
   const [tagFilter, setTagFilter] = useState('')
   const [page, setPage] = useState(1)
   const [authOpen, setAuthOpen] = useState(false)
+  const [verificationNotice, setVerificationNotice] = useState('')
   const [theme, setTheme] = useState<Theme>(() => {
     const stored = localStorage.getItem('rescene_theme')
     if (stored === 'light' || stored === 'dark') return stored
@@ -353,7 +356,9 @@ export default function App() {
     },
   })
   const resendVerification = useMutation({
-    mutationFn: () => api<{ status: string }>('/auth/email/verification', { method: 'POST' }, token),
+    mutationFn: () => api<EmailVerificationSendResponse>('/auth/email/verification', { method: 'POST' }, token),
+    onSuccess: (data) => setVerificationNotice(emailVerificationStatusText(data)),
+    onError: (error) => setVerificationNotice(error instanceof Error ? error.message : '인증 메일 전송 실패'),
   })
 
   const listedSelectedPost = useMemo(
@@ -579,6 +584,7 @@ export default function App() {
               >
                 인증 메일 다시 보내기
               </button>
+              {verificationNotice && <small>{verificationNotice}</small>}
             </div>
           )}
           {panel === 'home' && (
