@@ -27,7 +27,7 @@ import {
   UserPlus,
   X,
 } from 'lucide-react'
-import { FormEvent, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   ArtistArchiveTerm,
   ArtistKeyword,
@@ -66,6 +66,8 @@ import {
   configuredOauthProviders,
   getInitialAccessToken,
   oauthStartUrl,
+  oauthProviderLabels,
+  type OAuthProvider,
   type OAuthStatus,
   shouldShowVerificationPrompt,
   storeAccessToken,
@@ -93,7 +95,13 @@ import {
 import { findBriefingEmbedForLink } from './briefingEmbeds'
 import { buildFeedFooterParts, buildFeedMetaParts } from './feedMeta'
 import { selectHomeHeroItem } from './homeHero'
-import { findSavedFeedItem, savedFeedItemPayload } from './savedFeed'
+import {
+  findSavedFeedItem,
+  mergeSavedItem,
+  optimisticSavedItemFromFeedItem,
+  removeSavedItemFromList,
+  savedFeedItemPayload,
+} from './savedFeed'
 import { sortYoutubeVideos, type VideoSort } from './videoSorting'
 import { canUseYoutubeHoverPreview, youtubeAppUrl, youtubeEmbedPreviewUrl } from './youtubeLinks'
 import { buildYoutubeSourcePayload } from './youtubeSourceForm'
@@ -102,7 +110,6 @@ import { compactMemberNamesText, memberLabel, memberNamesText } from './memberDi
 import { getPasswordRuleStatus, isStrongPassword, passwordRequirementText } from './passwordRules'
 import { emailVerificationStatusText } from './emailVerification'
 
-type AuthMode = 'login' | 'signup'
 type FeedSource = 'all' | 'youtube' | 'naver' | 'briefing' | 'post'
 type Theme = 'light' | 'dark'
 
@@ -534,11 +541,6 @@ export default function App() {
 
       {authOpen && (
         <AuthModal
-          publicSignupEnabled={signupStatus.data?.public_signup_enabled ?? false}
-          setToken={(nextToken) => {
-            setToken(nextToken)
-            if (nextToken) setAuthOpen(false)
-          }}
           onClose={() => setAuthOpen(false)}
         />
       )}
@@ -889,6 +891,9 @@ function HomePanel({
   const [member, setMember] = useState('')
   const [keyword, setKeyword] = useState('')
   const [feedQuery, setFeedQuery] = useState('')
+  const [pendingSavedKeys, setPendingSavedKeys] = useState<Set<string>>(() => new Set())
+  const [saveError, setSaveError] = useState('')
+  const savedItemsQueryKey = ['saved-items', token] as const
   const updates = useInfiniteQuery({
     queryKey: ['updates', source, member, keyword, feedQuery],
     initialPageParam: null as string | null,
@@ -913,7 +918,7 @@ function HomePanel({
     queryFn: () => api<ArtistKeyword[]>('/artists/1/keywords'),
   })
   const savedItems = useQuery({
-    queryKey: ['saved-items', token],
+    queryKey: savedItemsQueryKey,
     queryFn: () => api<SavedItem[]>('/saved-items', {}, token),
     enabled: Boolean(token && user),
     retry: false,
@@ -928,7 +933,23 @@ function HomePanel({
         },
         token,
       ),
-    onSuccess: (_data, item) => {
+    onMutate: async (item) => {
+      setSaveError('')
+      const optimisticItem = optimisticSavedItemFromFeedItem(item)
+      setPendingSavedKeys((current) => new Set(current).add(optimisticItem.item_key))
+      await queryClient.cancelQueries({ queryKey: savedItemsQueryKey })
+      const previousItems = queryClient.getQueryData<SavedItem[]>(savedItemsQueryKey)
+      queryClient.setQueryData<SavedItem[]>(savedItemsQueryKey, (current) =>
+        mergeSavedItem(current, optimisticItem),
+      )
+      return { previousItems, optimisticItem }
+    },
+    onError: (_error, _item, context) => {
+      queryClient.setQueryData(savedItemsQueryKey, context?.previousItems)
+      setSaveError('저장 처리에 실패했습니다. 다시 시도해 주세요.')
+    },
+    onSuccess: (data, item) => {
+      queryClient.setQueryData<SavedItem[]>(savedItemsQueryKey, (current) => mergeSavedItem(current, data))
       trackAnalyticsEvent({
         eventName: 'saved_item_add',
         panel: 'home',
@@ -940,13 +961,41 @@ function HomePanel({
           source_label: item.source_label,
         },
       })
-      void queryClient.invalidateQueries({ queryKey: ['saved-items'] })
+    },
+    onSettled: (_data, _error, item, context) => {
+      const itemKey = context?.optimisticItem.item_key ?? item?.id
+      if (!itemKey) return
+      setPendingSavedKeys((current) => {
+        const next = new Set(current)
+        next.delete(itemKey)
+        return next
+      })
     },
   })
   const removeSavedItem = useMutation({
-    mutationFn: (savedItemId: number) => api<void>(`/saved-items/${savedItemId}`, { method: 'DELETE' }, token),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['saved-items'] })
+    mutationFn: (savedItem: SavedItem) => api<void>(`/saved-items/${savedItem.id}`, { method: 'DELETE' }, token),
+    onMutate: async (savedItem) => {
+      setSaveError('')
+      setPendingSavedKeys((current) => new Set(current).add(savedItem.item_key))
+      await queryClient.cancelQueries({ queryKey: savedItemsQueryKey })
+      const previousItems = queryClient.getQueryData<SavedItem[]>(savedItemsQueryKey)
+      queryClient.setQueryData<SavedItem[]>(savedItemsQueryKey, (current) =>
+        removeSavedItemFromList(current, savedItem),
+      )
+      return { previousItems, savedItem }
+    },
+    onError: (_error, _savedItem, context) => {
+      queryClient.setQueryData(savedItemsQueryKey, context?.previousItems)
+      setSaveError('저장 해제에 실패했습니다. 다시 시도해 주세요.')
+    },
+    onSettled: (_data, _error, savedItem, context) => {
+      const itemKey = context?.savedItem.item_key ?? savedItem?.item_key
+      if (!itemKey) return
+      setPendingSavedKeys((current) => {
+        const next = new Set(current)
+        next.delete(itemKey)
+        return next
+      })
     },
   })
   const keywordOptions = useMemo(() => {
@@ -1122,9 +1171,11 @@ function HomePanel({
         )}
         {updates.isLoading && <p className="muted">업데이트를 불러오는 중...</p>}
         {updates.error && <p className="error">{updates.error.message}</p>}
+        {saveError && <p className="error">{saveError}</p>}
         <div className="feedList">
           {feedItems.map((item) => {
             const savedItem = findSavedFeedItem(savedItems.data, item)
+            const savePending = pendingSavedKeys.has(savedItem?.item_key ?? item.id)
             return (
               <UpdateFeedCard
                 key={item.id}
@@ -1140,12 +1191,12 @@ function HomePanel({
                   }
                   if (!onRequireVerified()) return
                   if (savedItem) {
-                    removeSavedItem.mutate(savedItem.id)
+                    removeSavedItem.mutate(savedItem)
                     return
                   }
                   saveItem.mutate(item)
                 }}
-                savePending={saveItem.isPending || removeSavedItem.isPending}
+                savePending={savePending}
               />
             )
           })}
@@ -1319,12 +1370,8 @@ function UpdateFeedCard({
 }
 
 function AuthModal({
-  publicSignupEnabled,
-  setToken,
   onClose,
 }: {
-  publicSignupEnabled: boolean
-  setToken: (token: string | null) => void
   onClose: () => void
 }) {
   return (
@@ -1339,105 +1386,80 @@ function AuthModal({
             <X size={17} />
           </button>
         </div>
-        <AuthPanel publicSignupEnabled={publicSignupEnabled} setToken={setToken} />
+        <AuthPanel />
       </div>
     </div>
   )
 }
 
-function AuthPanel({
-  publicSignupEnabled,
-  setToken,
-}: {
-  publicSignupEnabled: boolean
-  setToken: (token: string | null) => void
-}) {
-  const [mode, setMode] = useState<AuthMode>('login')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [displayName, setDisplayName] = useState('')
+function AuthPanel() {
   const oauthStatus = useQuery({
     queryKey: ['oauth-status'],
     queryFn: () => api<OAuthStatus>('/auth/oauth/status'),
   })
   const oauthProviders = configuredOauthProviders(oauthStatus.data)
-  useEffect(() => {
-    if (!publicSignupEnabled && mode === 'signup') setMode('login')
-  }, [mode, publicSignupEnabled])
-  const mutation = useMutation({
-    mutationFn: () =>
-      api<AuthResponse>(`/auth/${mode}`, {
-        method: 'POST',
-        body: JSON.stringify(
-          mode === 'signup' ? { email, password, display_name: displayName } : { email, password },
-        ),
-      }),
-    onSuccess: (data) => setToken(data.access_token),
-  })
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    if (mode === 'signup' && !isStrongPassword(password)) return
-    mutation.mutate()
-  }
-  const passwordRules = getPasswordRuleStatus(password)
-  const signupPasswordReady = mode !== 'signup' || isStrongPassword(password)
   return (
-    <form className="authPanel" onSubmit={submit}>
-      {oauthProviders.map((provider) => (
-        <button
-          key={provider}
-          type="button"
-          className="secondary"
-          onClick={() => {
-            window.location.href = oauthStartUrl(provider, API_BASE)
-          }}
-        >
-          {provider === 'google' ? 'Google로 계속하기' : 'Kakao로 계속하기'}
-        </button>
-      ))}
+    <div className="authPanel socialAuthPanel">
+      <div className="oauthButtonStack">
+        {oauthProviders.map((provider) => (
+          <button
+            key={provider}
+            type="button"
+            className={`oauthButton oauthButton-${provider}`}
+            onClick={() => {
+              window.location.href = oauthStartUrl(provider, API_BASE)
+            }}
+          >
+            <OAuthProviderIcon provider={provider} />
+            <span>{oauthProviderLabels[provider]}</span>
+          </button>
+        ))}
+      </div>
       {!oauthStatus.isLoading && oauthProviders.length === 0 && (
         <p className="hint">소셜 로그인은 관리자 설정 후 표시됩니다.</p>
       )}
-      <div className="segmented">
-        <button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>
-          Login
-        </button>
-        {publicSignupEnabled && (
-          <button type="button" className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')}>
-            Sign up
-          </button>
-        )}
-      </div>
-      <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="email" />
-      <input
-        value={password}
-        onChange={(event) => setPassword(event.target.value)}
-        placeholder={mode === 'signup' ? passwordRequirementText : 'password'}
-        type="password"
-        maxLength={72}
-      />
-      {mode === 'signup' && (
-        <div className="passwordRules" aria-label="비밀번호 규칙">
-          {passwordRules.map((rule) => (
-            <span key={rule.id} className={rule.valid ? 'valid' : ''}>
-              {rule.label}
-            </span>
-          ))}
-        </div>
-      )}
-      {mode === 'signup' && (
-        <input
-          value={displayName}
-          onChange={(event) => setDisplayName(event.target.value)}
-          placeholder="display name"
-        />
-      )}
-      <button className="primary" type="submit" disabled={mutation.isPending || !signupPasswordReady} title={mode}>
-        <LogIn size={17} />
-        {mode === 'signup' ? 'Create account' : 'Login'}
-      </button>
-      {mutation.error && <p className="error">{mutation.error.message}</p>}
-    </form>
+    </div>
+  )
+}
+
+function OAuthProviderIcon({ provider }: { provider: OAuthProvider }) {
+  if (provider === 'google') {
+    return (
+      <span className="oauthIcon oauthIcon-google" aria-hidden="true">
+        <svg viewBox="0 0 18 18" focusable="false">
+          <path
+            fill="#4285F4"
+            d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.91c1.7-1.57 2.69-3.88 2.69-6.62Z"
+          />
+          <path
+            fill="#34A853"
+            d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.26A5.43 5.43 0 0 1 3.96 10.7H.96v2.33A9 9 0 0 0 9 18Z"
+          />
+          <path
+            fill="#FBBC05"
+            d="M3.96 10.7a5.39 5.39 0 0 1 0-3.42V4.95H.96a9 9 0 0 0 0 8.08l3-2.33Z"
+          />
+          <path
+            fill="#EA4335"
+            d="M9 3.58c1.32 0 2.5.45 3.43 1.34l2.58-2.58A8.66 8.66 0 0 0 9 0 9 9 0 0 0 .96 4.95l3 2.33A5.36 5.36 0 0 1 9 3.58Z"
+          />
+        </svg>
+      </span>
+    )
+  }
+  if (provider === 'kakao') {
+    return (
+      <span className="oauthIcon oauthIcon-kakao" aria-hidden="true">
+        <svg viewBox="0 0 20 20" focusable="false">
+          <path d="M10 3.2c-4.2 0-7.6 2.66-7.6 5.94 0 2.13 1.43 4 3.58 5.05l-.72 2.63c-.07.24.2.43.4.28l3.13-2.08c.4.04.8.06 1.21.06 4.2 0 7.6-2.66 7.6-5.94S14.2 3.2 10 3.2Z" />
+        </svg>
+      </span>
+    )
+  }
+  return (
+    <span className="oauthIcon oauthIcon-naver" aria-hidden="true">
+      N
+    </span>
   )
 }
 
@@ -2793,15 +2815,36 @@ function SavedPanel({
   onOpenPost: (postId: number) => void
 }) {
   const queryClient = useQueryClient()
+  const [pendingRemoveKeys, setPendingRemoveKeys] = useState<Set<string>>(() => new Set())
+  const [removeError, setRemoveError] = useState('')
+  const savedItemsQueryKey = ['saved-items', token] as const
   const savedItems = useQuery({
-    queryKey: ['saved-items', token],
+    queryKey: savedItemsQueryKey,
     queryFn: () => api<SavedItem[]>('/saved-items', {}, token),
     enabled: Boolean(token && user),
   })
   const remove = useMutation({
-    mutationFn: (id: number) => api<void>(`/saved-items/${id}`, { method: 'DELETE' }, token),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['saved-items'] })
+    mutationFn: (item: SavedItem) => api<void>(`/saved-items/${item.id}`, { method: 'DELETE' }, token),
+    onMutate: async (item) => {
+      setRemoveError('')
+      setPendingRemoveKeys((current) => new Set(current).add(item.item_key))
+      await queryClient.cancelQueries({ queryKey: savedItemsQueryKey })
+      const previousItems = queryClient.getQueryData<SavedItem[]>(savedItemsQueryKey)
+      queryClient.setQueryData<SavedItem[]>(savedItemsQueryKey, (current) => removeSavedItemFromList(current, item))
+      return { previousItems, item }
+    },
+    onError: (_error, _item, context) => {
+      queryClient.setQueryData(savedItemsQueryKey, context?.previousItems)
+      setRemoveError('저장 항목 삭제에 실패했습니다. 다시 시도해 주세요.')
+    },
+    onSettled: (_data, _error, item, context) => {
+      const itemKey = context?.item.item_key ?? item?.item_key
+      if (!itemKey) return
+      setPendingRemoveKeys((current) => {
+        const next = new Set(current)
+        next.delete(itemKey)
+        return next
+      })
     },
   })
   if (!user) {
@@ -2827,6 +2870,7 @@ function SavedPanel({
       </div>
       {savedItems.isLoading && <p className="muted">저장 항목을 불러오는 중...</p>}
       {savedItems.error && <p className="error">{savedItems.error.message}</p>}
+      {removeError && <p className="error">{removeError}</p>}
       <div className="feedList savedGrid">
         {savedItems.data?.map((item) => {
           const postId = postIdFromUrl(item.url)
@@ -2854,7 +2898,12 @@ function SavedPanel({
               )}
               <div className={isYoutube ? 'cardActions multi' : 'cardActions'}>
                 {isYoutube && <YoutubeAppLink url={item.url} />}
-                <button className="saveButton" onClick={() => remove.mutate(item.id)} disabled={remove.isPending} title="삭제">
+                <button
+                  className="saveButton"
+                  onClick={() => remove.mutate(item)}
+                  disabled={pendingRemoveKeys.has(item.item_key)}
+                  title="삭제"
+                >
                   <Trash2 size={16} />
                 </button>
               </div>

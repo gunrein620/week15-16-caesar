@@ -59,6 +59,8 @@ Required backend variables:
 - `YOUTUBE_API_KEY`
 - `NAVER_CLIENT_ID`
 - `NAVER_CLIENT_SECRET`
+- `NAVER_OAUTH_CLIENT_ID`
+- `NAVER_OAUTH_CLIENT_SECRET`
 - `EMAIL_VERIFICATION_ENABLED`
 - `RESEND_API_KEY`
 - `EMAIL_FROM`
@@ -111,7 +113,8 @@ Beta constraints:
 - Access tokens are short-lived and refresh sessions are stored in HttpOnly cookies. Production/preview uses `SameSite=None; Secure` because the Vercel frontend and Railway backend are cross-site.
 - Email verification is controlled by `EMAIL_VERIFICATION_ENABLED`. It is disabled for the current social-login beta until a verified mail domain is ready.
 - Public beta collects anonymous usage events for service improvement. Raw IP, raw user-agent, emails, tokens, API keys, and search result bodies are not stored in analytics events.
-- Social login supports Google/Kakao OAuth when the provider client env vars are configured.
+- Social login supports Google/Kakao/Naver OAuth when the provider client env vars are configured.
+- Naver Search API uses `NAVER_CLIENT_ID` and `NAVER_CLIENT_SECRET`; Naver login uses `NAVER_OAUTH_CLIENT_ID` and `NAVER_OAUTH_CLIENT_SECRET`.
 - Infra cost hard stop uses admin-managed monthly estimates. It blocks public API traffic with 503 when the elapsed monthly estimate exceeds the budget, while keeping login and admin recovery endpoints open.
 - Actual Railway scale-to-zero is a separate operational action. Use `railway scale --service backend sfo=0` only when you intentionally want to take the backend offline.
 
@@ -158,6 +161,7 @@ Manual beta scenario:
 
 ## Known v1 Limits
 
-- YouTube and Naver real API verification requires `YOUTUBE_API_KEY`, `NAVER_CLIENT_ID`, and `NAVER_CLIENT_SECRET`.
+- YouTube and Naver search verification requires `YOUTUBE_API_KEY`, `NAVER_CLIENT_ID`, and `NAVER_CLIENT_SECRET`.
+- Naver login verification requires `NAVER_OAUTH_CLIENT_ID`, `NAVER_OAUTH_CLIENT_SECRET`, and a registered callback URL in Naver Developers.
 - During beta, sync, source management, and briefing preview/publish are admin-only.
 - Railway backend stays at one instance while migrations run in the start command.

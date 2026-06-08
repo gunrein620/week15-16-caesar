@@ -5,7 +5,7 @@ from fastapi import HTTPException, status
 
 from app.core.config import get_settings
 
-OAUTH_PROVIDERS = {"google", "kakao"}
+OAUTH_PROVIDERS = {"google", "kakao", "naver"}
 
 
 def oauth_redirect_uri(provider: str) -> str:
@@ -36,6 +36,17 @@ def oauth_authorize_url(provider: str, state: str) -> str:
         return "https://kauth.kakao.com/oauth/authorize?" + urlencode(
             {
                 "client_id": settings.kakao_client_id,
+                "redirect_uri": redirect_uri,
+                "response_type": "code",
+                "state": state,
+            }
+        )
+    if provider == "naver":
+        if not settings.naver_oauth_client_id:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Naver OAuth is not configured")
+        return "https://nid.naver.com/oauth2.0/authorize?" + urlencode(
+            {
+                "client_id": settings.naver_oauth_client_id,
                 "redirect_uri": redirect_uri,
                 "response_type": "code",
                 "state": state,
@@ -96,5 +107,32 @@ def exchange_oauth_code(provider: str, code: str, redirect_uri: str) -> dict:
             "email_verified": bool(email and account.get("is_email_verified")),
             "display_name": profile.get("properties", {}).get("nickname")
             or (email.split("@")[0] if email else f"Kakao {profile['id']}"),
+        }
+    if provider == "naver":
+        token = httpx.post(
+            "https://nid.naver.com/oauth2.0/token",
+            data={
+                "client_id": settings.naver_oauth_client_id,
+                "client_secret": settings.naver_oauth_client_secret,
+                "code": code,
+                "grant_type": "authorization_code",
+            },
+            timeout=10,
+        ).json()
+        access_token = token.get("access_token")
+        profile = httpx.get(
+            "https://openapi.naver.com/v1/nid/me",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        ).json()
+        account = profile.get("response", {})
+        email = account.get("email")
+        provider_subject = str(account["id"])
+        return {
+            "provider_subject": provider_subject,
+            "email": email,
+            "email_verified": bool(email),
+            "display_name": account.get("nickname")
+            or (email.split("@")[0] if email else f"Naver {provider_subject}"),
         }
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unsupported OAuth provider")

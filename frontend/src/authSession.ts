@@ -1,7 +1,13 @@
 import type { User } from './api.ts'
 
-export type OAuthProvider = 'google' | 'kakao'
+export type OAuthProvider = 'google' | 'kakao' | 'naver'
 export type OAuthStatus = Record<OAuthProvider, boolean>
+
+export const oauthProviderLabels: Record<OAuthProvider, string> = {
+  google: 'Google 계정으로 로그인',
+  kakao: '카카오 로그인',
+  naver: '네이버 로그인',
+}
 
 let memoryAccessToken: string | null = null
 
@@ -22,7 +28,7 @@ export function oauthStartUrl(provider: OAuthProvider, apiBase: string): string 
 
 export function configuredOauthProviders(status?: OAuthStatus | null): OAuthProvider[] {
   if (!status) return []
-  return (['google', 'kakao'] as const).filter((provider) => status[provider])
+  return (['google', 'kakao', 'naver'] as const).filter((provider) => status[provider])
 }
 
 export function shouldShowVerificationPrompt(user?: User | null, emailVerificationEnabled = true): boolean {

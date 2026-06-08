@@ -658,6 +658,113 @@ h2 {
   padding: 0;
 }
 
+.socialAuthPanel {
+  align-items: center;
+  background: transparent;
+  display: flex;
+  justify-content: center;
+}
+
+.oauthButtonStack {
+  display: grid;
+  gap: 10px;
+  max-width: 320px;
+  width: 100%;
+}
+
+.oauthButton {
+  align-items: center;
+  border-radius: 8px;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: grid;
+  font-size: 15px;
+  font-weight: 700;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  height: 48px;
+  justify-items: center;
+  letter-spacing: 0;
+  line-height: 1;
+  padding: 0;
+  text-align: center;
+  width: 100%;
+}
+
+.oauthButton span:last-child {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oauthButton:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.oauthButton-google {
+  background: #fff;
+  border: 1px solid #747775;
+  color: #1f1f1f;
+  font-family: Roboto, Arial, sans-serif;
+  font-weight: 500;
+}
+
+.oauthButton-google:hover {
+  background: #f8fafd;
+  border-color: #5f6368;
+}
+
+.oauthButton-kakao {
+  background: #fee500;
+  border: 1px solid #fee500;
+  color: rgba(0, 0, 0, 0.85);
+}
+
+.oauthButton-kakao:hover {
+  background: #fada0a;
+  border-color: #fada0a;
+}
+
+.oauthButton-naver {
+  background: #03c75a;
+  border: 1px solid #03c75a;
+  color: #fff;
+}
+
+.oauthButton-naver:hover {
+  background: #02b350;
+  border-color: #02b350;
+}
+
+.oauthIcon {
+  align-items: center;
+  display: inline-flex;
+  grid-column: 1;
+  height: 20px;
+  justify-content: center;
+  width: 20px;
+}
+
+.oauthIcon svg {
+  display: block;
+  height: 20px;
+  width: 20px;
+}
+
+.oauthIcon-kakao svg {
+  fill: rgba(0, 0, 0, 0.9);
+}
+
+.oauthIcon-naver {
+  color: #fff;
+  font-family: Arial, sans-serif;
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1;
+}
+
 .modalHead,
 .composerTop {
   align-items: center;

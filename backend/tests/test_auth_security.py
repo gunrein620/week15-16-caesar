@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from urllib.parse import parse_qs, urlparse
 
 from sqlalchemy import select
 
@@ -312,6 +313,37 @@ def test_oauth_callback_creates_kakao_identity_without_email(client, monkeypatch
         assert identity.email is None
 
 
+def test_oauth_callback_creates_naver_identity_without_email(client, monkeypatch):
+    monkeypatch.setenv("NAVER_OAUTH_CLIENT_ID", "naver-client")
+    monkeypatch.setenv("NAVER_OAUTH_CLIENT_SECRET", "naver-secret")
+    monkeypatch.setenv("OAUTH_REDIRECT_BASE_URL", "https://backend.example.com")
+    from app.core.config import reset_settings_cache
+
+    reset_settings_cache()
+    monkeypatch.setattr(
+        "app.api.auth.exchange_oauth_code",
+        lambda provider, code, redirect_uri: {
+            "provider_subject": "naver-123",
+            "email": None,
+            "email_verified": False,
+            "display_name": "Naver User",
+        },
+    )
+    state = client.get("/auth/oauth/naver/start", follow_redirects=False).headers["location"].split("state=")[1].split("&")[0]
+
+    response = client.get(f"/auth/oauth/naver/callback?code=ok&state={state}", follow_redirects=False)
+
+    reset_settings_cache()
+    assert response.status_code == 307, response.text
+    with get_session_factory()() as db:
+        user = db.query(User).filter(User.email == "naver_naver_123@oauth.local").one()
+        identity = db.query(AuthIdentity).filter(AuthIdentity.provider == "naver").one()
+        assert user.display_name == "Naver User"
+        assert user.email_verified_at is not None
+        assert identity.user_id == user.id
+        assert identity.email is None
+
+
 def test_kakao_oauth_exchange_allows_profile_without_email(monkeypatch):
     monkeypatch.setenv("KAKAO_CLIENT_ID", "kakao-client")
     monkeypatch.setenv("KAKAO_CLIENT_SECRET", "kakao-secret")
@@ -343,20 +375,101 @@ def test_kakao_oauth_exchange_allows_profile_without_email(monkeypatch):
     }
 
 
+def test_naver_oauth_authorize_url_uses_oauth_credentials(monkeypatch):
+    monkeypatch.setenv("NAVER_OAUTH_CLIENT_ID", "naver-oauth-client")
+    monkeypatch.setenv("NAVER_OAUTH_CLIENT_SECRET", "naver-oauth-secret")
+    monkeypatch.setenv("OAUTH_REDIRECT_BASE_URL", "https://frontend.example.com")
+    from app.core.config import reset_settings_cache
+    from app.services.oauth import oauth_authorize_url
+
+    reset_settings_cache()
+    authorize_url = oauth_authorize_url("naver", "state-123")
+    reset_settings_cache()
+
+    parsed = urlparse(authorize_url)
+    params = parse_qs(parsed.query)
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "nid.naver.com"
+    assert parsed.path == "/oauth2.0/authorize"
+    assert params["client_id"] == ["naver-oauth-client"]
+    assert params["redirect_uri"] == ["https://frontend.example.com/auth/oauth/naver/callback"]
+    assert params["response_type"] == ["code"]
+    assert params["state"] == ["state-123"]
+
+
+def test_naver_oauth_exchange_maps_profile_response(monkeypatch):
+    monkeypatch.setenv("NAVER_OAUTH_CLIENT_ID", "naver-oauth-client")
+    monkeypatch.setenv("NAVER_OAUTH_CLIENT_SECRET", "naver-oauth-secret")
+    from app.core.config import reset_settings_cache
+    from app.services.oauth import exchange_oauth_code
+
+    captured: dict[str, object] = {}
+
+    class JsonResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    def fake_post(url, *args, **kwargs):
+        captured["token_url"] = url
+        captured["token_data"] = kwargs["data"]
+        return JsonResponse({"access_token": "naver-access-token"})
+
+    def fake_get(url, *args, **kwargs):
+        captured["profile_url"] = url
+        captured["profile_headers"] = kwargs["headers"]
+        return JsonResponse(
+            {
+                "response": {
+                    "id": "naver-123",
+                    "email": "naver@example.com",
+                    "nickname": "Naver User",
+                }
+            }
+        )
+
+    reset_settings_cache()
+    monkeypatch.setattr("app.services.oauth.httpx.post", fake_post)
+    monkeypatch.setattr("app.services.oauth.httpx.get", fake_get)
+
+    profile = exchange_oauth_code("naver", "code", "https://backend.example.com/auth/oauth/naver/callback")
+
+    reset_settings_cache()
+    assert captured["token_url"] == "https://nid.naver.com/oauth2.0/token"
+    assert captured["token_data"] == {
+        "client_id": "naver-oauth-client",
+        "client_secret": "naver-oauth-secret",
+        "code": "code",
+        "grant_type": "authorization_code",
+    }
+    assert captured["profile_url"] == "https://openapi.naver.com/v1/nid/me"
+    assert captured["profile_headers"] == {"Authorization": "Bearer naver-access-token"}
+    assert profile == {
+        "provider_subject": "naver-123",
+        "email": "naver@example.com",
+        "email_verified": True,
+        "display_name": "Naver User",
+    }
+
+
 def test_oauth_status_reports_configured_providers(client, monkeypatch):
     default_status = client.get("/auth/oauth/status")
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "google-client")
     monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "google-secret")
+    monkeypatch.setenv("NAVER_OAUTH_CLIENT_ID", "naver-client")
+    monkeypatch.setenv("NAVER_OAUTH_CLIENT_SECRET", "naver-secret")
     from app.core.config import reset_settings_cache
 
     reset_settings_cache()
-    google_status = client.get("/auth/oauth/status")
+    configured_status = client.get("/auth/oauth/status")
     reset_settings_cache()
 
     assert default_status.status_code == 200, default_status.text
-    assert default_status.json() == {"google": False, "kakao": False}
-    assert google_status.status_code == 200, google_status.text
-    assert google_status.json() == {"google": True, "kakao": False}
+    assert default_status.json() == {"google": False, "kakao": False, "naver": False}
+    assert configured_status.status_code == 200, configured_status.text
+    assert configured_status.json() == {"google": True, "kakao": False, "naver": True}
 
 
 def test_expired_refresh_token_is_rejected(client):

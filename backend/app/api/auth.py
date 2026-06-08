@@ -205,6 +205,7 @@ def oauth_status() -> dict[str, bool]:
     return {
         "google": bool(settings.google_client_id and settings.google_client_secret),
         "kakao": bool(settings.kakao_client_id and settings.kakao_client_secret),
+        "naver": bool(settings.naver_oauth_client_id and settings.naver_oauth_client_secret),
     }
 
 

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   configuredOauthProviders,
   getInitialAccessToken,
+  oauthProviderLabels,
   oauthStartUrl,
   shouldShowVerificationPrompt,
   storeAccessToken,
@@ -46,17 +47,27 @@ test('access token is kept in memory and not localStorage', () => {
 test('oauthStartUrl targets backend provider start endpoints', () => {
   assert.equal(oauthStartUrl('google', 'https://api.example.com'), 'https://api.example.com/auth/oauth/google/start')
   assert.equal(oauthStartUrl('kakao', 'https://api.example.com'), 'https://api.example.com/auth/oauth/kakao/start')
+  assert.equal(oauthStartUrl('naver', 'https://api.example.com'), 'https://api.example.com/auth/oauth/naver/start')
 })
 
 test('oauthStartUrl supports same-origin provider start endpoints', () => {
   assert.equal(oauthStartUrl('google', ''), '/auth/oauth/google/start')
   assert.equal(oauthStartUrl('kakao', ''), '/auth/oauth/kakao/start')
+  assert.equal(oauthStartUrl('naver', ''), '/auth/oauth/naver/start')
 })
 
 test('configuredOauthProviders only returns configured providers', () => {
-  assert.deepEqual(configuredOauthProviders({ google: false, kakao: false }), [])
-  assert.deepEqual(configuredOauthProviders({ google: true, kakao: false }), ['google'])
-  assert.deepEqual(configuredOauthProviders({ google: true, kakao: true }), ['google', 'kakao'])
+  assert.deepEqual(configuredOauthProviders({ google: false, kakao: false, naver: false }), [])
+  assert.deepEqual(configuredOauthProviders({ google: true, kakao: false, naver: false }), ['google'])
+  assert.deepEqual(configuredOauthProviders({ google: true, kakao: true, naver: true }), ['google', 'kakao', 'naver'])
+})
+
+test('oauthProviderLabels use provider-branded Korean login text', () => {
+  assert.deepEqual(oauthProviderLabels, {
+    google: 'Google 계정으로 로그인',
+    kakao: '카카오 로그인',
+    naver: '네이버 로그인',
+  })
 })
 
 test('unverified non-admin users should see verification prompt when verification is enabled', () => {
