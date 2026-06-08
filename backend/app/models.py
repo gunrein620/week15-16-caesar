@@ -3,6 +3,7 @@ from typing import Any, Literal
 
 from sqlalchemy import (
     CheckConstraint,
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -353,7 +354,7 @@ class RagChunk(Base, TimestampMixin):
             name="ck_rag_chunk_exactly_one_source",
         ),
         Index("ux_rag_chunk_post_index", "post_id", "chunk_index", unique=True),
-        Index("ux_rag_chunk_youtube_index", "youtube_video_id", "chunk_index", unique=True),
+    Index("ux_rag_chunk_youtube_index", "youtube_video_id", "chunk_index", unique=True),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -371,6 +372,39 @@ class RagChunk(Base, TimestampMixin):
 
     post: Mapped[Post | None] = relationship(back_populates="rag_chunks")
     youtube_video: Mapped[YoutubeVideo | None] = relationship(back_populates="rag_chunks")
+
+
+class RagEmbeddingJob(Base, TimestampMixin):
+    __tablename__ = "rag_embedding_jobs"
+    __table_args__ = (
+        CheckConstraint("scope IN ('recent_90d', 'all')", name="ck_rag_embedding_job_scope"),
+        CheckConstraint(
+            "status IN ('running', 'completed', 'failed')",
+            name="ck_rag_embedding_job_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    scope: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    batch_size: Mapped[int] = mapped_column(Integer, default=64, nullable=False)
+    force: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="running", nullable=False)
+    total_videos: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_candidates: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    processed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    embedded: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_chunks: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    estimated_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    remaining_missing: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_error: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AiUsageCounter(Base):

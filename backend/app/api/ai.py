@@ -24,8 +24,15 @@ def qa(
     db: Annotated[Session, Depends(get_db)],
 ) -> QaResponse:
     consume_ai_quota(db, user, "qa")
-    answer, sources = answer_question(db, payload.question, payload.artist_id)
-    return QaResponse(answer=answer, sources=sources)
+    answer, sources, has_more, next_offset = answer_question(
+        db,
+        payload.question,
+        payload.artist_id,
+        limit=payload.limit,
+        offset=payload.offset,
+        include_answer=payload.include_answer,
+    )
+    return QaResponse(answer=answer, sources=sources, has_more=has_more, next_offset=next_offset)
 
 
 @router.post("/similar", response_model=list[PostRead])

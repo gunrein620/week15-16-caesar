@@ -156,11 +156,16 @@ class PostList(BaseModel):
 class QaRequest(BaseModel):
     question: str = Field(min_length=1)
     artist_id: int = 1
+    limit: int = Field(default=10, ge=1, le=30)
+    offset: int = Field(default=0, ge=0)
+    include_answer: bool = True
 
 
 class QaResponse(BaseModel):
     answer: str
     sources: list[dict]
+    has_more: bool = False
+    next_offset: int | None = None
 
 
 class SimilarRequest(BaseModel):
@@ -269,6 +274,40 @@ class RagEmbedYoutubeResult(BaseModel):
     created_chunks: int
     remaining_missing: int
     estimated_tokens: int
+
+
+class RagEmbeddingJobCreate(BaseModel):
+    artist_id: int = 1
+    scope: Literal["recent_90d", "all"] = "recent_90d"
+    source_type: str | None = None
+    batch_size: int = Field(default=64, ge=1, le=256)
+    force: bool = False
+
+
+class RagEmbeddingJobRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    artist_id: int
+    user_id: int | None
+    scope: str
+    source_type: str | None
+    batch_size: int
+    force: bool
+    status: str
+    total_videos: int
+    total_candidates: int
+    processed: int
+    embedded: int
+    failed: int
+    created_chunks: int
+    estimated_tokens: int
+    remaining_missing: int
+    last_error: str
+    started_at: datetime | None
+    completed_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
 
 
 class YoutubeSourceCreate(BaseModel):

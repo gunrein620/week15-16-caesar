@@ -25,6 +25,19 @@ def embed_text(text: str) -> list[float]:
     return deterministic_embedding(text)
 
 
+def embed_texts(texts: list[str]) -> list[list[float]]:
+    if not texts:
+        return []
+    settings = get_settings()
+    if settings.openai_api_key:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=settings.openai_api_key)
+        response = client.embeddings.create(model=settings.embedding_model, input=texts)
+        return [item.embedding for item in response.data]
+    return [deterministic_embedding(text) for text in texts]
+
+
 def refresh_post_chunks(db: Session, post: Post) -> None:
     db.execute(delete(RagChunk).where(RagChunk.post_id == post.id))
     body = f"{post.title}\n\n{post.content}"
@@ -102,10 +115,16 @@ def refresh_video_chunks(db: Session, video: YoutubeVideo, artist_id: int) -> in
     return 1
 
 
-def search_chunks(db: Session, question: str, artist_id: int, limit: int = 5) -> list[RagChunk]:
+def search_chunks(
+    db: Session,
+    question: str,
+    artist_id: int,
+    limit: int = 10,
+    offset: int = 0,
+) -> list[RagChunk]:
     from app.services.archive_search import search_archive_candidates
 
-    return search_archive_candidates(db, question, artist_id=artist_id, limit=limit)
+    return search_archive_candidates(db, question, artist_id=artist_id, limit=limit, offset=offset)
 
 
 def _chunk_source_payload(db: Session, chunk: RagChunk) -> dict:
@@ -205,16 +224,17 @@ def _temporal_update_sources(
     db: Session,
     intent: SearchIntent,
     *,
-    limit: int = 5,
+    limit: int = 10,
+    offset: int = 0,
 ) -> list[dict]:
     source = "youtube" if intent.media_type == "youtube" else None
-    response = get_artist_updates(db, intent.artist_id, source=source, limit=80)
+    response = get_artist_updates(db, intent.artist_id, source=source, limit=max(80, limit + offset + 10))
     cutoff = _temporal_cutoff(intent)
     items = response.items
     if cutoff is not None:
         items = [item for item in items if _aware_utc(item.published_at) >= cutoff]
     items = [item for item in items if _matches_temporal_archive_terms(item, intent)]
-    return [_update_source_payload(item) for item in items[:limit]]
+    return [_update_source_payload(item) for item in items[offset : offset + limit]]
 
 
 def _temporal_answer(intent: SearchIntent, sources: list[dict]) -> str:
@@ -241,16 +261,32 @@ def format_context_for_answer(payloads: list[dict]) -> str:
     return "\n\n".join(blocks)
 
 
-def answer_question(db: Session, question: str, artist_id: int) -> tuple[str, list[dict]]:
+def answer_question(
+    db: Session,
+    question: str,
+    artist_id: int,
+    *,
+    limit: int = 10,
+    offset: int = 0,
+    include_answer: bool = True,
+) -> tuple[str, list[dict], bool, int | None]:
     intent = parse_search_intent(question, artist_id=artist_id, db=db)
     if intent.route == "updates":
-        sources = _temporal_update_sources(db, intent)
-        return _temporal_answer(intent, sources), sources
+        sources = _temporal_update_sources(db, intent, limit=limit + 1, offset=offset)
+        has_more = len(sources) > limit
+        visible = sources[:limit]
+        answer = _temporal_answer(intent, visible) if include_answer else ""
+        return answer, visible, has_more, offset + limit if has_more else None
 
-    chunks = search_chunks(db, question, artist_id)
+    chunks = search_chunks(db, question, artist_id, limit=limit + 1, offset=offset)
+    has_more = len(chunks) > limit
+    chunks = chunks[:limit]
     sources = [_chunk_source_payload(db, chunk) for chunk in chunks]
     if not chunks:
-        return "아직 참고할 게시글이나 영상 데이터가 없습니다.", sources
+        answer = "아직 참고할 게시글이나 영상 데이터가 없습니다." if include_answer else ""
+        return answer, sources, False, None
+    if not include_answer:
+        return "", sources, has_more, offset + limit if has_more else None
 
     settings = get_settings()
     context = format_context_for_answer(sources)
@@ -271,9 +307,14 @@ def answer_question(db: Session, question: str, artist_id: int) -> tuple[str, li
                 {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"},
             ],
         )
-        return response.choices[0].message.content or "", sources
+        return response.choices[0].message.content or "", sources, has_more, offset + limit if has_more else None
 
-    return f"관련 근거를 찾았습니다: {chunks[0].content}", sources
+    return (
+        f"관련 근거를 찾았습니다: {chunks[0].content}",
+        sources,
+        has_more,
+        offset + limit if has_more else None,
+    )
 
 
 def similar_posts(db: Session, post_id: int, limit: int = 5) -> list[Post]:

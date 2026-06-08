@@ -140,6 +140,75 @@ def test_today_query_uses_recent_update_sources_not_old_vector_match(client):
     assert "old-video" not in ids
 
 
+def test_qa_returns_ten_sources_and_supports_offset_without_new_answer(client):
+    token = signup(client, "qa-pagination@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    with get_session_factory()() as db:
+        source = YoutubeSource(
+            artist_id=1,
+            source_type="keyword_search",
+            source_value="리센느 페이지네이션",
+            title="QA pagination source",
+        )
+        db.add(source)
+        db.flush()
+        for index in range(12):
+            video = YoutubeVideo(
+                id=f"qa-page-{index:02d}",
+                title=f"RESCENE pagination marker {index:02d}",
+                description="pagination marker 검색 전용 영상",
+                channel_title="RESCENE",
+                thumbnail_url=f"https://img.youtube.com/vi/qa-page-{index:02d}/hqdefault.jpg",
+                url=f"https://www.youtube.com/watch?v=qa-page-{index:02d}",
+                published_at=datetime(2026, 6, index + 1, tzinfo=UTC),
+                view_count=100 + index,
+                like_count=10,
+                comment_count=1,
+                content_hash=f"qa-page-hash-{index:02d}",
+            )
+            db.add(video)
+            db.flush()
+            db.add(YoutubeVideoSource(video_id=video.id, source_id=source.id))
+            refresh_video_chunks(db, video, artist_id=1)
+        db.commit()
+
+    first = client.post(
+        "/ai/qa",
+        json={
+            "question": "pagination marker 영상 찾아줘",
+            "artist_id": 1,
+            "include_answer": False,
+        },
+        headers=headers,
+    )
+    second = client.post(
+        "/ai/qa",
+        json={
+            "question": "pagination marker 영상 찾아줘",
+            "artist_id": 1,
+            "limit": 10,
+            "offset": 10,
+            "include_answer": False,
+        },
+        headers=headers,
+    )
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    first_body = first.json()
+    second_body = second.json()
+    assert first_body["answer"] == ""
+    assert len(first_body["sources"]) == 10
+    assert first_body["has_more"] is True
+    assert first_body["next_offset"] == 10
+    assert second_body["answer"] == ""
+    assert len(second_body["sources"]) >= 2
+    assert not {
+        source["youtube_video_id"] for source in first_body["sources"]
+    } & {source["youtube_video_id"] for source in second_body["sources"]}
+
+
 def test_answer_context_includes_metadata(client):
     from app.services.rag import format_context_for_answer
 

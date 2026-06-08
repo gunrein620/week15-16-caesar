@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.db import is_postgres
 from app.models import Post, RagChunk, YoutubeVideo
 from app.services.search_intent import (
     SearchIntent,
@@ -75,13 +76,23 @@ def search_archive_candidates(
     question: str,
     *,
     artist_id: int,
-    limit: int = 5,
+    limit: int = 10,
+    offset: int = 0,
 ) -> list[RagChunk]:
     from app.services.rag import embed_text
 
     intent = parse_search_intent(question, artist_id=artist_id, db=db)
     query_embedding = embed_text(question)
-    chunks = db.scalars(select(RagChunk).where(RagChunk.artist_id == artist_id)).all()
+    if is_postgres():
+        fetch_limit = max((limit + offset) * 4, 80)
+        chunks = db.scalars(
+            select(RagChunk)
+            .where(RagChunk.artist_id == artist_id)
+            .order_by(RagChunk.embedding.cosine_distance(query_embedding))
+            .limit(fetch_limit)
+        ).all()
+    else:
+        chunks = db.scalars(select(RagChunk).where(RagChunk.artist_id == artist_id)).all()
     ranked: list[tuple[float, RagChunk, _ChunkSource]] = []
     for chunk in chunks:
         source = _source_for_chunk(db, chunk)
@@ -94,7 +105,8 @@ def search_archive_candidates(
         score = cosine_similarity(query_embedding, chunk.embedding) + _source_boost(source, intent)
         ranked.append((score, chunk, source))
 
-    ranked.sort(key=lambda item: item[0], reverse=True)
+    if not is_postgres():
+        ranked.sort(key=lambda item: item[0], reverse=True)
     deduped: list[RagChunk] = []
     seen_sources: set[tuple[str, str]] = set()
     for _, chunk, source in ranked:
@@ -102,6 +114,6 @@ def search_archive_candidates(
             continue
         seen_sources.add(source.key)
         deduped.append(chunk)
-        if len(deduped) >= limit:
+        if len(deduped) >= limit + offset:
             break
-    return deduped
+    return deduped[offset : offset + limit]

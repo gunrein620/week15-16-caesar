@@ -37,10 +37,11 @@ import {
   Post,
   PostEmbed,
   PostList,
+  QaResponse,
   QaSource,
   RagCleanupResult,
   RagCoverage,
-  RagEmbedYoutubeResult,
+  RagEmbeddingJob,
   SavedItem,
   SignupSettings,
   SyncSettings,
@@ -1513,13 +1514,35 @@ function RagPanel({
   onOpenPost: (postId: number) => void
 }) {
   const [question, setQuestion] = useState('')
+  const [qaResult, setQaResult] = useState<QaResponse | null>(null)
   const qa = useMutation({
-    mutationFn: () =>
-      api<{ answer: string; sources: QaSource[] }>(
+    mutationFn: (payload: { offset: number; includeAnswer: boolean }) =>
+      api<QaResponse>(
         '/ai/qa',
-        { method: 'POST', body: JSON.stringify({ question, artist_id: 1 }) },
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            question,
+            artist_id: 1,
+            limit: 10,
+            offset: payload.offset,
+            include_answer: payload.includeAnswer,
+          }),
+        },
         token,
       ),
+    onSuccess: (data, payload) => {
+      if (payload.offset === 0) {
+        setQaResult(data)
+        return
+      }
+      setQaResult((current) => ({
+        answer: current?.answer ?? data.answer,
+        sources: [...(current?.sources ?? []), ...data.sources],
+        has_more: data.has_more,
+        next_offset: data.next_offset,
+      }))
+    },
   })
   const similar = useMutation({
     mutationFn: () =>
@@ -1535,7 +1558,8 @@ function RagPanel({
             onRequireAuth()
             return
           }
-          qa.mutate()
+          setQaResult(null)
+          qa.mutate({ offset: 0, includeAnswer: true })
         }}
       >
         <div>
@@ -1554,12 +1578,12 @@ function RagPanel({
         </button>
       </form>
       {qa.error && <p className="error">{qa.error.message}</p>}
-      {qa.data && (
+      {qaResult && (
         <section className="answer">
           <h2>검색 결과</h2>
-          <ArchiveAnswerBlock answer={qa.data.answer} />
+          {qaResult.answer && <ArchiveAnswerBlock answer={qaResult.answer} />}
           <div className="sourceCards">
-            {qa.data.sources.map((source, index) => (
+            {qaResult.sources.map((source, index) => (
               <SourceCard
                 key={`${source.source_type}-${source.chunk_id}-${index}`}
                 source={source}
@@ -1567,6 +1591,15 @@ function RagPanel({
               />
             ))}
           </div>
+          {qaResult.has_more && (
+            <button
+              className="secondary"
+              disabled={qa.isPending}
+              onClick={() => qa.mutate({ offset: qaResult.next_offset ?? qaResult.sources.length, includeAnswer: false })}
+            >
+              더 보기
+            </button>
+          )}
         </section>
       )}
       <button
@@ -2075,6 +2108,11 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
     queryFn: () => api<RagCoverage>('/admin/rag/coverage', {}, token),
     enabled: Boolean(token && user?.role === 'admin'),
   })
+  const ragJob = useQuery({
+    queryKey: ['rag-job-current', token],
+    queryFn: () => api<RagEmbeddingJob | null>('/admin/rag/jobs/current', {}, token),
+    enabled: Boolean(token && user?.role === 'admin'),
+  })
   const [form, setForm] = useState<InfraCostSettings | null>(null)
   const [syncForm, setSyncForm] = useState<SyncSettings | null>(null)
   const [keywordInput, setKeywordInput] = useState('')
@@ -2252,16 +2290,16 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
       void queryClient.invalidateQueries({ queryKey: ['rag-coverage', token] })
     },
   })
-  const embedYoutube = useMutation({
-    mutationFn: (payload: { days?: number }) =>
-      api<RagEmbedYoutubeResult>(
-        '/admin/rag/embed-youtube',
+  const startRagJob = useMutation({
+    mutationFn: (payload: { scope: 'recent_90d' | 'all' }) =>
+      api<RagEmbeddingJob>(
+        '/admin/rag/jobs',
         {
           method: 'POST',
           body: JSON.stringify({
             artist_id: 1,
-            limit: 100,
-            days: payload.days,
+            scope: payload.scope,
+            batch_size: 64,
             force: false,
           }),
         },
@@ -2269,10 +2307,20 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
       ),
     onSuccess: (data) => {
       setRagActionResult(
-        `임베딩 완료: ${formatNumber(data.embedded)}개 처리, ${formatNumber(
-          data.created_chunks,
-        )} chunks, 남은 누락 ${formatNumber(data.remaining_missing)}`,
+        `작업 생성: ${formatNumber(data.embedded)}개 처리, 남은 후보 ${formatNumber(data.remaining_missing)}`,
       )
+      queryClient.setQueryData(['rag-job-current', token], data)
+      void queryClient.invalidateQueries({ queryKey: ['rag-coverage', token] })
+    },
+  })
+  const runRagJob = useMutation({
+    mutationFn: (jobId: number) =>
+      api<RagEmbeddingJob>(`/admin/rag/jobs/${jobId}/run`, { method: 'POST' }, token),
+    onSuccess: (data) => {
+      setRagActionResult(
+        `배치 처리: 누적 ${formatNumber(data.embedded)}개, 남은 후보 ${formatNumber(data.remaining_missing)}`,
+      )
+      queryClient.setQueryData(['rag-job-current', token], data)
       void queryClient.invalidateQueries({ queryKey: ['rag-coverage', token] })
     },
   })
@@ -2292,6 +2340,7 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
     setSyncForm({ ...syncForm, [key]: Number(value) || 0 })
   }
   const ratio = Math.round(form.budget_ratio * 100)
+  const currentRagJob = ragJob.data
   return (
     <div className="stack">
       <section className="adminBudget">
@@ -2533,7 +2582,7 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
         <div className="postHead">
           <div>
             <h2>RAG embeddings</h2>
-            <p className="muted">YouTube 자료를 아카이브 검색용 1영상 1chunk로 정리하고 임베딩합니다.</p>
+            <p className="muted">YouTube 자료를 64개 단위 작업으로 임베딩하고 중간 상태를 저장합니다.</p>
           </div>
           <span className="role">
             <Gauge size={15} />
@@ -2557,36 +2606,61 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
             {ragCoverage.data ? ragCoverage.data.estimated_standard_cost_usd.toFixed(4) : '-'}
           </span>
         </div>
+        {currentRagJob && (
+          <div className="budgetStats">
+            <span>Job #{currentRagJob.id}</span>
+            <span>Status {currentRagJob.status}</span>
+            <span>Scope {currentRagJob.scope}</span>
+            <span>Processed {formatNumber(currentRagJob.processed)}</span>
+            <span>Embedded {formatNumber(currentRagJob.embedded)}</span>
+            <span>Failed {formatNumber(currentRagJob.failed)}</span>
+            <span>Remaining {formatNumber(currentRagJob.remaining_missing)}</span>
+            <span>Batch {formatNumber(currentRagJob.batch_size)}</span>
+          </div>
+        )}
         <div className="budgetForm">
           <button
             type="button"
             className="secondary"
             onClick={() => cleanupRag.mutate()}
-            disabled={cleanupRag.isPending || embedYoutube.isPending}
+            disabled={cleanupRag.isPending || startRagJob.isPending || runRagJob.isPending}
           >
             Stale 정리
           </button>
           <button
             type="button"
             className="primary"
-            onClick={() => embedYoutube.mutate({ days: 90 })}
-            disabled={cleanupRag.isPending || embedYoutube.isPending}
+            onClick={() => startRagJob.mutate({ scope: 'recent_90d' })}
+            disabled={cleanupRag.isPending || startRagJob.isPending || runRagJob.isPending}
           >
-            최근 90일 100개
+            최근 90일 작업 시작
           </button>
           <button
             type="button"
             className="secondary"
-            onClick={() => embedYoutube.mutate({})}
-            disabled={cleanupRag.isPending || embedYoutube.isPending}
+            onClick={() => startRagJob.mutate({ scope: 'all' })}
+            disabled={cleanupRag.isPending || startRagJob.isPending || runRagJob.isPending}
           >
-            전체 이어서 100개
+            전체 작업 시작
           </button>
+          {currentRagJob && currentRagJob.status !== 'completed' && (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => runRagJob.mutate(currentRagJob.id)}
+              disabled={cleanupRag.isPending || startRagJob.isPending || runRagJob.isPending}
+            >
+              다음 배치 실행
+            </button>
+          )}
         </div>
+        {currentRagJob?.last_error && <p className="error">{currentRagJob.last_error}</p>}
         {ragActionResult && <p className="muted">{ragActionResult}</p>}
         {ragCoverage.error && <p className="error">{ragCoverage.error.message}</p>}
+        {ragJob.error && <p className="error">{ragJob.error.message}</p>}
         {cleanupRag.error && <p className="error">{cleanupRag.error.message}</p>}
-        {embedYoutube.error && <p className="error">{embedYoutube.error.message}</p>}
+        {startRagJob.error && <p className="error">{startRagJob.error.message}</p>}
+        {runRagJob.error && <p className="error">{runRagJob.error.message}</p>}
       </section>
       <section className="adminBudget">
         <div className="postHead">

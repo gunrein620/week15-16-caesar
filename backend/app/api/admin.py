@@ -17,6 +17,7 @@ from app.models import (
     Post,
     PostTag,
     RagChunk,
+    RagEmbeddingJob,
     SavedItem,
     User,
 )
@@ -28,6 +29,8 @@ from app.schemas import (
     RagCleanupRequest,
     RagCleanupResult,
     RagCoverageRead,
+    RagEmbeddingJobCreate,
+    RagEmbeddingJobRead,
     RagEmbedYoutubeRequest,
     RagEmbedYoutubeResult,
     SignupSettingsRead,
@@ -43,7 +46,14 @@ from app.services.app_settings import (
     set_sync_settings,
 )
 from app.services.infra_budget import get_infra_cost_snapshot, update_infra_cost_settings
-from app.services.rag_admin import cleanup_rag_chunks, embed_youtube_batch, get_rag_coverage
+from app.services.rag_admin import (
+    cleanup_rag_chunks,
+    create_rag_embedding_job,
+    embed_youtube_batch,
+    get_rag_coverage,
+    latest_rag_embedding_job,
+    process_rag_embedding_job_batch,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 ADMIN_ROLES = {"user", "admin"}
@@ -76,6 +86,9 @@ def _delete_user_owned_data(db: Session, user_id: int) -> None:
     db.execute(delete(SavedItem).where(SavedItem.user_id == user_id))
     db.execute(delete(AuthIdentity).where(AuthIdentity.user_id == user_id))
     db.execute(delete(AiUsageCounter).where(AiUsageCounter.scope == "user", AiUsageCounter.scope_id == str(user_id)))
+    db.query(RagEmbeddingJob).filter(RagEmbeddingJob.user_id == user_id).update(
+        {RagEmbeddingJob.user_id: None}, synchronize_session=False
+    )
 
 
 def _admin_count(db: Session) -> int:
@@ -225,6 +238,62 @@ def get_rag_embedding_coverage(
     artist_id: int = 1,
 ) -> dict:
     return get_rag_coverage(db, artist_id)
+
+
+@router.post("/rag/jobs", response_model=RagEmbeddingJobRead, status_code=status.HTTP_201_CREATED)
+def create_rag_embedding_job_endpoint(
+    payload: RagEmbeddingJobCreate,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> RagEmbeddingJob:
+    job = create_rag_embedding_job(
+        db,
+        artist_id=payload.artist_id,
+        user_id=admin.id,
+        scope=payload.scope,
+        source_type=payload.source_type,
+        batch_size=payload.batch_size,
+        force=payload.force,
+    )
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+@router.get("/rag/jobs/current", response_model=RagEmbeddingJobRead | None)
+def get_current_rag_embedding_job(
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+    artist_id: int = 1,
+) -> RagEmbeddingJob | None:
+    return latest_rag_embedding_job(db, artist_id)
+
+
+@router.get("/rag/jobs/{job_id}", response_model=RagEmbeddingJobRead)
+def get_rag_embedding_job(
+    job_id: int,
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> RagEmbeddingJob:
+    job = db.get(RagEmbeddingJob, job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="RAG embedding job not found")
+    return job
+
+
+@router.post("/rag/jobs/{job_id}/run", response_model=RagEmbeddingJobRead)
+def run_rag_embedding_job_batch(
+    job_id: int,
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> RagEmbeddingJob:
+    job = db.get(RagEmbeddingJob, job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="RAG embedding job not found")
+    process_rag_embedding_job_batch(db, job)
+    db.commit()
+    db.refresh(job)
+    return job
 
 
 @router.post("/rag/cleanup", response_model=RagCleanupResult)

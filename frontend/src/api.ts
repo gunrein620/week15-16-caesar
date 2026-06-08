@@ -143,6 +143,13 @@ export type QaSource = {
   description?: string
 }
 
+export type QaResponse = {
+  answer: string
+  sources: QaSource[]
+  has_more: boolean
+  next_offset: number | null
+}
+
 export type UpdateFeedItem = {
   id: string
   item_type: 'youtube' | 'post' | 'briefing' | 'naver_news' | 'naver_blog'
@@ -238,6 +245,30 @@ export type RagEmbedYoutubeResult = {
   created_chunks: number
   remaining_missing: number
   estimated_tokens: number
+}
+
+export type RagEmbeddingJob = {
+  id: number
+  artist_id: number
+  user_id: number | null
+  scope: 'recent_90d' | 'all'
+  source_type: YoutubeSourceType | null
+  batch_size: number
+  force: boolean
+  status: 'running' | 'completed' | 'failed'
+  total_videos: number
+  total_candidates: number
+  processed: number
+  embedded: number
+  failed: number
+  created_chunks: number
+  estimated_tokens: number
+  remaining_missing: number
+  last_error: string
+  started_at: string | null
+  completed_at: string | null
+  created_at: string
+  updated_at: string
 }
 
 export type BriefingPreview = {

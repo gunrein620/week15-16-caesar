@@ -341,6 +341,89 @@ def test_admin_rag_embed_youtube_processes_limited_missing_batch(client):
     assert "channel:" in chunks[0].content
 
 
+def test_admin_rag_job_processes_missing_and_stale_videos_without_duplicate_chunks(client):
+    admin_token = login(client, "admin@example.com", "admin-password")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    with get_session_factory()() as db:
+        first_source = YoutubeSource(
+            artist_id=1,
+            source_type="keyword_search",
+            source_value="리센느 job",
+            title="RAG job source",
+        )
+        second_source = YoutubeSource(
+            artist_id=1,
+            source_type="fan_channel",
+            source_value="UU-job-fan",
+            title="RAG job duplicate source",
+        )
+        missing = YoutubeVideo(
+            id="rag-job-missing",
+            title="RESCENE job missing video",
+            description="job 임베딩 누락 대상",
+            channel_title="RESCENE",
+            published_at=datetime(2026, 6, 7, tzinfo=UTC),
+            thumbnail_url="https://img.youtube.com/vi/rag-job-missing/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=rag-job-missing",
+            view_count=700,
+            content_hash="missing-video-hash",
+        )
+        stale = YoutubeVideo(
+            id="rag-job-stale",
+            title="RESCENE job stale video",
+            description="job 임베딩 갱신 대상",
+            channel_title="RESCENE",
+            published_at=datetime(2026, 6, 6, tzinfo=UTC),
+            thumbnail_url="https://img.youtube.com/vi/rag-job-stale/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=rag-job-stale",
+            view_count=800,
+            content_hash="stale-video-hash",
+        )
+        db.add_all([first_source, second_source, missing, stale])
+        db.flush()
+        db.add_all(
+            [
+                YoutubeVideoSource(video_id=missing.id, source_id=first_source.id),
+                YoutubeVideoSource(video_id=missing.id, source_id=second_source.id),
+                YoutubeVideoSource(video_id=stale.id, source_id=first_source.id),
+            ]
+        )
+        refresh_video_chunks(db, stale, artist_id=1)
+        stale.description = "job 임베딩 갱신 대상 - 변경됨"
+        stale.content_hash = "changed-stale-video-hash"
+        db.commit()
+
+    created = client.post(
+        "/admin/rag/jobs",
+        json={"artist_id": 1, "scope": "all", "batch_size": 2, "force": False},
+        headers=admin_headers,
+    )
+    current = client.get("/admin/rag/jobs/current", headers=admin_headers)
+
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["processed"] >= 2
+    assert body["embedded"] >= 2
+    assert body["failed"] == 0
+    assert current.status_code == 200, current.text
+    assert current.json()["id"] == body["id"]
+    while body["status"] != "completed":
+        continued = client.post(f"/admin/rag/jobs/{body['id']}/run", headers=admin_headers)
+        assert continued.status_code == 200, continued.text
+        body = continued.json()
+    with get_session_factory()() as db:
+        chunks = db.scalars(
+            select(RagChunk)
+            .where(RagChunk.youtube_video_id.in_(["rag-job-missing", "rag-job-stale"]))
+            .order_by(RagChunk.youtube_video_id)
+        ).all()
+    assert len(chunks) == 2
+    assert {chunk.youtube_video_id for chunk in chunks} == {"rag-job-missing", "rag-job-stale"}
+    assert all(chunk.chunk_index == 0 for chunk in chunks)
+    assert any("변경됨" in chunk.content for chunk in chunks)
+
+
 def test_sync_and_briefing_are_admin_only(client):
     user_token = signup(client)
     user_headers = {"Authorization": f"Bearer {user_token}"}
