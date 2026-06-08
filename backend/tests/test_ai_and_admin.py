@@ -8,11 +8,13 @@ from app.models import (
     ExternalUpdate,
     McpCallLog,
     Post,
+    RagChunk,
     YoutubeSource,
     YoutubeVideo,
     YoutubeVideoSource,
 )
 from app.services.mcp_client import McpToolClient
+from app.services.rag import refresh_video_chunks
 from tests.conftest import login, signup
 
 
@@ -134,6 +136,209 @@ def test_admin_can_manage_live_feed_sync_settings(client):
     assert updated.json()["naver_interval_minutes"] == 90
     assert updated.json()["keyword_interval_minutes"] == 180
     assert invalid_keyword.status_code == 422
+
+
+def test_admin_rag_coverage_reports_missing_and_stale_youtube_chunks(client):
+    user_token = signup(client)
+    admin_token = login(client, "admin@example.com", "admin-password")
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    with get_session_factory()() as db:
+        source = YoutubeSource(
+            artist_id=1,
+            source_type="official_channel",
+            source_value="UU-rag-admin",
+            title="RAG admin source",
+        )
+        embedded = YoutubeVideo(
+            id="rag-admin-embedded",
+            title="RESCENE embedded video",
+            description="리센느 임베딩 완료 영상",
+            channel_title="RESCENE",
+            published_at=datetime(2026, 6, 1, tzinfo=UTC),
+            thumbnail_url="https://img.youtube.com/vi/rag-admin-embedded/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=rag-admin-embedded",
+            view_count=100,
+            content_hash="embedded-video-hash",
+        )
+        missing = YoutubeVideo(
+            id="rag-admin-missing",
+            title="RESCENE missing video",
+            description="리센느 임베딩 누락 영상",
+            channel_title="RESCENE",
+            published_at=datetime(2026, 6, 2, tzinfo=UTC),
+            thumbnail_url="https://img.youtube.com/vi/rag-admin-missing/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=rag-admin-missing",
+            view_count=200,
+            content_hash="missing-video-hash",
+        )
+        stale = YoutubeVideo(
+            id="rag-admin-stale",
+            title="RESCENE stale video",
+            description="리센느 오래된 chunk 영상",
+            channel_title="RESCENE",
+            published_at=datetime(2026, 6, 3, tzinfo=UTC),
+            thumbnail_url="https://img.youtube.com/vi/rag-admin-stale/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=rag-admin-stale",
+            view_count=300,
+            content_hash="stale-video-hash",
+        )
+        db.add_all([source, embedded, missing, stale])
+        db.flush()
+        db.add_all(
+            [
+                YoutubeVideoSource(video_id=embedded.id, source_id=source.id),
+                YoutubeVideoSource(video_id=missing.id, source_id=source.id),
+                YoutubeVideoSource(video_id=stale.id, source_id=source.id),
+            ]
+        )
+        refresh_video_chunks(db, embedded, artist_id=1)
+        db.add(
+            RagChunk(
+                artist_id=1,
+                youtube_video_id=stale.id,
+                chunk_index=0,
+                content="old stale content",
+                content_hash="old-hash",
+                embedding=[0.0] * 1536,
+            )
+        )
+        db.commit()
+
+    forbidden = client.get("/admin/rag/coverage", headers=user_headers)
+    coverage = client.get("/admin/rag/coverage", headers=admin_headers)
+
+    assert forbidden.status_code == 403
+    assert coverage.status_code == 200, coverage.text
+    body = coverage.json()
+    assert body["youtube_videos"] == 3
+    assert body["youtube_embedded_videos"] == 2
+    assert body["youtube_missing_videos"] == 1
+    assert body["youtube_stale_videos"] == 1
+    assert body["estimated_tokens"] > 0
+    assert body["estimated_standard_cost_usd"] > 0
+
+
+def test_admin_rag_cleanup_deletes_stale_youtube_chunks(client):
+    admin_token = login(client, "admin@example.com", "admin-password")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    with get_session_factory()() as db:
+        source = YoutubeSource(
+            artist_id=1,
+            source_type="official_channel",
+            source_value="UU-rag-cleanup",
+            title="RAG cleanup source",
+        )
+        stale = YoutubeVideo(
+            id="rag-cleanup-stale",
+            title="RESCENE cleanup stale video",
+            description="정리되어야 하는 오래된 chunk",
+            channel_title="RESCENE",
+            published_at=datetime(2026, 6, 4, tzinfo=UTC),
+            thumbnail_url="https://img.youtube.com/vi/rag-cleanup-stale/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=rag-cleanup-stale",
+            view_count=400,
+            content_hash="cleanup-stale-video-hash",
+        )
+        db.add_all([source, stale])
+        db.flush()
+        db.add(YoutubeVideoSource(video_id=stale.id, source_id=source.id))
+        db.add(
+            RagChunk(
+                artist_id=1,
+                youtube_video_id=stale.id,
+                chunk_index=0,
+                content="stale content",
+                content_hash="stale-hash",
+                embedding=[0.0] * 1536,
+            )
+        )
+        db.commit()
+
+    cleanup = client.post("/admin/rag/cleanup", json={"artist_id": 1}, headers=admin_headers)
+    coverage = client.get("/admin/rag/coverage", headers=admin_headers)
+
+    assert cleanup.status_code == 200, cleanup.text
+    assert cleanup.json()["stale_deleted"] == 1
+    with get_session_factory()() as db:
+        assert db.scalar(select(RagChunk).where(RagChunk.youtube_video_id == "rag-cleanup-stale")) is None
+    assert coverage.json()["youtube_stale_videos"] == 0
+    assert coverage.json()["youtube_missing_videos"] == 1
+
+
+def test_admin_rag_embed_youtube_processes_limited_missing_batch(client):
+    admin_token = login(client, "admin@example.com", "admin-password")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    with get_session_factory()() as db:
+        source = YoutubeSource(
+            artist_id=1,
+            source_type="keyword_search",
+            source_value="리센느 임베딩",
+            title="RAG embed source",
+        )
+        first = YoutubeVideo(
+            id="rag-embed-first",
+            title="RESCENE first embed video",
+            description="첫 번째 임베딩 대상",
+            channel_title="RESCENE",
+            published_at=datetime(2026, 6, 5, tzinfo=UTC),
+            thumbnail_url="https://img.youtube.com/vi/rag-embed-first/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=rag-embed-first",
+            view_count=500,
+            content_hash="first-video-hash",
+        )
+        second = YoutubeVideo(
+            id="rag-embed-second",
+            title="RESCENE second embed video",
+            description="두 번째 임베딩 대상",
+            channel_title="RESCENE",
+            published_at=datetime(2026, 6, 6, tzinfo=UTC),
+            thumbnail_url="https://img.youtube.com/vi/rag-embed-second/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=rag-embed-second",
+            view_count=600,
+            content_hash="second-video-hash",
+        )
+        db.add_all([source, first, second])
+        db.flush()
+        db.add_all(
+            [
+                YoutubeVideoSource(video_id=first.id, source_id=source.id),
+                YoutubeVideoSource(video_id=second.id, source_id=source.id),
+            ]
+        )
+        db.commit()
+
+    first_batch = client.post(
+        "/admin/rag/embed-youtube",
+        json={"artist_id": 1, "limit": 1, "days": 30},
+        headers=admin_headers,
+    )
+    second_batch = client.post(
+        "/admin/rag/embed-youtube",
+        json={"artist_id": 1, "limit": 10, "days": 30},
+        headers=admin_headers,
+    )
+
+    assert first_batch.status_code == 200, first_batch.text
+    assert first_batch.json()["processed"] == 1
+    assert first_batch.json()["embedded"] == 1
+    assert first_batch.json()["created_chunks"] == 1
+    assert first_batch.json()["remaining_missing"] == 1
+    assert second_batch.status_code == 200, second_batch.text
+    assert second_batch.json()["embedded"] == 1
+    assert second_batch.json()["remaining_missing"] == 0
+    with get_session_factory()() as db:
+        chunks = db.scalars(
+            select(RagChunk)
+            .where(RagChunk.youtube_video_id.in_(["rag-embed-first", "rag-embed-second"]))
+            .order_by(RagChunk.youtube_video_id)
+        ).all()
+    assert len(chunks) == 2
+    assert all(chunk.chunk_index == 0 for chunk in chunks)
+    assert "channel:" in chunks[0].content
 
 
 def test_sync_and_briefing_are_admin_only(client):

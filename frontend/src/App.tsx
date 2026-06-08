@@ -38,6 +38,9 @@ import {
   PostEmbed,
   PostList,
   QaSource,
+  RagCleanupResult,
+  RagCoverage,
+  RagEmbedYoutubeResult,
   SavedItem,
   SignupSettings,
   SyncSettings,
@@ -2062,6 +2065,11 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
     queryFn: () => api<ArtistArchiveTerm[]>('/artists/1/archive-terms'),
     enabled: Boolean(token && user?.role === 'admin'),
   })
+  const ragCoverage = useQuery({
+    queryKey: ['rag-coverage', token],
+    queryFn: () => api<RagCoverage>('/admin/rag/coverage', {}, token),
+    enabled: Boolean(token && user?.role === 'admin'),
+  })
   const [form, setForm] = useState<InfraCostSettings | null>(null)
   const [syncForm, setSyncForm] = useState<SyncSettings | null>(null)
   const [keywordInput, setKeywordInput] = useState('')
@@ -2069,6 +2077,7 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
   const [termTitle, setTermTitle] = useState('')
   const [termAliases, setTermAliases] = useState('')
   const [editingTermId, setEditingTermId] = useState<number | null>(null)
+  const [ragActionResult, setRagActionResult] = useState<string | null>(null)
   useEffect(() => {
     if (settings.data) setForm(settings.data)
   }, [settings.data])
@@ -2176,6 +2185,49 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
     onSuccess: (data) => {
       setSyncForm(data)
       queryClient.setQueryData(['sync-settings', token], data)
+    },
+  })
+  const cleanupRag = useMutation({
+    mutationFn: () =>
+      api<RagCleanupResult>(
+        '/admin/rag/cleanup',
+        {
+          method: 'POST',
+          body: JSON.stringify({ artist_id: 1 }),
+        },
+        token,
+      ),
+    onSuccess: (data) => {
+      setRagActionResult(
+        `정리 완료: stale ${formatNumber(data.stale_deleted)}, orphan ${formatNumber(
+          data.orphan_deleted,
+        )}, duplicate ${formatNumber(data.duplicate_deleted)}`,
+      )
+      void queryClient.invalidateQueries({ queryKey: ['rag-coverage', token] })
+    },
+  })
+  const embedYoutube = useMutation({
+    mutationFn: (payload: { days?: number }) =>
+      api<RagEmbedYoutubeResult>(
+        '/admin/rag/embed-youtube',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            artist_id: 1,
+            limit: 100,
+            days: payload.days,
+            force: false,
+          }),
+        },
+        token,
+      ),
+    onSuccess: (data) => {
+      setRagActionResult(
+        `임베딩 완료: ${formatNumber(data.embedded)}개 처리, ${formatNumber(
+          data.created_chunks,
+        )} chunks, 남은 누락 ${formatNumber(data.remaining_missing)}`,
+      )
+      void queryClient.invalidateQueries({ queryKey: ['rag-coverage', token] })
     },
   })
   if (user?.role !== 'admin') {
@@ -2330,6 +2382,65 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
         {archiveTerms.error && <p className="error">{archiveTerms.error.message}</p>}
         {saveArchiveTerm.error && <p className="error">{saveArchiveTerm.error.message}</p>}
         {deleteArchiveTerm.error && <p className="error">{deleteArchiveTerm.error.message}</p>}
+      </section>
+      <section className="adminBudget">
+        <div className="postHead">
+          <div>
+            <h2>RAG embeddings</h2>
+            <p className="muted">YouTube 자료를 아카이브 검색용 1영상 1chunk로 정리하고 임베딩합니다.</p>
+          </div>
+          <span className="role">
+            <Gauge size={15} />
+            {ragCoverage.data
+              ? `${formatNumber(ragCoverage.data.youtube_embedded_videos)}/${formatNumber(
+                  ragCoverage.data.youtube_videos,
+                )}`
+              : 'loading'}
+          </span>
+        </div>
+        <div className="budgetStats">
+          <span>Videos {formatNumber(ragCoverage.data?.youtube_videos)}</span>
+          <span>Embedded {formatNumber(ragCoverage.data?.youtube_embedded_videos)}</span>
+          <span>Missing {formatNumber(ragCoverage.data?.youtube_missing_videos)}</span>
+          <span>Stale {formatNumber(ragCoverage.data?.youtube_stale_videos)}</span>
+          <span>Recent 90d {formatNumber(ragCoverage.data?.recent_90d_youtube_videos)}</span>
+          <span>90d missing {formatNumber(ragCoverage.data?.recent_90d_missing_videos)}</span>
+          <span>Tokens {formatNumber(ragCoverage.data?.estimated_tokens)}</span>
+          <span>
+            Cost $
+            {ragCoverage.data ? ragCoverage.data.estimated_standard_cost_usd.toFixed(4) : '-'}
+          </span>
+        </div>
+        <div className="budgetForm">
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => cleanupRag.mutate()}
+            disabled={cleanupRag.isPending || embedYoutube.isPending}
+          >
+            Stale 정리
+          </button>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => embedYoutube.mutate({ days: 90 })}
+            disabled={cleanupRag.isPending || embedYoutube.isPending}
+          >
+            최근 90일 100개
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => embedYoutube.mutate({})}
+            disabled={cleanupRag.isPending || embedYoutube.isPending}
+          >
+            전체 이어서 100개
+          </button>
+        </div>
+        {ragActionResult && <p className="muted">{ragActionResult}</p>}
+        {ragCoverage.error && <p className="error">{ragCoverage.error.message}</p>}
+        {cleanupRag.error && <p className="error">{cleanupRag.error.message}</p>}
+        {embedYoutube.error && <p className="error">{embedYoutube.error.message}</p>}
       </section>
       <section className="adminBudget">
         <div className="postHead">

@@ -209,6 +209,37 @@ export type SyncSettings = {
   last_keyword_sync_at: string | null
 }
 
+export type RagCoverage = {
+  artist_id: number
+  youtube_videos: number
+  youtube_embedded_videos: number
+  youtube_missing_videos: number
+  youtube_stale_videos: number
+  post_chunks: number
+  youtube_chunks: number
+  estimated_tokens: number
+  estimated_standard_cost_usd: number
+  estimated_batch_cost_usd: number
+  recent_90d_youtube_videos: number
+  recent_90d_missing_videos: number
+}
+
+export type RagCleanupResult = {
+  orphan_deleted: number
+  stale_deleted: number
+  duplicate_deleted: number
+}
+
+export type RagEmbedYoutubeResult = {
+  processed: number
+  embedded: number
+  skipped: number
+  failed: number
+  created_chunks: number
+  remaining_missing: number
+  estimated_tokens: number
+}
+
 export type BriefingPreview = {
   run_id: number
   preview_markdown: string

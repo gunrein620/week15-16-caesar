@@ -4,11 +4,11 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models import Post, RagChunk, YoutubeVideo
+from app.models import ArtistKeyword, Member, Post, RagChunk, YoutubeVideo
 from app.schemas import UpdateFeedItem
 from app.services.search_intent import SearchIntent, parse_search_intent
 from app.services.text import chunk_text, content_hash, cosine_similarity, deterministic_embedding
-from app.services.updates import get_artist_updates
+from app.services.updates import _matches_keywords, _matches_youtube_members, get_artist_updates
 
 
 KST = timezone(timedelta(hours=9))
@@ -42,21 +42,64 @@ def refresh_post_chunks(db: Session, post: Post) -> None:
         )
 
 
-def refresh_video_chunks(db: Session, video: YoutubeVideo, artist_id: int) -> None:
+def _published_at_text(value: datetime | None) -> str:
+    if value is None:
+        return ""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat()
+
+
+def build_video_embedding_text(db: Session, video: YoutubeVideo, artist_id: int) -> str:
+    members = [item.name for item in db.scalars(select(Member).where(Member.artist_id == artist_id)).all()]
+    keywords = [
+        item.keyword
+        for item in db.scalars(select(ArtistKeyword).where(ArtistKeyword.artist_id == artist_id)).all()
+    ]
+    description = video.description or ""
+    matched_members = _matches_youtube_members(
+        video.title or "",
+        description,
+        video.channel_title or "",
+        members,
+    )
+    matched_keywords = _matches_keywords(
+        "\n".join([video.title or "", description, video.channel_title or ""]),
+        keywords,
+    )
+    lines = [
+        f"title: {video.title or ''}",
+        f"channel: {video.channel_title or ''}",
+        f"published_at: {_published_at_text(video.published_at)}",
+        f"views: {video.view_count if video.view_count is not None else ''}",
+        f"members: {', '.join(matched_members)}",
+        f"keywords: {', '.join(matched_keywords)}",
+        f"description: {description[:700]}",
+    ]
+    return "\n".join(line for line in lines if line.split(": ", 1)[-1].strip()).strip()
+
+
+def video_embedding_hash(db: Session, video: YoutubeVideo, artist_id: int) -> str:
+    return content_hash(build_video_embedding_text(db, video, artist_id))
+
+
+def refresh_video_chunks(db: Session, video: YoutubeVideo, artist_id: int) -> int:
     db.execute(delete(RagChunk).where(RagChunk.youtube_video_id == video.id))
-    body = f"{video.title}\n\n{video.description}"
+    body = build_video_embedding_text(db, video, artist_id)
     hashed = content_hash(body)
-    for index, chunk in enumerate(chunk_text(body)):
-        db.add(
-            RagChunk(
-                artist_id=artist_id,
-                youtube_video_id=video.id,
-                chunk_index=index,
-                content=chunk,
-                content_hash=hashed,
-                embedding=embed_text(chunk),
-            )
+    if not body:
+        return 0
+    db.add(
+        RagChunk(
+            artist_id=artist_id,
+            youtube_video_id=video.id,
+            chunk_index=0,
+            content=body,
+            content_hash=hashed,
+            embedding=embed_text(body),
         )
+    )
+    return 1
 
 
 def search_chunks(db: Session, question: str, artist_id: int, limit: int = 5) -> list[RagChunk]:

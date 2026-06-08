@@ -214,6 +214,49 @@ class SyncSettingsUpdate(BaseModel):
     keyword_interval_minutes: int = Field(ge=60, le=1440)
 
 
+class RagCoverageRead(BaseModel):
+    artist_id: int
+    youtube_videos: int
+    youtube_embedded_videos: int
+    youtube_missing_videos: int
+    youtube_stale_videos: int
+    post_chunks: int
+    youtube_chunks: int
+    estimated_tokens: int
+    estimated_standard_cost_usd: float
+    estimated_batch_cost_usd: float
+    recent_90d_youtube_videos: int
+    recent_90d_missing_videos: int
+
+
+class RagCleanupRequest(BaseModel):
+    artist_id: int = 1
+
+
+class RagCleanupResult(BaseModel):
+    orphan_deleted: int
+    stale_deleted: int
+    duplicate_deleted: int
+
+
+class RagEmbedYoutubeRequest(BaseModel):
+    artist_id: int = 1
+    limit: int = Field(default=100, ge=1, le=500)
+    days: int | None = Field(default=None, ge=1, le=3650)
+    source_type: str | None = None
+    force: bool = False
+
+
+class RagEmbedYoutubeResult(BaseModel):
+    processed: int
+    embedded: int
+    skipped: int
+    failed: int
+    created_chunks: int
+    remaining_missing: int
+    estimated_tokens: int
+
+
 class YoutubeSourceCreate(BaseModel):
     source_type: str = Field(min_length=1, max_length=40)
     source_value: str = Field(min_length=1, max_length=255)

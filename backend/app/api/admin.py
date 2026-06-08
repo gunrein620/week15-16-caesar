@@ -9,6 +9,11 @@ from app.models import User
 from app.schemas import (
     InfraCostSettings,
     InfraCostSettingsUpdate,
+    RagCleanupRequest,
+    RagCleanupResult,
+    RagCoverageRead,
+    RagEmbedYoutubeRequest,
+    RagEmbedYoutubeResult,
     SignupSettingsRead,
     SignupSettingsUpdate,
     SyncSettings,
@@ -21,6 +26,7 @@ from app.services.app_settings import (
     set_sync_settings,
 )
 from app.services.infra_budget import get_infra_cost_snapshot, update_infra_cost_settings
+from app.services.rag_admin import cleanup_rag_chunks, embed_youtube_batch, get_rag_coverage
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -80,3 +86,41 @@ def update_live_feed_sync_settings(
     settings = set_sync_settings(db, payload.model_dump())
     db.commit()
     return settings
+
+
+@router.get("/rag/coverage", response_model=RagCoverageRead)
+def get_rag_embedding_coverage(
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+    artist_id: int = 1,
+) -> dict:
+    return get_rag_coverage(db, artist_id)
+
+
+@router.post("/rag/cleanup", response_model=RagCleanupResult)
+def cleanup_rag_embedding_chunks(
+    payload: RagCleanupRequest,
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, int]:
+    result = cleanup_rag_chunks(db, payload.artist_id)
+    db.commit()
+    return result
+
+
+@router.post("/rag/embed-youtube", response_model=RagEmbedYoutubeResult)
+def embed_youtube_rag_chunks(
+    payload: RagEmbedYoutubeRequest,
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, int]:
+    result = embed_youtube_batch(
+        db,
+        payload.artist_id,
+        limit=payload.limit,
+        days=payload.days,
+        source_type=payload.source_type,
+        force=payload.force,
+    )
+    db.commit()
+    return result
