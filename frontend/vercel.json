@@ -1,3 +1,61 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/" }]
+  "rewrites": [
+    {
+      "source": "/auth/:path*",
+      "destination": "https://backend-production-97eb4.up.railway.app/auth/:path*"
+    },
+    {
+      "source": "/artists/:path*",
+      "destination": "https://backend-production-97eb4.up.railway.app/artists/:path*"
+    },
+    {
+      "source": "/posts/:path*",
+      "destination": "https://backend-production-97eb4.up.railway.app/posts/:path*"
+    },
+    {
+      "source": "/tags",
+      "destination": "https://backend-production-97eb4.up.railway.app/tags"
+    },
+    {
+      "source": "/ai/:path*",
+      "destination": "https://backend-production-97eb4.up.railway.app/ai/:path*"
+    },
+    {
+      "source": "/admin/:path*",
+      "destination": "https://backend-production-97eb4.up.railway.app/admin/:path*"
+    },
+    {
+      "source": "/saved-items/:path*",
+      "destination": "https://backend-production-97eb4.up.railway.app/saved-items/:path*"
+    },
+    {
+      "source": "/analytics/:path*",
+      "destination": "https://backend-production-97eb4.up.railway.app/analytics/:path*"
+    },
+    {
+      "source": "/agent-runs/:path*",
+      "destination": "https://backend-production-97eb4.up.railway.app/agent-runs/:path*"
+    },
+    {
+      "source": "/youtube-sources/:path*",
+      "destination": "https://backend-production-97eb4.up.railway.app/youtube-sources/:path*"
+    },
+    {
+      "source": "/artist-keywords/:path*",
+      "destination": "https://backend-production-97eb4.up.railway.app/artist-keywords/:path*"
+    },
+    {
+      "source": "/artist-archive-terms/:path*",
+      "destination": "https://backend-production-97eb4.up.railway.app/artist-archive-terms/:path*"
+    },
+    {
+      "source": "/health",
+      "destination": "https://backend-production-97eb4.up.railway.app/health"
+    },
+    {
+      "source": "/ready",
+      "destination": "https://backend-production-97eb4.up.railway.app/ready"
+    },
+    { "source": "/(.*)", "destination": "/" }
+  ]
 }

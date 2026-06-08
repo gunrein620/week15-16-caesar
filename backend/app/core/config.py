@@ -1,8 +1,9 @@
+import json
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -19,7 +20,7 @@ class Settings(BaseSettings):
     login_lockout_window_minutes: int = 15
     login_lockout_minutes: int = 15
     frontend_origin: str = "http://localhost:5173"
-    cors_allowed_origins: list[str] = Field(
+    cors_allowed_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]
     )
     cors_allow_origin_regex: str | None = None
@@ -53,7 +54,12 @@ class Settings(BaseSettings):
     def split_origins(cls, value: str | list[str]) -> list[str]:
         if isinstance(value, list):
             return value
-        return [origin.strip() for origin in value.split(",") if origin.strip()]
+        raw_value = value.strip()
+        if raw_value.startswith("["):
+            parsed_value = json.loads(raw_value)
+            if isinstance(parsed_value, list):
+                return parsed_value
+        return [origin.strip() for origin in raw_value.split(",") if origin.strip()]
 
     @field_validator("cors_allow_origin_regex", mode="before")
     @classmethod

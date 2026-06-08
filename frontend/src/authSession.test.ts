@@ -48,6 +48,11 @@ test('oauthStartUrl targets backend provider start endpoints', () => {
   assert.equal(oauthStartUrl('kakao', 'https://api.example.com'), 'https://api.example.com/auth/oauth/kakao/start')
 })
 
+test('oauthStartUrl supports same-origin provider start endpoints', () => {
+  assert.equal(oauthStartUrl('google', ''), '/auth/oauth/google/start')
+  assert.equal(oauthStartUrl('kakao', ''), '/auth/oauth/kakao/start')
+})
+
 test('configuredOauthProviders only returns configured providers', () => {
   assert.deepEqual(configuredOauthProviders({ google: false, kakao: false }), [])
   assert.deepEqual(configuredOauthProviders({ google: true, kakao: false }), ['google'])

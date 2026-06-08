@@ -1,4 +1,5 @@
 import type { AppPanel } from './boardNavigation'
+import { resolveApiBase } from './apiBase.ts'
 
 export type AnalyticsEventName =
   | 'app_open'
@@ -16,7 +17,7 @@ export type AnalyticsEventName =
 export type AnalyticsMetadata = Record<string, string | number | boolean | null | undefined>
 
 const SESSION_STORAGE_KEY = 'rescene_analytics_session_id'
-const API_BASE = import.meta.env?.VITE_API_BASE_URL ?? 'http://localhost:8000'
+const API_BASE = resolveApiBase(import.meta.env?.VITE_API_BASE_URL, Boolean(import.meta.env?.PROD))
 const SAFE_METADATA_KEYS = new Set([
   'query',
   'item_type',
