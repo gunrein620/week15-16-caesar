@@ -14,18 +14,20 @@ import {
   LogOut,
   MessageSquare,
   MessageSquarePlus,
+  Moon,
   PlayCircle,
   RefreshCw,
   Save,
   Search,
   Send,
   ShieldCheck,
+  Sun,
   Trash2,
   Upload,
   UserPlus,
   X,
 } from 'lucide-react'
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import {
   ArtistArchiveTerm,
   ArtistKeyword,
@@ -83,9 +85,11 @@ import { buildFeedFooterParts, buildFeedMetaParts } from './feedMeta'
 import { sortYoutubeVideos, type VideoSort } from './videoSorting'
 import { youtubeAppUrl } from './youtubeLinks'
 import { buildYoutubeSourcePayload } from './youtubeSourceForm'
+import { MEMBER_ORDER, memberColor, memberOn } from './memberColors'
 
 type AuthMode = 'login' | 'signup'
 type FeedSource = 'all' | 'youtube' | 'naver' | 'briefing' | 'post'
+type Theme = 'light' | 'dark'
 
 const youtubeSourceOptions: { value: YoutubeSourceType; label: string; placeholder: string }[] = [
   {
@@ -166,6 +170,41 @@ function memberLabel(name: string) {
   return memberLabels[name] ?? name
 }
 
+function MemberSpectrum({ theme, className = '' }: { theme: Theme; className?: string }) {
+  return (
+    <span className={['spectrum', className].filter(Boolean).join(' ')} aria-hidden="true">
+      {MEMBER_ORDER.map((name) => (
+        <i key={name} style={{ backgroundColor: memberColor(name, theme) }} />
+      ))}
+    </span>
+  )
+}
+
+function MemberAvatar({ name, theme, size = 24 }: { name: string; theme: Theme; size?: number }) {
+  const label = memberLabel(name)
+  return (
+    <span
+      className="memAva"
+      style={
+        {
+          backgroundColor: memberColor(name, theme),
+          color: memberOn(name, theme),
+          height: size,
+          width: size,
+          fontSize: Math.max(10, Math.round(size * 0.42)),
+        } as CSSProperties
+      }
+      title={label}
+    >
+      {label.slice(0, 1) || name.slice(0, 1)}
+    </span>
+  )
+}
+
+function memberNamesText(names: string[]) {
+  return names.length ? names.map(memberLabel).join(', ') : 'RESCENE'
+}
+
 function archiveTermTypeLabel(type: ArtistArchiveTerm['term_type']) {
   if (type === 'song') return '곡명'
   if (type === 'album') return '앨범'
@@ -211,6 +250,11 @@ export default function App() {
   const [tagFilter, setTagFilter] = useState('')
   const [page, setPage] = useState(1)
   const [authOpen, setAuthOpen] = useState(false)
+  const [theme, setTheme] = useState<Theme>(() => {
+    const stored = localStorage.getItem('rescene_theme')
+    if (stored === 'light' || stored === 'dark') return stored
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  })
 
   const me = useQuery({
     queryKey: ['me', token],
@@ -297,6 +341,11 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('rescene_theme', theme)
+  }, [theme])
+
+  useEffect(() => {
     if (!shouldTrackPanelView(panel)) return
     trackAnalyticsEvent({ eventName: 'panel_view', panel, token })
   }, [panel, token])
@@ -349,11 +398,19 @@ export default function App() {
   return (
     <div className="shell">
       <header className="topbar">
-        <div>
-          <p className="eyebrow">RESCENE</p>
-          <h1>Updates</h1>
+        <div className="topbarBrand">
+          <span className="wordmark">RESCENE</span>
+          <MemberSpectrum theme={theme} />
         </div>
         <div className="session">
+          <button
+            className="iconButton"
+            onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+            title={theme === 'dark' ? '라이트 테마' : '다크 테마'}
+            aria-label={theme === 'dark' ? '라이트 테마로 변경' : '다크 테마로 변경'}
+          >
+            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
           {me.data ? (
             <>
               <span>{me.data.display_name}</span>
@@ -480,6 +537,7 @@ export default function App() {
               onRequireAuth={requireAuth}
               onRequireVerified={requireVerified}
               onOpenPost={openPost}
+              theme={theme}
             />
           )}
           {panel === 'board' && (
@@ -588,18 +646,56 @@ function BottomTabBar({ panel, onSelect }: { panel: AppPanel; onSelect: (panel: 
   )
 }
 
+function HomeHero({ item, theme }: { item: UpdateFeedItem; theme: Theme }) {
+  const primaryMember = item.member_names[0] ?? ''
+  return (
+    <section
+      className="hero"
+      style={{ '--mcol': primaryMember ? memberColor(primaryMember, theme) : 'var(--border-strong)' } as CSSProperties}
+    >
+      {item.thumbnail_url ? (
+        <img src={item.thumbnail_url} alt="" loading="eager" referrerPolicy="no-referrer" />
+      ) : (
+        <div className="heroFallback">
+          <FileText size={36} />
+        </div>
+      )}
+      <div className="heroOverlay" />
+      <div className="heroContent">
+        <div className="heroKicker">
+          <MemberSpectrum theme={theme} />
+          오늘의 하이라이트
+        </div>
+        <h1 className="serif">{item.title}</h1>
+        <div className="heroMeta">
+          <span className="heroAvatars">
+            {item.member_names.slice(0, 5).map((name) => (
+              <MemberAvatar key={name} name={name} theme={theme} size={28} />
+            ))}
+          </span>
+          <span>
+            {formatDate(item.published_at)} · 조회수 {formatNumber(item.view_count)}
+          </span>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function HomePanel({
   token,
   user,
   onRequireAuth,
   onRequireVerified,
   onOpenPost,
+  theme,
 }: {
   token: string | null
   user?: User
   onRequireAuth: () => void
   onRequireVerified: () => boolean
   onOpenPost: (postId: number) => void
+  theme: Theme
 }) {
   const queryClient = useQueryClient()
   const [source, setSource] = useState<FeedSource>('all')
@@ -675,13 +771,24 @@ function HomePanel({
   ]
   const feedItems = updates.data?.pages.flatMap((pageData) => pageData.items) ?? []
   const naverAvailable = updates.data?.pages.every((pageData) => pageData.naver_available) ?? true
+  const showHero = source === 'all' && !member && !keyword && !feedQuery.trim()
+  const heroItem =
+    showHero && feedItems.length
+      ? feedItems.reduce((best, item) => ((item.view_count ?? -1) > (best.view_count ?? -1) ? item : best), feedItems[0])
+      : null
+  const homeStyle = {
+    '--accent': member ? memberColor(member, theme) : '',
+    '--accent-on': member ? memberOn(member, theme) : '',
+  } as CSSProperties
   return (
-    <div className="homeStack">
+    <div className="homeStack" style={homeStyle}>
+      {heroItem && <HomeHero item={heroItem} theme={theme} />}
       <section className="feedPanel">
         <div className="sectionHead">
           <div>
             <p className="eyebrow">Live feed</p>
-            <h2>통합 업데이트</h2>
+            <h2 className="serif">통합 업데이트</h2>
+            <MemberSpectrum theme={theme} className="sectionSpectrum" />
             <p className="muted">YouTube, Naver, 오늘의 요약, 팬글을 시간순으로 모아 봅니다.</p>
           </div>
           <span className="feedCount">{formatNumber(feedItems.length)} items</span>
@@ -711,44 +818,74 @@ function HomePanel({
                   })
                 }}
               >
+                {option.value !== 'all' && (
+                  <span
+                    className="srcDot"
+                    style={{
+                      background: (
+                        {
+                          youtube: '#d73535',
+                          naver: '#1f8f54',
+                          briefing: '#6b4fd8',
+                          post: '#4d6a7a',
+                        } as Record<string, string>
+                      )[option.value],
+                    }}
+                  />
+                )}
                 {option.label}
               </button>
             ))}
           </div>
-          <div className="chipLine" aria-label="member filter">
-            <button
-              type="button"
-              className={!member ? 'active' : ''}
-              onClick={() => {
-                setMember('')
-                trackAnalyticsEvent({
-                  eventName: 'feed_filter_change',
-                  panel: 'home',
-                  token,
-                  metadata: { filter: 'member', member: 'all' },
-                })
-              }}
-            >
-              멤버 전체
-            </button>
-            {members.data?.map((item) => (
+          <div className="memberPick" aria-label="member filter">
+            <div className="memberPickHead">
+              <span className="memberPickTitle serif">멤버별로 보기</span>
               <button
-                key={item.id}
                 type="button"
-                className={member === item.name ? 'active' : ''}
+                className={!member ? 'memberAll active' : 'memberAll'}
                 onClick={() => {
-                  setMember(item.name)
+                  setMember('')
                   trackAnalyticsEvent({
                     eventName: 'feed_filter_change',
                     panel: 'home',
                     token,
-                    metadata: { filter: 'member', member: item.name },
+                    metadata: { filter: 'member', member: 'all' },
                   })
                 }}
               >
-                {memberLabel(item.name)}
+                전체
               </button>
-            ))}
+            </div>
+            <div className="memberTiles">
+              {members.data?.map((item) => {
+                const selected = member === item.name
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={['memberTile', selected ? 'active' : ''].filter(Boolean).join(' ')}
+                    style={
+                      {
+                        '--mcol': memberColor(item.name, theme),
+                        '--mon': memberOn(item.name, theme),
+                      } as CSSProperties
+                    }
+                    onClick={() => {
+                      const next = selected ? '' : item.name
+                      setMember(next)
+                      trackAnalyticsEvent({
+                        eventName: 'feed_filter_change',
+                        panel: 'home',
+                        token,
+                        metadata: { filter: 'member', member: next || 'all' },
+                      })
+                    }}
+                  >
+                    <span className="memberTileName">{memberLabel(item.name)}</span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
           <div className="chipLine" aria-label="keyword filter">
             <button
@@ -770,7 +907,7 @@ function HomePanel({
               <button
                 key={item}
                 type="button"
-                className={keyword === item ? 'active' : ''}
+                className={['tagChip', keyword === item ? 'active' : ''].filter(Boolean).join(' ')}
                 onClick={() => {
                   setKeyword(item)
                   trackAnalyticsEvent({
@@ -798,6 +935,7 @@ function HomePanel({
               item={item}
               token={token}
               onOpenPost={onOpenPost}
+              theme={theme}
               onSave={() => {
                 if (!token) {
                   onRequireAuth()
@@ -839,18 +977,22 @@ function UpdateFeedCard({
   item,
   token,
   onOpenPost,
+  theme,
   onSave,
   savePending,
 }: {
   item: UpdateFeedItem
   token: string | null
   onOpenPost: (postId: number) => void
+  theme: Theme
   onSave: () => void
   savePending: boolean
 }) {
   const postId = postIdFromUrl(item.url)
   const isExternal = item.url.startsWith('http')
   const isYoutube = item.item_type === 'youtube'
+  const isNote = item.item_type === 'briefing' || item.item_type === 'post'
+  const primaryMember = item.member_names[0] ?? ''
   const label =
     item.item_type === 'youtube'
       ? 'YouTube'
@@ -863,11 +1005,20 @@ function UpdateFeedCard({
             : 'Naver News'
   const meta = buildFeedMetaParts(item)
   const footer = buildFeedFooterParts(item)
+  const cardStyle = {
+    '--mcol': primaryMember ? memberColor(primaryMember, theme) : 'var(--border)',
+  } as CSSProperties
   const body = (
     <>
       <div className="updateThumb">
-        {item.thumbnail_url ? (
-          <img src={item.thumbnail_url} alt="" loading="lazy" />
+        <span className={`typeBadge ${item.item_type}`}>{label}</span>
+        {isNote ? (
+          <div className="noteInner">
+            <span>{label}</span>
+            <strong className="serif">{item.title}</strong>
+          </div>
+        ) : item.thumbnail_url ? (
+          <img src={item.thumbnail_url} alt="" loading="lazy" referrerPolicy="no-referrer" />
         ) : item.item_type === 'youtube' ? (
           <PlayCircle size={26} />
         ) : (
@@ -875,12 +1026,13 @@ function UpdateFeedCard({
         )}
       </div>
       <div className="updateBody">
-        <div className="updateMeta">
-          <span className={`typeBadge ${item.item_type}`}>{label}</span>
-          <span className="updateSource">{meta.source}</span>
+        {!isNote && <strong>{item.title}</strong>}
+        <div className="cardMembers">
+          {item.member_names.slice(0, 5).map((name) => (
+            <MemberAvatar key={name} name={name} theme={theme} size={22} />
+          ))}
+          <small>{item.member_names.length ? memberNamesText(item.member_names) : meta.source}</small>
         </div>
-        <strong>{item.title}</strong>
-        {item.description && <p>{excerpt(item.description, 130)}</p>}
         <div className="updateFoot">
           <span className="updateTimestamp">{footer.timestamp}</span>
           {footer.stats.map((stat) =>
@@ -893,15 +1045,12 @@ function UpdateFeedCard({
               <span key={stat.type}>댓글 {formatNumber(stat.value)}</span>
             ),
           )}
-          {[...item.member_names.map(memberLabel), ...item.matched_keywords, ...item.tags].slice(0, 4).map((tag) => (
-            <em key={tag}>{tag}</em>
-          ))}
         </div>
       </div>
     </>
   )
   return (
-    <article className="updateCard">
+    <article className={['updateCard', isNote ? 'noteCard' : ''].filter(Boolean).join(' ')} style={cardStyle}>
       {isExternal ? (
         <a
           className="updateMainLink"
