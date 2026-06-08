@@ -22,6 +22,10 @@ const sampleBriefing = `RESCENE 오늘의 요약
 Naver 소식
 1. 리센느 인터뷰 공개
    링크: https://news.example.com/rescene
+
+팬 게시글
+1. 원이 후기
+   링크: /posts/12
 `
 
 test("parseBriefingContent groups known sections and link cards", () => {
@@ -32,7 +36,7 @@ test("parseBriefingContent groups known sections and link cards", () => {
   assert.equal(parsed.dateLine, "기준일: 2026-06-07")
   assert.deepEqual(
     parsed.sections.map((section) => section.heading),
-    ["핵심 요약", "최근 영상", "팬 반응", "Naver 소식"],
+    ["핵심 요약", "최근 영상", "팬 반응", "Naver 소식", "팬 게시글"],
   )
   assert.deepEqual(parsed.sections[0].items, [
     { type: "bullet", text: "최근 영상 2개를 확인했습니다." },
@@ -45,6 +49,21 @@ test("parseBriefingContent groups known sections and link cards", () => {
   assert.deepEqual(parsed.sections[3].items, [
     { type: "link", title: "리센느 인터뷰 공개", url: "https://news.example.com/rescene" },
   ])
+  assert.deepEqual(parsed.sections[4].items, [
+    { type: "link", title: "원이 후기", url: "/posts/12" },
+  ])
+})
+
+test("parseBriefingContent supports internal board links for fan post sections", () => {
+  const parsed = parseBriefingContent(`RESCENE 오늘의 요약
+
+팬 게시글
+1. 원이 후기
+   링크: /posts/12
+`)
+
+  assert.ok(parsed)
+  assert.deepEqual(parsed.sections[0].items, [{ type: "link", title: "원이 후기", url: "/posts/12" }])
 })
 
 test("parseBriefingContent returns null without known sections", () => {

@@ -17,7 +17,7 @@ from app.models import AgentRun, Artist, Briefing, McpCallLog, Post, User, Youtu
 from app.schemas import AgentRunRead, BriefingPreviewResponse, PostRead
 from app.services.mcp_client import McpToolClient
 from app.services.quota import consume_ai_quota
-from app.services.rag import refresh_post_chunks, search_chunks
+from app.services.rag import refresh_post_chunks
 from app.services.updates import get_artist_updates
 
 router = APIRouter(tags=["agent"])
@@ -67,6 +67,26 @@ def _clip(value: str, max_length: int = 180) -> str:
     return f"{normalized[:max_length].rstrip()}..."
 
 
+def _briefing_feed_sections(db: Session, artist_id: int) -> tuple[list[Any], list[Any], list[Any]]:
+    videos = get_artist_updates(db, artist_id, source="youtube", limit=5).items
+    fan_posts = get_artist_updates(db, artist_id, source="post", limit=3).items
+    naver_items = get_artist_updates(db, artist_id, source="naver", limit=3).items
+    return videos, fan_posts, naver_items
+
+
+def _source_card_from_update(item: Any) -> dict[str, Any]:
+    return {
+        "type": "source_card",
+        "item_type": item.item_type,
+        "title": item.title,
+        "description": _clip(item.description, 140),
+        "url": item.url,
+        "thumbnail_url": item.thumbnail_url,
+        "source_label": item.source_label,
+        "published_at": item.published_at.isoformat(),
+    }
+
+
 def _render_briefing_markdown(
     db: Session, artist_id: int, refresh: bool, agent_run_id: int | None = None
 ) -> str:
@@ -82,46 +102,47 @@ def _render_briefing_markdown(
         )
         if sync_result.get("status_code") == 409:
             mcp.call_tool("youtube_get_cached", {"artist_id": artist_id})
-    cached = mcp.call_tool("youtube_get_cached", {"artist_id": artist_id})
-    news = mcp.call_tool("naver_news_search", {"query": artist.name, "display": 3})
-    chunks = search_chunks(db, f"{artist.name} 최근 반응", artist_id, limit=3)
-    videos = cached.get("videos", [])
-    news_items = news.get("items", []) if "items" in news else []
+    mcp.call_tool("youtube_get_cached", {"artist_id": artist_id})
+    mcp.call_tool("naver_news_search", {"query": artist.name, "display": 3})
+    videos, fan_posts, naver_items = _briefing_feed_sections(db, artist_id)
     lines = [
         f"{artist.name} 오늘의 요약",
         f"기준일: {datetime.now(UTC).date().isoformat()}",
         "",
         "핵심 요약",
-        f"- 최근 영상 {len(videos[:5])}개, Naver 소식 {len(news_items[:3])}개, 팬 반응 {len(chunks)}개를 확인했습니다.",
-        "- 자세히 볼 만한 링크와 반응을 아래에 모았습니다.",
+        f"- 최근 영상 {len(videos[:5])}개, Naver 소식 {len(naver_items[:3])}개, 팬 게시글 {len(fan_posts[:3])}개를 확인했습니다.",
+        "- 자세히 볼 만한 링크를 아래에 모았습니다.",
         "",
         "최근 영상",
     ]
     if videos:
         for index, video in enumerate(videos[:5], start=1):
-            title = _clip(_clean_external_text(video.get("title")), 90)
+            title = _clip(_clean_external_text(video.title), 90)
             lines.append(f"{index}. {title}")
-            if video.get("url"):
-                lines.append(f"   링크: {video['url']}")
+            if video.url:
+                lines.append(f"   링크: {video.url}")
     else:
         lines.append("- 아직 동기화된 영상이 없습니다.")
     lines.append("")
-    lines.append("팬 반응")
-    if chunks:
-        lines.extend([f"- {_clip(chunk.content)}" for chunk in chunks])
+    lines.append("팬 게시글")
+    if fan_posts:
+        for index, post in enumerate(fan_posts[:3], start=1):
+            title = _clip(_clean_external_text(post.title), 90)
+            lines.append(f"{index}. {title}")
+            if post.url:
+                lines.append(f"   링크: {post.url}")
     else:
-        lines.append("- 아직 게시판 반응 데이터가 충분하지 않습니다.")
+        lines.append("- 아직 최근 팬 게시글이 충분하지 않습니다.")
     lines.append("")
     lines.append("Naver 소식")
-    if news_items:
-        for index, item in enumerate(news_items[:3], start=1):
-            title = _clip(_clean_external_text(item.get("title")), 90)
+    if naver_items:
+        for index, item in enumerate(naver_items[:3], start=1):
+            title = _clip(_clean_external_text(item.title), 90)
             lines.append(f"{index}. {title}")
-            url = item.get("originallink") or item.get("link")
-            if url:
-                lines.append(f"   링크: {url}")
+            if item.url:
+                lines.append(f"   링크: {item.url}")
     else:
-        lines.append("- Naver API 키가 없어 검색을 건너뜁니다.")
+        lines.append("- 아직 동기화된 Naver 소식이 없습니다.")
     return "\n".join(lines)
 
 
@@ -155,24 +176,11 @@ def _briefing_markdown(
     return result["markdown"]
 
 
-def _briefing_source_cards(db: Session, artist_id: int, limit: int = 8) -> list[dict[str, Any]]:
-    feed = get_artist_updates(db, artist_id, limit=limit + 5)
+def _briefing_source_cards(db: Session, artist_id: int, limit: int = 12) -> list[dict[str, Any]]:
     cards: list[dict[str, Any]] = []
-    for item in feed.items:
-        if item.item_type == "briefing":
-            continue
-        cards.append(
-            {
-                "type": "source_card",
-                "item_type": item.item_type,
-                "title": item.title,
-                "description": _clip(item.description, 140),
-                "url": item.url,
-                "thumbnail_url": item.thumbnail_url,
-                "source_label": item.source_label,
-                "published_at": item.published_at.isoformat(),
-            }
-        )
+    videos, fan_posts, naver_items = _briefing_feed_sections(db, artist_id)
+    for item in [*videos[:5], *fan_posts[:3], *naver_items[:3]]:
+        cards.append(_source_card_from_update(item))
         if len(cards) >= limit:
             break
     return cards

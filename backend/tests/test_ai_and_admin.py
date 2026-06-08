@@ -9,6 +9,7 @@ from app.models import (
     McpCallLog,
     Post,
     RagChunk,
+    User,
     YoutubeSource,
     YoutubeVideo,
     YoutubeVideoSource,
@@ -480,7 +481,7 @@ def test_sync_and_briefing_are_admin_only(client):
     source_cards = preview.json()["source_cards"]
     assert "핵심 요약" in preview_markdown
     assert "최근 영상" in preview_markdown
-    assert "팬 반응" in preview_markdown
+    assert "팬 게시글" in preview_markdown
     assert "Naver 소식" in preview_markdown
     assert not any(line.startswith("#") for line in preview_markdown.splitlines())
     assert {"youtube", "naver_news"} <= {card["item_type"] for card in source_cards}
@@ -501,6 +502,38 @@ def test_sync_and_briefing_are_admin_only(client):
         f"/ai/briefing/{duplicate_preview.json()['run_id']}/publish", headers=admin_headers
     )
     assert duplicate.status_code == 409
+
+
+def test_briefing_uses_linked_fan_posts_instead_of_raw_rag_text(client):
+    admin_token = login(client, "admin@example.com", "admin-password")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    with get_session_factory()() as db:
+        admin = db.scalar(select(User).where(User.email == "admin@example.com"))
+        fan_post = Post(
+            category="후기",
+            title="팬들이 남긴 원이 무대 후기",
+            content="원이가 무대에서 좋았다는 팬 후기입니다.",
+            author_id=admin.id,
+            artist_id=1,
+        )
+        db.add(fan_post)
+        db.commit()
+        db.refresh(fan_post)
+        fan_post_id = fan_post.id
+
+    preview = client.post("/ai/briefing/preview", headers=admin_headers)
+
+    assert preview.status_code == 200, preview.text
+    markdown = preview.json()["preview_markdown"]
+    source_cards = preview.json()["source_cards"]
+    assert "팬 게시글" in markdown
+    assert "팬들이 남긴 원이 무대 후기" in markdown
+    assert f"링크: /posts/{fan_post_id}" in markdown
+    assert "channel:" not in markdown
+    assert any(
+        card["item_type"] == "post" and card["url"] == f"/posts/{fan_post_id}"
+        for card in source_cards
+    )
 
 
 def test_admin_can_manage_home_keywords(client):

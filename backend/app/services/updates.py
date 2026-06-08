@@ -281,7 +281,7 @@ def get_artist_updates(
         select(Briefing, Post)
         .join(Post, Post.id == Briefing.post_id)
         .where(Briefing.artist_id == artist_id)
-        .order_by(Post.created_at.desc())
+        .order_by(Post.created_at.desc(), Post.id.desc())
         .limit(10)
     ).all()
     briefing_post_ids = {post.id for _, post in briefing_rows}
@@ -312,7 +312,7 @@ def get_artist_updates(
                 joinedload(Post.tags).joinedload(PostTag.tag),
             )
             .where(Post.artist_id == artist_id)
-            .order_by(Post.created_at.desc())
+            .order_by(Post.created_at.desc(), Post.id.desc())
             .limit(200)
         )
         .unique()

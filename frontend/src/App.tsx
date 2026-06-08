@@ -90,6 +90,7 @@ import {
   type BriefingContentItem,
   type ParsedBriefingContent,
 } from './briefingContent'
+import { findBriefingEmbedForLink } from './briefingEmbeds'
 import { buildFeedFooterParts, buildFeedMetaParts } from './feedMeta'
 import { selectHomeHeroItem } from './homeHero'
 import { findSavedFeedItem, savedFeedItemPayload } from './savedFeed'
@@ -1970,7 +1971,12 @@ function BoardPanel({
         </div>
       </div>
       {parsedBriefing ? (
-        <BriefingContent text={post.content} parsed={parsedBriefing} />
+        <BriefingContent
+          text={post.content}
+          parsed={parsedBriefing}
+          embeds={post.embeds}
+          onOpenPost={onSelectPost}
+        />
       ) : (
         <LinkedText className="postContent" text={post.content} />
       )}
@@ -2039,8 +2045,32 @@ function isYoutubeBriefingUrl(url: string) {
   return /(?:youtube\.com|youtu\.be)/i.test(url)
 }
 
-function BriefingLinkCard({ item }: { item: Extract<BriefingContentItem, { type: 'link' }> }) {
+function BriefingLinkCard({
+  item,
+  embed,
+  onOpenPost,
+}: {
+  item: Extract<BriefingContentItem, { type: 'link' }>
+  embed?: PostEmbed | null
+  onOpenPost: (postId: number) => void
+}) {
+  if (embed) {
+    return <EmbedCard embed={embed} onOpenPost={onOpenPost} />
+  }
   const isYoutube = isYoutubeBriefingUrl(item.url)
+  const postId = postIdFromUrl(item.url)
+  if (postId) {
+    return (
+      <button className="sourceCard briefingLinkCard" type="button" onClick={() => onOpenPost(postId)}>
+        <span className="sourceType">팬글</span>
+        <strong>{item.title}</strong>
+        <span className="briefingOpen">
+          게시글 보기
+          <ExternalLink size={14} />
+        </span>
+      </button>
+    )
+  }
   return (
     <a className="sourceCard briefingLinkCard" href={item.url} target="_blank" rel="noreferrer">
       <span className="sourceType">{isYoutube ? 'YouTube' : 'Source'}</span>
@@ -2054,7 +2084,15 @@ function BriefingLinkCard({ item }: { item: Extract<BriefingContentItem, { type:
   )
 }
 
-function BriefingSectionItems({ items }: { items: BriefingContentItem[] }) {
+function BriefingSectionItems({
+  items,
+  embeds,
+  onOpenPost,
+}: {
+  items: BriefingContentItem[]
+  embeds?: PostEmbed[]
+  onOpenPost: (postId: number) => void
+}) {
   const nodes: ReactNode[] = []
   let bulletBuffer: string[] = []
   const flushBullets = () => {
@@ -2077,7 +2115,14 @@ function BriefingSectionItems({ items }: { items: BriefingContentItem[] }) {
     }
     flushBullets()
     if (item.type === 'link') {
-      nodes.push(<BriefingLinkCard key={`${item.url}-${index}`} item={item} />)
+      nodes.push(
+        <BriefingLinkCard
+          key={`${item.url}-${index}`}
+          item={item}
+          embed={findBriefingEmbedForLink(embeds, item)}
+          onOpenPost={onOpenPost}
+        />,
+      )
       return
     }
     nodes.push(
@@ -2090,7 +2135,17 @@ function BriefingSectionItems({ items }: { items: BriefingContentItem[] }) {
   return <>{nodes}</>
 }
 
-function BriefingContent({ text, parsed }: { text: string; parsed?: ParsedBriefingContent | null }) {
+function BriefingContent({
+  text,
+  parsed,
+  embeds,
+  onOpenPost = () => undefined,
+}: {
+  text: string
+  parsed?: ParsedBriefingContent | null
+  embeds?: PostEmbed[]
+  onOpenPost?: (postId: number) => void
+}) {
   const content = parsed ?? parseBriefingContent(text)
   if (!content) return <LinkedText className="postContent" text={text} />
   return (
@@ -2099,7 +2154,7 @@ function BriefingContent({ text, parsed }: { text: string; parsed?: ParsedBriefi
       {content.sections.map((section) => (
         <section className="briefingSection" key={section.heading}>
           <h3 className="serif">{section.heading}</h3>
-          <BriefingSectionItems items={section.items} />
+          <BriefingSectionItems items={section.items} embeds={embeds} onOpenPost={onOpenPost} />
         </section>
       ))}
     </div>
