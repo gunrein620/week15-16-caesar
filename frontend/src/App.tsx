@@ -2065,6 +2065,11 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
     queryFn: () => api<ArtistArchiveTerm[]>('/artists/1/archive-terms'),
     enabled: Boolean(token && user?.role === 'admin'),
   })
+  const adminUsers = useQuery({
+    queryKey: ['admin-users', token],
+    queryFn: () => api<User[]>('/admin/users', {}, token),
+    enabled: Boolean(token && user?.role === 'admin'),
+  })
   const ragCoverage = useQuery({
     queryKey: ['rag-coverage', token],
     queryFn: () => api<RagCoverage>('/admin/rag/coverage', {}, token),
@@ -2077,6 +2082,11 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
   const [termTitle, setTermTitle] = useState('')
   const [termAliases, setTermAliases] = useState('')
   const [editingTermId, setEditingTermId] = useState<number | null>(null)
+  const [editingUserId, setEditingUserId] = useState<number | null>(null)
+  const [userEmail, setUserEmail] = useState('')
+  const [userDisplayName, setUserDisplayName] = useState('')
+  const [userPassword, setUserPassword] = useState('')
+  const [userRole, setUserRole] = useState<User['role']>('user')
   const [ragActionResult, setRagActionResult] = useState<string | null>(null)
   useEffect(() => {
     if (settings.data) setForm(settings.data)
@@ -2138,6 +2148,42 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
     mutationFn: (termId: number) => api<void>(`/artist-archive-terms/${termId}`, { method: 'DELETE' }, token),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['artist-archive-terms', 1] })
+    },
+  })
+  const resetUserForm = () => {
+    setEditingUserId(null)
+    setUserEmail('')
+    setUserDisplayName('')
+    setUserPassword('')
+    setUserRole('user')
+  }
+  const saveUser = useMutation({
+    mutationFn: () => {
+      const payload = {
+        email: userEmail,
+        display_name: userDisplayName,
+        role: userRole,
+        ...(userPassword.trim() ? { password: userPassword } : {}),
+      }
+      return api<User>(
+        editingUserId ? `/admin/users/${editingUserId}` : '/admin/users',
+        {
+          method: editingUserId ? 'PUT' : 'POST',
+          body: JSON.stringify(payload),
+        },
+        token,
+      )
+    },
+    onSuccess: () => {
+      resetUserForm()
+      void queryClient.invalidateQueries({ queryKey: ['admin-users', token] })
+      void queryClient.invalidateQueries({ queryKey: ['me', token] })
+    },
+  })
+  const deleteUser = useMutation({
+    mutationFn: (userId: number) => api<void>(`/admin/users/${userId}`, { method: 'DELETE' }, token),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin-users', token] })
     },
   })
   const update = useMutation({
@@ -2248,6 +2294,106 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
   const ratio = Math.round(form.budget_ratio * 100)
   return (
     <div className="stack">
+      <section className="adminBudget">
+        <div className="postHead">
+          <div>
+            <h2>회원 관리</h2>
+            <p className="muted">회원가입 차단 상태와 별개로 관리자가 계정을 추가, 수정, 삭제합니다.</p>
+          </div>
+          <span className="role">{formatNumber(adminUsers.data?.length)} users</span>
+        </div>
+        <form
+          className="budgetForm"
+          onSubmit={(event) => {
+            event.preventDefault()
+            saveUser.mutate()
+          }}
+        >
+          <label>
+            이메일
+            <input
+              value={userEmail}
+              onChange={(event) => setUserEmail(event.target.value)}
+              placeholder="user@example.com"
+            />
+          </label>
+          <label>
+            표시 이름
+            <input
+              value={userDisplayName}
+              onChange={(event) => setUserDisplayName(event.target.value)}
+              placeholder="표시 이름"
+            />
+          </label>
+          <label>
+            비밀번호
+            <input
+              type="password"
+              value={userPassword}
+              onChange={(event) => setUserPassword(event.target.value)}
+              placeholder={editingUserId ? '변경 시에만 입력' : '8자 이상'}
+            />
+          </label>
+          <label>
+            권한
+            <select value={userRole} onChange={(event) => setUserRole(event.target.value as User['role'])}>
+              <option value="user">user</option>
+              <option value="admin">admin</option>
+            </select>
+          </label>
+          <button
+            className="primary"
+            disabled={
+              !userEmail.trim() ||
+              !userDisplayName.trim() ||
+              (!editingUserId && userPassword.length < 8) ||
+              (Boolean(editingUserId) && userPassword.length > 0 && userPassword.length < 8) ||
+              saveUser.isPending
+            }
+          >
+            <Save size={17} />
+            {editingUserId ? '수정' : '추가'}
+          </button>
+          {editingUserId && (
+            <button type="button" className="secondary" onClick={resetUserForm}>
+              취소
+            </button>
+          )}
+        </form>
+        <div className="sourceList archiveTermList">
+          {adminUsers.data?.map((item) => (
+            <span key={item.id}>
+              <strong>{item.role}</strong>
+              {item.email}
+              <em>{item.display_name}</em>
+              <button
+                className="chipButton"
+                onClick={() => {
+                  setEditingUserId(item.id)
+                  setUserEmail(item.email)
+                  setUserDisplayName(item.display_name)
+                  setUserPassword('')
+                  setUserRole(item.role)
+                }}
+                title="계정 수정"
+              >
+                <Edit3 size={13} />
+              </button>
+              <button
+                className="chipButton"
+                onClick={() => deleteUser.mutate(item.id)}
+                disabled={deleteUser.isPending || item.id === user.id}
+                title={item.id === user.id ? '본인 계정은 삭제할 수 없음' : '계정 삭제'}
+              >
+                <Trash2 size={13} />
+              </button>
+            </span>
+          ))}
+        </div>
+        {adminUsers.error && <p className="error">{adminUsers.error.message}</p>}
+        {saveUser.error && <p className="error">{saveUser.error.message}</p>}
+        {deleteUser.error && <p className="error">{deleteUser.error.message}</p>}
+      </section>
       <section className="adminBudget">
         <div className="postHead">
           <div>

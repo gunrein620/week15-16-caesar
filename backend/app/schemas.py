@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -11,6 +11,20 @@ class UserRead(BaseModel):
     email: EmailStr
     display_name: str
     role: str
+
+
+class AdminUserCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8)
+    display_name: str = Field(min_length=1, max_length=80)
+    role: Literal["user", "admin"] = "user"
+
+
+class AdminUserUpdate(BaseModel):
+    email: EmailStr | None = None
+    password: str | None = Field(default=None, min_length=8)
+    display_name: str | None = Field(default=None, min_length=1, max_length=80)
+    role: Literal["user", "admin"] | None = None
 
 
 class AuthSignup(BaseModel):

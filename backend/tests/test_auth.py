@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.core.db import Base, get_session_factory
-from app.models import User
+from app.models import Post, User
 from app.services.auth_lockout import login_attempt_identifier
 from tests.conftest import login, signup
 
@@ -96,6 +96,107 @@ def test_admin_can_toggle_public_signup(client, monkeypatch):
     assert disabled.status_code == 200
     assert disabled.json()["public_signup_enabled"] is False
     assert blocked_again.status_code == 403
+
+
+def test_admin_can_manage_user_accounts_when_public_signup_is_closed(client, monkeypatch):
+    from app.core.config import reset_settings_cache
+
+    monkeypatch.setenv("PUBLIC_SIGNUP_ENABLED", "false")
+    reset_settings_cache()
+    admin_token = login(client, "admin@example.com", "admin-password")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    created = client.post(
+        "/admin/users",
+        json={
+            "email": "managed@example.com",
+            "password": "password123",
+            "display_name": "Managed User",
+            "role": "user",
+        },
+        headers=admin_headers,
+    )
+    duplicate = client.post(
+        "/admin/users",
+        json={
+            "email": "managed@example.com",
+            "password": "password123",
+            "display_name": "Duplicate",
+            "role": "user",
+        },
+        headers=admin_headers,
+    )
+
+    reset_settings_cache()
+    assert created.status_code == 201, created.text
+    assert duplicate.status_code == 409
+    user_id = created.json()["id"]
+    user_login = client.post(
+        "/auth/login", json={"email": "managed@example.com", "password": "password123"}
+    )
+    assert user_login.status_code == 200, user_login.text
+    user_headers = {"Authorization": f"Bearer {user_login.json()['access_token']}"}
+    assert client.get("/admin/users", headers=user_headers).status_code == 403
+
+    listed = client.get("/admin/users", headers=admin_headers)
+    assert listed.status_code == 200, listed.text
+    assert "managed@example.com" in {item["email"] for item in listed.json()}
+
+    updated = client.put(
+        f"/admin/users/{user_id}",
+        json={"display_name": "Managed Admin", "role": "admin", "password": "newpassword123"},
+        headers=admin_headers,
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["display_name"] == "Managed Admin"
+    assert updated.json()["role"] == "admin"
+    assert (
+        client.post(
+            "/auth/login", json={"email": "managed@example.com", "password": "newpassword123"}
+        ).status_code
+        == 200
+    )
+
+    self_delete = client.delete("/admin/users/1", headers=admin_headers)
+    self_demote = client.put(
+        "/admin/users/1",
+        json={"display_name": "Admin", "role": "user"},
+        headers=admin_headers,
+    )
+    assert self_delete.status_code == 400
+    assert self_demote.status_code == 400
+
+
+def test_admin_delete_user_removes_owned_posts_and_blocks_login(client):
+    admin_token = login(client, "admin@example.com", "admin-password")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    user_token = signup(client, "delete-me@example.com")
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+    post = client.post(
+        "/posts",
+        json={"title": "삭제될 글", "content": "계정 삭제와 함께 삭제됩니다.", "tags": []},
+        headers=user_headers,
+    )
+    assert post.status_code == 201, post.text
+    post_id = post.json()["id"]
+    with get_session_factory()() as db:
+        user = db.scalar(select(User).where(User.email == "delete-me@example.com"))
+        assert user is not None
+        user_id = user.id
+
+    deleted = client.delete(f"/admin/users/{user_id}", headers=admin_headers)
+
+    assert deleted.status_code == 204, deleted.text
+    assert client.get(f"/posts/{post_id}").status_code == 404
+    assert (
+        client.post(
+            "/auth/login", json={"email": "delete-me@example.com", "password": "password123"}
+        ).status_code
+        == 401
+    )
+    with get_session_factory()() as db:
+        assert db.get(User, user_id) is None
+        assert db.get(Post, post_id) is None
 
 
 def test_seed_admin_password_is_synchronized(client):

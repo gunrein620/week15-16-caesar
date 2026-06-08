@@ -1,12 +1,28 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.core.security import hash_password
 from app.dependencies import require_admin
-from app.models import User
+from app.models import (
+    AgentRun,
+    AiUsageCounter,
+    AuthIdentity,
+    Briefing,
+    Comment,
+    McpCallLog,
+    Post,
+    PostTag,
+    RagChunk,
+    SavedItem,
+    User,
+)
 from app.schemas import (
+    AdminUserCreate,
+    AdminUserUpdate,
     InfraCostSettings,
     InfraCostSettingsUpdate,
     RagCleanupRequest,
@@ -18,6 +34,7 @@ from app.schemas import (
     SignupSettingsUpdate,
     SyncSettings,
     SyncSettingsUpdate,
+    UserRead,
 )
 from app.services.app_settings import (
     get_public_signup_enabled,
@@ -29,6 +46,119 @@ from app.services.infra_budget import get_infra_cost_snapshot, update_infra_cost
 from app.services.rag_admin import cleanup_rag_chunks, embed_youtube_batch, get_rag_coverage
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+ADMIN_ROLES = {"user", "admin"}
+
+
+def _normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
+def _require_role(role: str) -> str:
+    if role not in ADMIN_ROLES:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid role")
+    return role
+
+
+def _delete_user_owned_data(db: Session, user_id: int) -> None:
+    post_ids = list(db.scalars(select(Post.id).where(Post.author_id == user_id)).all())
+    run_ids = list(db.scalars(select(AgentRun.id).where(AgentRun.user_id == user_id)).all())
+    if run_ids:
+        db.execute(delete(McpCallLog).where(McpCallLog.agent_run_id.in_(run_ids)))
+        db.execute(delete(Briefing).where(Briefing.run_id.in_(run_ids)))
+        db.execute(delete(AgentRun).where(AgentRun.id.in_(run_ids)))
+    if post_ids:
+        db.execute(delete(Briefing).where(Briefing.post_id.in_(post_ids)))
+        db.execute(delete(RagChunk).where(RagChunk.post_id.in_(post_ids)))
+        db.execute(delete(Comment).where(Comment.post_id.in_(post_ids)))
+        db.execute(delete(PostTag).where(PostTag.post_id.in_(post_ids)))
+        db.execute(delete(Post).where(Post.id.in_(post_ids)))
+    db.execute(delete(Comment).where(Comment.author_id == user_id))
+    db.execute(delete(SavedItem).where(SavedItem.user_id == user_id))
+    db.execute(delete(AuthIdentity).where(AuthIdentity.user_id == user_id))
+    db.execute(delete(AiUsageCounter).where(AiUsageCounter.scope == "user", AiUsageCounter.scope_id == str(user_id)))
+
+
+def _admin_count(db: Session) -> int:
+    return int(db.scalar(select(func.count()).select_from(User).where(User.role == "admin")) or 0)
+
+
+@router.get("/users", response_model=list[UserRead])
+def list_users(
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[User]:
+    return db.scalars(select(User).order_by(User.id.asc())).all()
+
+
+@router.post("/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+def create_user(
+    payload: AdminUserCreate,
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> User:
+    email = _normalize_email(str(payload.email))
+    if db.scalar(select(User).where(User.email == email)) is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists")
+    user = User(
+        email=email,
+        display_name=payload.display_name.strip(),
+        hashed_password=hash_password(payload.password),
+        role=_require_role(payload.role),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.put("/users/{user_id}", response_model=UserRead)
+def update_user(
+    user_id: int,
+    payload: AdminUserUpdate,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> User:
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if payload.email is not None:
+        email = _normalize_email(str(payload.email))
+        exists = db.scalar(select(User).where(User.email == email, User.id != user.id))
+        if exists is not None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists")
+        user.email = email
+    if payload.display_name is not None:
+        user.display_name = payload.display_name.strip()
+    if payload.password is not None:
+        user.hashed_password = hash_password(payload.password)
+    if payload.role is not None:
+        role = _require_role(payload.role)
+        if user.id == admin.id and role != "admin":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot demote yourself")
+        if user.role == "admin" and role != "admin" and _admin_count(db) <= 1:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one admin is required")
+        user.role = role
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(
+    user_id: int,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if user.id == admin.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete yourself")
+    if user.role == "admin" and _admin_count(db) <= 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one admin is required")
+    _delete_user_owned_data(db, user.id)
+    db.delete(user)
+    db.commit()
 
 
 @router.get("/settings/signup", response_model=SignupSettingsRead)
