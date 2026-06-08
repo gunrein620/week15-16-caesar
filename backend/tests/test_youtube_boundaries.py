@@ -561,3 +561,189 @@ def test_keyword_search_source_searches_then_fetches_video_details(monkeypatch):
     assert calls[0][1]["order"] == "date"
     assert calls[1][1]["id"] == "search-video-a,search-video-b"
     assert [video["id"] for video in videos] == ["search-video-a", "search-video-b"]
+
+
+def test_backfill_channel_sources_pages_until_debut_cutoff(client, monkeypatch):
+    monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
+    reset_settings_cache()
+    admin_token = login(client, "admin@example.com", "admin-password")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    created = client.post(
+        "/artists/1/youtube-sources",
+        json={"source_type": "official_channel", "source_value": "channel-id", "title": "official"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    source_id = created.json()["id"]
+    calls: list[tuple[str, dict]] = []
+
+    def fake_youtube_get(path: str, params: dict):
+        calls.append((path, params))
+        if path == "channels":
+            return {
+                "items": [
+                    {
+                        "contentDetails": {
+                            "relatedPlaylists": {
+                                "uploads": "UUuploads",
+                            }
+                        }
+                    }
+                ]
+            }
+        if path == "playlistItems":
+            if params.get("pageToken") == "older":
+                return {
+                    "items": [
+                        {"snippet": {"resourceId": {"videoId": "predebut-video"}}},
+                    ],
+                    "nextPageToken": "should-stop",
+                }
+            return {
+                "items": [
+                    {"snippet": {"resourceId": {"videoId": "debut-video"}}},
+                ],
+                "nextPageToken": "older",
+            }
+        if path == "videos":
+            if params["id"] == "debut-video":
+                return {
+                    "items": [
+                        {
+                            "id": "debut-video",
+                            "snippet": {
+                                "title": "RESCENE debut day",
+                                "description": "debut content",
+                                "channelTitle": "RESCENE",
+                                "publishedAt": "2024-03-26T09:00:00Z",
+                                "thumbnails": {"high": {"url": "thumb"}},
+                            },
+                            "statistics": {"viewCount": "100"},
+                        }
+                    ]
+                }
+            return {
+                "items": [
+                    {
+                        "id": "predebut-video",
+                        "snippet": {
+                            "title": "pre debut",
+                            "description": "before debut cutoff",
+                            "channelTitle": "RESCENE",
+                            "publishedAt": "2024-03-25T14:59:00Z",
+                            "thumbnails": {"high": {"url": "old-thumb"}},
+                        },
+                        "statistics": {"viewCount": "50"},
+                    }
+                ]
+            }
+        raise AssertionError(path)
+
+    monkeypatch.setattr("app.services.youtube._youtube_get", fake_youtube_get)
+
+    response = client.post(
+        "/artists/1/youtube-backfill",
+        json={"source_id": source_id, "pages_per_source": 5, "reset": True},
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["created"] == 1
+    assert response.json()["pages_fetched"] == 2
+    assert response.json()["sources_completed"] == 1
+    assert response.json()["has_more"] is False
+    playlist_calls = [params for path, params in calls if path == "playlistItems"]
+    assert playlist_calls[0].get("pageToken") is None
+    assert playlist_calls[1]["pageToken"] == "older"
+    with get_session_factory()() as db:
+        source = db.get(YoutubeSource, source_id)
+        assert source is not None
+        assert source.backfill_status == "completed"
+        assert source.backfill_cursor is None
+        assert source.last_synced_at is None
+        assert db.get(YoutubeVideo, "debut-video") is not None
+        assert db.get(YoutubeVideo, "predebut-video") is None
+
+
+def test_backfill_resumes_from_saved_cursor(client, monkeypatch):
+    monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
+    reset_settings_cache()
+    admin_token = login(client, "admin@example.com", "admin-password")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    created = client.post(
+        "/artists/1/youtube-sources",
+        json={"source_type": "member_channel", "source_value": "channel-id", "title": "member"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    source_id = created.json()["id"]
+    calls: list[tuple[str, dict]] = []
+
+    def fake_youtube_get(path: str, params: dict):
+        calls.append((path, params))
+        if path == "channels":
+            return {
+                "items": [
+                    {
+                        "contentDetails": {
+                            "relatedPlaylists": {
+                                "uploads": "UUuploads",
+                            }
+                        }
+                    }
+                ]
+            }
+        if path == "playlistItems":
+            if params.get("pageToken") == "page-2":
+                return {"items": [{"snippet": {"resourceId": {"videoId": "video-b"}}}]}
+            return {
+                "items": [{"snippet": {"resourceId": {"videoId": "video-a"}}}],
+                "nextPageToken": "page-2",
+            }
+        if path == "videos":
+            video_id = params["id"]
+            return {
+                "items": [
+                    {
+                        "id": video_id,
+                        "snippet": {
+                            "title": f"RESCENE {video_id}",
+                            "description": "backfill page",
+                            "channelTitle": "member",
+                            "publishedAt": "2024-04-01T00:00:00Z",
+                            "thumbnails": {},
+                        },
+                        "statistics": {"viewCount": "10"},
+                    }
+                ]
+            }
+        raise AssertionError(path)
+
+    monkeypatch.setattr("app.services.youtube._youtube_get", fake_youtube_get)
+
+    first = client.post(
+        "/artists/1/youtube-backfill",
+        json={"source_id": source_id, "pages_per_source": 1, "reset": True},
+        headers=headers,
+    )
+    second = client.post(
+        "/artists/1/youtube-backfill",
+        json={"source_id": source_id, "pages_per_source": 1},
+        headers=headers,
+    )
+
+    assert first.status_code == 200, first.text
+    assert first.json()["has_more"] is True
+    assert second.status_code == 200, second.text
+    assert second.json()["has_more"] is False
+    playlist_calls = [params for path, params in calls if path == "playlistItems"]
+    assert playlist_calls[0].get("pageToken") is None
+    assert playlist_calls[1]["pageToken"] == "page-2"
+    with get_session_factory()() as db:
+        source = db.get(YoutubeSource, source_id)
+        assert source is not None
+        assert source.backfill_status == "completed"
+        assert {video.id for video in db.scalars(select(YoutubeVideo)).all()} >= {
+            "video-a",
+            "video-b",
+        }

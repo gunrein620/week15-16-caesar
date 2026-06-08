@@ -26,6 +26,8 @@ from app.schemas import (
     MemberCreate,
     MemberRead,
     UpdateFeedResponse,
+    YoutubeBackfillRequest,
+    YoutubeBackfillResult,
     YoutubeSourceCreate,
     YoutubeSourceRead,
     YoutubeVideoRead,
@@ -33,7 +35,7 @@ from app.schemas import (
 from app.services.quota import consume_ai_quota
 from app.services.external_updates import sync_external_updates
 from app.services.updates import get_artist_updates
-from app.services.youtube import sync_artist_videos
+from app.services.youtube import backfill_artist_videos, sync_artist_videos
 
 router = APIRouter(tags=["artists"])
 YOUTUBE_SOURCE_TYPES = {
@@ -168,6 +170,27 @@ def sync_videos(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
     consume_ai_quota(db, user, "youtube_sync")
     return sync_artist_videos(db, artist_id)
+
+
+@router.post("/artists/{artist_id}/youtube-backfill", response_model=YoutubeBackfillResult)
+@limiter.limit("5/day")
+def backfill_videos(
+    request: Request,
+    artist_id: int,
+    payload: YoutubeBackfillRequest,
+    user: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, int | bool]:
+    if db.get(Artist, artist_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    return backfill_artist_videos(
+        db,
+        artist_id,
+        source_id=payload.source_id,
+        published_after=payload.published_after,
+        pages_per_source=payload.pages_per_source,
+        reset=payload.reset,
+    )
 
 
 @router.get("/artists/{artist_id}/youtube-sources", response_model=list[YoutubeSourceRead])

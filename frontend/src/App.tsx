@@ -45,6 +45,7 @@ import {
   UpdateFeedItem,
   UpdateFeedResponse,
   User,
+  YoutubeBackfillResult,
   YoutubeSource,
   YoutubeSourceType,
   YoutubeVideo,
@@ -1669,6 +1670,7 @@ function YoutubePanel({ token, user }: { token: string | null; user?: User }) {
   const [sourceValue, setSourceValue] = useState('')
   const [sourceTitle, setSourceTitle] = useState('')
   const [sourceType, setSourceType] = useState<YoutubeSourceType>('official_channel')
+  const [backfillResult, setBackfillResult] = useState<YoutubeBackfillResult | null>(null)
   const selectedSourceOption = youtubeSourceOptions.find((option) => option.value === sourceType)
   const addSource = useMutation({
     mutationFn: () =>
@@ -1696,6 +1698,23 @@ function YoutubePanel({ token, user }: { token: string | null; user?: User }) {
     mutationFn: () => api<Record<string, number | boolean | string>>('/artists/1/sync-updates', { method: 'POST' }, token),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['videos', 1] })
+      void queryClient.invalidateQueries({ queryKey: ['updates'] })
+    },
+  })
+  const backfill = useMutation({
+    mutationFn: () =>
+      api<YoutubeBackfillResult>(
+        '/artists/1/youtube-backfill',
+        {
+          method: 'POST',
+          body: JSON.stringify({ pages_per_source: 20 }),
+        },
+        token,
+      ),
+    onSuccess: (result) => {
+      setBackfillResult(result)
+      void queryClient.invalidateQueries({ queryKey: ['videos', 1] })
+      void queryClient.invalidateQueries({ queryKey: ['sources', 1] })
       void queryClient.invalidateQueries({ queryKey: ['updates'] })
     },
   })
@@ -1752,14 +1771,35 @@ function YoutubePanel({ token, user }: { token: string | null; user?: User }) {
             <RefreshCw size={17} />
             Sync
           </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => backfill.mutate()}
+            disabled={backfill.isPending}
+            title="데뷔일부터 과거 YouTube 자료 가져오기"
+          >
+            <RefreshCw size={17} />
+            Backfill
+          </button>
         </form>
       )}
       {addSource.error && <p className="error">{addSource.error.message}</p>}
       {sync.error && <p className="error">{sync.error.message}</p>}
+      {backfill.error && <p className="error">{backfill.error.message}</p>}
+      {backfillResult && (
+        <p className="hint">
+          Backfill: {formatNumber(backfillResult.created)} new, {formatNumber(backfillResult.updated)} updated,
+          {` ${formatNumber(backfillResult.pages_fetched)} pages`}
+          {backfillResult.has_more ? ' · 더 가져올 수 있음' : ' · 완료'}
+        </p>
+      )}
       <div className="sourceList">
         {sources.data?.map((source) => (
           <span key={source.id}>
             {source.title}
+            {source.backfill_status && source.backfill_status !== 'idle' && (
+              <em>{source.backfill_status}</em>
+            )}
             {user?.role === 'admin' && (
               <button
                 className="chipButton"

@@ -96,6 +96,21 @@ export type YoutubeSource = {
   source_value: string
   title: string
   enabled: boolean
+  backfill_cursor: string | null
+  backfill_status: string
+  backfill_started_at: string | null
+  backfill_completed_at: string | null
+  backfill_error: string
+}
+
+export type YoutubeBackfillResult = {
+  created: number
+  updated: number
+  linked: number
+  pages_fetched: number
+  sources_processed: number
+  sources_completed: number
+  has_more: boolean
 }
 
 export type YoutubeVideo = {

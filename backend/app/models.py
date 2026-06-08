@@ -292,6 +292,15 @@ class YoutubeSource(Base, TimestampMixin):
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     enabled: Mapped[bool] = mapped_column(default=True, nullable=False)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    backfill_cursor: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    backfill_status: Mapped[str] = mapped_column(String(20), default="idle", nullable=False)
+    backfill_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    backfill_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    backfill_error: Mapped[str] = mapped_column(Text, default="", nullable=False)
 
     videos: Mapped[list["YoutubeVideoSource"]] = relationship(
         back_populates="source", cascade="all, delete-orphan"

@@ -104,6 +104,14 @@ h2 {
   padding: 4px 8px;
 }
 
+.sourceList em {
+  background: #ffffff;
+  border-radius: 999px;
+  color: #637065;
+  font-style: normal;
+  padding: 1px 5px;
+}
+
 .signupToggle {
   align-items: center;
   border: 1px solid #c7d8cc;

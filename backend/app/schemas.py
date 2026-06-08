@@ -229,6 +229,28 @@ class YoutubeSourceRead(BaseModel):
     source_value: str
     title: str
     enabled: bool
+    backfill_cursor: str | None = None
+    backfill_status: str = "idle"
+    backfill_started_at: datetime | None = None
+    backfill_completed_at: datetime | None = None
+    backfill_error: str = ""
+
+
+class YoutubeBackfillRequest(BaseModel):
+    source_id: int | None = None
+    published_after: datetime | None = None
+    pages_per_source: int = Field(default=5, ge=1, le=20)
+    reset: bool = False
+
+
+class YoutubeBackfillResult(BaseModel):
+    created: int
+    updated: int
+    linked: int
+    pages_fetched: int
+    sources_processed: int
+    sources_completed: int
+    has_more: bool
 
 
 class YoutubeVideoRead(BaseModel):
