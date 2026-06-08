@@ -24,8 +24,11 @@ test("board mode transitions separate list detail write and edit screens", () =>
   assert.equal(nextBoardMode("edit", "saved"), "detail")
 })
 
-test("desktop sidebar stays visible outside the home feed", () => {
+test("desktop sidebar appears only inside the board panel", () => {
   assert.equal(shouldShowDesktopBoardSidebar("home"), false)
   assert.equal(shouldShowDesktopBoardSidebar("board"), true)
-  assert.equal(shouldShowDesktopBoardSidebar("rag"), true)
+  assert.equal(shouldShowDesktopBoardSidebar("rag"), false)
+  assert.equal(shouldShowDesktopBoardSidebar("youtube"), false)
+  assert.equal(shouldShowDesktopBoardSidebar("saved"), false)
+  assert.equal(shouldShowDesktopBoardSidebar("admin"), false)
 })

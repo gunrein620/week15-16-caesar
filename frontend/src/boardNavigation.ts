@@ -22,5 +22,5 @@ export function nextBoardMode(current: BoardMode, action: BoardAction): BoardMod
 }
 
 export function shouldShowDesktopBoardSidebar(panel: AppPanel): boolean {
-  return panel !== "home"
+  return panel === "board"
 }

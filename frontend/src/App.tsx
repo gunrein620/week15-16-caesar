@@ -14,18 +14,20 @@ import {
   LogOut,
   MessageSquare,
   MessageSquarePlus,
+  Moon,
   PlayCircle,
   RefreshCw,
   Save,
   Search,
   Send,
   ShieldCheck,
+  Sun,
   Trash2,
   Upload,
   UserPlus,
   X,
 } from 'lucide-react'
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   ArtistArchiveTerm,
   ArtistKeyword,
@@ -79,13 +81,33 @@ import {
   buildArchiveAnswerPreview,
   buildArchiveSourceDisplay,
 } from './archiveSearch'
+import {
+  parseBriefingContent,
+  shouldUseBriefingContent,
+  type BriefingContentItem,
+  type ParsedBriefingContent,
+} from './briefingContent'
 import { buildFeedFooterParts, buildFeedMetaParts } from './feedMeta'
 import { sortYoutubeVideos, type VideoSort } from './videoSorting'
 import { youtubeAppUrl } from './youtubeLinks'
 import { buildYoutubeSourcePayload } from './youtubeSourceForm'
+import { MEMBER_COLORS, MEMBER_ORDER, memberColor, memberOn } from './memberColors'
 
 type AuthMode = 'login' | 'signup'
 type FeedSource = 'all' | 'youtube' | 'naver' | 'briefing' | 'post'
+type Theme = 'light' | 'dark'
+
+const VIDEO_RENDER_STEP = 48
+
+const CATEGORY_COLORS: Record<string, { color: string; lightText: string; darkText: string }> = {
+  자유: { color: '#64748B', lightText: '#334155', darkText: '#CBD5E1' },
+  질문: { color: '#2563EB', lightText: '#1D4ED8', darkText: '#93C5FD' },
+  뉴스: { color: '#16A34A', lightText: '#166534', darkText: '#86EFAC' },
+  영상: { color: '#DC2626', lightText: '#B91C1C', darkText: '#FCA5A5' },
+  후기: { color: '#D97706', lightText: '#92400E', darkText: '#FCD34D' },
+  정보: { color: '#7C3AED', lightText: '#6D28D9', darkText: '#C4B5FD' },
+  브리핑: { color: 'var(--accent)', lightText: 'var(--accent)', darkText: 'var(--accent)' },
+}
 
 const youtubeSourceOptions: { value: YoutubeSourceType; label: string; placeholder: string }[] = [
   {
@@ -166,6 +188,73 @@ function memberLabel(name: string) {
   return memberLabels[name] ?? name
 }
 
+function MemberSpectrum({ theme, className = '' }: { theme: Theme; className?: string }) {
+  return (
+    <span className={['spectrum', className].filter(Boolean).join(' ')} aria-hidden="true">
+      {MEMBER_ORDER.map((name) => (
+        <i key={name} style={{ backgroundColor: memberColor(name, theme) }} />
+      ))}
+    </span>
+  )
+}
+
+function MemberAvatar({ name, theme, size = 24 }: { name: string; theme: Theme; size?: number }) {
+  const label = memberLabel(name)
+  return (
+    <span
+      className="memAva"
+      style={
+        {
+          backgroundColor: memberColor(name, theme),
+          color: memberOn(name, theme),
+          height: size,
+          width: size,
+          fontSize: Math.max(10, Math.round(size * 0.42)),
+        } as CSSProperties
+      }
+      title={label}
+    >
+      {label.slice(0, 1) || name.slice(0, 1)}
+    </span>
+  )
+}
+
+function memberNamesText(names: string[]) {
+  return names.length ? names.map(memberLabel).join(', ') : 'RESCENE'
+}
+
+function memberNamesFromText(...parts: Array<string | null | undefined>) {
+  const haystack = parts.filter(Boolean).join(' ').toLowerCase()
+  return MEMBER_ORDER.filter((name) => {
+    const member = MEMBER_COLORS[name]
+    return haystack.includes(name.toLowerCase()) || haystack.includes(member.ko)
+  })
+}
+
+function categoryBadgeStyle(category: string, theme: Theme) {
+  const palette = CATEGORY_COLORS[category] ?? CATEGORY_COLORS.자유
+  return {
+    '--cat-color': palette.color,
+    '--cat-text': theme === 'dark' ? palette.darkText : palette.lightText,
+  } as CSSProperties
+}
+
+function CategoryBadge({
+  category,
+  theme,
+  className = 'categoryBadge',
+}: {
+  category: string
+  theme: Theme
+  className?: string
+}) {
+  return (
+    <span className={className} style={categoryBadgeStyle(category, theme)}>
+      {category}
+    </span>
+  )
+}
+
 function archiveTermTypeLabel(type: ArtistArchiveTerm['term_type']) {
   if (type === 'song') return '곡명'
   if (type === 'album') return '앨범'
@@ -211,6 +300,11 @@ export default function App() {
   const [tagFilter, setTagFilter] = useState('')
   const [page, setPage] = useState(1)
   const [authOpen, setAuthOpen] = useState(false)
+  const [theme, setTheme] = useState<Theme>(() => {
+    const stored = localStorage.getItem('rescene_theme')
+    if (stored === 'light' || stored === 'dark') return stored
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  })
 
   const me = useQuery({
     queryKey: ['me', token],
@@ -297,6 +391,11 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('rescene_theme', theme)
+  }, [theme])
+
+  useEffect(() => {
     if (!shouldTrackPanelView(panel)) return
     trackAnalyticsEvent({ eventName: 'panel_view', panel, token })
   }, [panel, token])
@@ -349,11 +448,19 @@ export default function App() {
   return (
     <div className="shell">
       <header className="topbar">
-        <div>
-          <p className="eyebrow">RESCENE</p>
-          <h1>Updates</h1>
+        <div className="topbarBrand">
+          <span className="wordmark">RESCENE</span>
+          <MemberSpectrum theme={theme} />
         </div>
         <div className="session">
+          <button
+            className="iconButton"
+            onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+            title={theme === 'dark' ? '라이트 테마' : '다크 테마'}
+            aria-label={theme === 'dark' ? '라이트 테마로 변경' : '다크 테마로 변경'}
+          >
+            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
           {me.data ? (
             <>
               <span>{me.data.display_name}</span>
@@ -437,6 +544,7 @@ export default function App() {
             tagFilter={tagFilter}
             tags={tags.data ?? []}
             user={me.data}
+            theme={theme}
             onSearchChange={(value) => {
               setSearch(value)
               setPage(1)
@@ -480,6 +588,7 @@ export default function App() {
               onRequireAuth={requireAuth}
               onRequireVerified={requireVerified}
               onOpenPost={openPost}
+              theme={theme}
             />
           )}
           {panel === 'board' && (
@@ -497,6 +606,7 @@ export default function App() {
               search={search}
               tagFilter={tagFilter}
               tags={tags.data ?? []}
+              theme={theme}
               onRequireAuth={requireAuth}
               onRequireVerified={requireVerified}
               onSearchChange={(value) => {
@@ -539,12 +649,13 @@ export default function App() {
               onOpenPost={openPost}
             />
           )}
-          {panel === 'youtube' && <YoutubePanel token={token} user={me.data} />}
+          {panel === 'youtube' && <YoutubePanel token={token} user={me.data} theme={theme} />}
           {panel === 'briefing' && <BriefingPanel token={token} user={me.data} />}
           {panel === 'saved' && (
             <SavedPanel
               token={token}
               user={me.data}
+              theme={theme}
               onRequireAuth={requireAuth}
               onOpenPost={openPost}
             />
@@ -588,18 +699,56 @@ function BottomTabBar({ panel, onSelect }: { panel: AppPanel; onSelect: (panel: 
   )
 }
 
+function HomeHero({ item, theme }: { item: UpdateFeedItem; theme: Theme }) {
+  const primaryMember = item.member_names[0] ?? ''
+  return (
+    <section
+      className="hero"
+      style={{ '--mcol': primaryMember ? memberColor(primaryMember, theme) : 'var(--border-strong)' } as CSSProperties}
+    >
+      {item.thumbnail_url ? (
+        <img src={item.thumbnail_url} alt="" loading="eager" referrerPolicy="no-referrer" />
+      ) : (
+        <div className="heroFallback">
+          <FileText size={36} />
+        </div>
+      )}
+      <div className="heroOverlay" />
+      <div className="heroContent">
+        <div className="heroKicker">
+          <MemberSpectrum theme={theme} />
+          오늘의 하이라이트
+        </div>
+        <h1 className="serif">{item.title}</h1>
+        <div className="heroMeta">
+          <span className="heroAvatars">
+            {item.member_names.slice(0, 5).map((name) => (
+              <MemberAvatar key={name} name={name} theme={theme} size={28} />
+            ))}
+          </span>
+          <span>
+            {formatDate(item.published_at)} · 조회수 {formatNumber(item.view_count)}
+          </span>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function HomePanel({
   token,
   user,
   onRequireAuth,
   onRequireVerified,
   onOpenPost,
+  theme,
 }: {
   token: string | null
   user?: User
   onRequireAuth: () => void
   onRequireVerified: () => boolean
   onOpenPost: (postId: number) => void
+  theme: Theme
 }) {
   const queryClient = useQueryClient()
   const [source, setSource] = useState<FeedSource>('all')
@@ -675,13 +824,24 @@ function HomePanel({
   ]
   const feedItems = updates.data?.pages.flatMap((pageData) => pageData.items) ?? []
   const naverAvailable = updates.data?.pages.every((pageData) => pageData.naver_available) ?? true
+  const showHero = source === 'all' && !member && !keyword && !feedQuery.trim()
+  const heroItem =
+    showHero && feedItems.length
+      ? feedItems.reduce((best, item) => ((item.view_count ?? -1) > (best.view_count ?? -1) ? item : best), feedItems[0])
+      : null
+  const homeStyle = {
+    '--accent': member ? memberColor(member, theme) : '',
+    '--accent-on': member ? memberOn(member, theme) : '',
+  } as CSSProperties
   return (
-    <div className="homeStack">
+    <div className="homeStack" style={homeStyle}>
+      {heroItem && <HomeHero item={heroItem} theme={theme} />}
       <section className="feedPanel">
         <div className="sectionHead">
           <div>
             <p className="eyebrow">Live feed</p>
-            <h2>통합 업데이트</h2>
+            <h2 className="serif">통합 업데이트</h2>
+            <MemberSpectrum theme={theme} className="sectionSpectrum" />
             <p className="muted">YouTube, Naver, 오늘의 요약, 팬글을 시간순으로 모아 봅니다.</p>
           </div>
           <span className="feedCount">{formatNumber(feedItems.length)} items</span>
@@ -711,44 +871,74 @@ function HomePanel({
                   })
                 }}
               >
+                {option.value !== 'all' && (
+                  <span
+                    className="srcDot"
+                    style={{
+                      background: (
+                        {
+                          youtube: '#d73535',
+                          naver: '#1f8f54',
+                          briefing: '#6b4fd8',
+                          post: '#4d6a7a',
+                        } as Record<string, string>
+                      )[option.value],
+                    }}
+                  />
+                )}
                 {option.label}
               </button>
             ))}
           </div>
-          <div className="chipLine" aria-label="member filter">
-            <button
-              type="button"
-              className={!member ? 'active' : ''}
-              onClick={() => {
-                setMember('')
-                trackAnalyticsEvent({
-                  eventName: 'feed_filter_change',
-                  panel: 'home',
-                  token,
-                  metadata: { filter: 'member', member: 'all' },
-                })
-              }}
-            >
-              멤버 전체
-            </button>
-            {members.data?.map((item) => (
+          <div className="memberPick" aria-label="member filter">
+            <div className="memberPickHead">
+              <span className="memberPickTitle serif">멤버별로 보기</span>
               <button
-                key={item.id}
                 type="button"
-                className={member === item.name ? 'active' : ''}
+                className={!member ? 'memberAll active' : 'memberAll'}
                 onClick={() => {
-                  setMember(item.name)
+                  setMember('')
                   trackAnalyticsEvent({
                     eventName: 'feed_filter_change',
                     panel: 'home',
                     token,
-                    metadata: { filter: 'member', member: item.name },
+                    metadata: { filter: 'member', member: 'all' },
                   })
                 }}
               >
-                {memberLabel(item.name)}
+                전체
               </button>
-            ))}
+            </div>
+            <div className="memberTiles">
+              {members.data?.map((item) => {
+                const selected = member === item.name
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={['memberTile', selected ? 'active' : ''].filter(Boolean).join(' ')}
+                    style={
+                      {
+                        '--mcol': memberColor(item.name, theme),
+                        '--mon': memberOn(item.name, theme),
+                      } as CSSProperties
+                    }
+                    onClick={() => {
+                      const next = selected ? '' : item.name
+                      setMember(next)
+                      trackAnalyticsEvent({
+                        eventName: 'feed_filter_change',
+                        panel: 'home',
+                        token,
+                        metadata: { filter: 'member', member: next || 'all' },
+                      })
+                    }}
+                  >
+                    <span className="memberTileName">{memberLabel(item.name)}</span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
           <div className="chipLine" aria-label="keyword filter">
             <button
@@ -770,7 +960,7 @@ function HomePanel({
               <button
                 key={item}
                 type="button"
-                className={keyword === item ? 'active' : ''}
+                className={['tagChip', keyword === item ? 'active' : ''].filter(Boolean).join(' ')}
                 onClick={() => {
                   setKeyword(item)
                   trackAnalyticsEvent({
@@ -798,6 +988,7 @@ function HomePanel({
               item={item}
               token={token}
               onOpenPost={onOpenPost}
+              theme={theme}
               onSave={() => {
                 if (!token) {
                   onRequireAuth()
@@ -839,18 +1030,22 @@ function UpdateFeedCard({
   item,
   token,
   onOpenPost,
+  theme,
   onSave,
   savePending,
 }: {
   item: UpdateFeedItem
   token: string | null
   onOpenPost: (postId: number) => void
+  theme: Theme
   onSave: () => void
   savePending: boolean
 }) {
   const postId = postIdFromUrl(item.url)
   const isExternal = item.url.startsWith('http')
   const isYoutube = item.item_type === 'youtube'
+  const isNote = item.item_type === 'briefing' || item.item_type === 'post'
+  const primaryMember = item.member_names[0] ?? ''
   const label =
     item.item_type === 'youtube'
       ? 'YouTube'
@@ -863,11 +1058,20 @@ function UpdateFeedCard({
             : 'Naver News'
   const meta = buildFeedMetaParts(item)
   const footer = buildFeedFooterParts(item)
+  const cardStyle = {
+    '--mcol': primaryMember ? memberColor(primaryMember, theme) : 'var(--border)',
+  } as CSSProperties
   const body = (
     <>
       <div className="updateThumb">
-        {item.thumbnail_url ? (
-          <img src={item.thumbnail_url} alt="" loading="lazy" />
+        <span className={`typeBadge ${item.item_type}`}>{label}</span>
+        {isNote ? (
+          <div className="noteInner">
+            <span>{label}</span>
+            <strong className="serif">{item.title}</strong>
+          </div>
+        ) : item.thumbnail_url ? (
+          <img src={item.thumbnail_url} alt="" loading="lazy" referrerPolicy="no-referrer" />
         ) : item.item_type === 'youtube' ? (
           <PlayCircle size={26} />
         ) : (
@@ -875,12 +1079,13 @@ function UpdateFeedCard({
         )}
       </div>
       <div className="updateBody">
-        <div className="updateMeta">
-          <span className={`typeBadge ${item.item_type}`}>{label}</span>
-          <span className="updateSource">{meta.source}</span>
+        {!isNote && <strong>{item.title}</strong>}
+        <div className="cardMembers">
+          {item.member_names.slice(0, 5).map((name) => (
+            <MemberAvatar key={name} name={name} theme={theme} size={22} />
+          ))}
+          <small>{item.member_names.length ? memberNamesText(item.member_names) : meta.source}</small>
         </div>
-        <strong>{item.title}</strong>
-        {item.description && <p>{excerpt(item.description, 130)}</p>}
         <div className="updateFoot">
           <span className="updateTimestamp">{footer.timestamp}</span>
           {footer.stats.map((stat) =>
@@ -893,15 +1098,12 @@ function UpdateFeedCard({
               <span key={stat.type}>댓글 {formatNumber(stat.value)}</span>
             ),
           )}
-          {[...item.member_names.map(memberLabel), ...item.matched_keywords, ...item.tags].slice(0, 4).map((tag) => (
-            <em key={tag}>{tag}</em>
-          ))}
         </div>
       </div>
     </>
   )
   return (
-    <article className="updateCard">
+    <article className={['updateCard', isNote ? 'noteCard' : ''].filter(Boolean).join(' ')} style={cardStyle}>
       {isExternal ? (
         <a
           className="updateMainLink"
@@ -1080,6 +1282,7 @@ function BoardListPanel({
   tagFilter,
   tags,
   user,
+  theme,
   onSearchChange,
   onTagChange,
   onSelect,
@@ -1098,6 +1301,7 @@ function BoardListPanel({
   tagFilter: string
   tags: Tag[]
   user?: User
+  theme: Theme
   onSearchChange: (value: string) => void
   onTagChange: (value: string) => void
   onSelect: (id: number) => void
@@ -1145,6 +1349,7 @@ function BoardListPanel({
         posts={posts}
         loading={loading}
         selectedId={selectedId}
+        theme={theme}
         onSelect={onSelect}
         total={total}
         page={page}
@@ -1160,6 +1365,7 @@ function PostListView({
   posts,
   loading,
   selectedId,
+  theme,
   onSelect,
   total,
   page,
@@ -1170,6 +1376,7 @@ function PostListView({
   posts: Post[]
   loading: boolean
   selectedId: number | null
+  theme: Theme
   onSelect: (id: number) => void
   total: number
   page: number
@@ -1197,9 +1404,15 @@ function PostListView({
             onClick={() => onSelect(post.id)}
           >
             {!compact && <span className="boardNumber">{Math.max(total - ((page - 1) * pageSize + index), 1)}</span>}
-            <span className="boardCategory">{post.category}</span>
+            <CategoryBadge category={post.category} theme={theme} className="boardCategory" />
             <span className="boardTitleCell">
               <strong>{post.title}</strong>
+              <span className="boardMobileMeta">
+                <CategoryBadge category={post.category} theme={theme} className="boardCategory mobileCategory" />
+                <span>{post.author.display_name}</span>
+                <span>댓글 {post.comment_count}</span>
+                <span>{formatDate(post.created_at)}</span>
+              </span>
               {post.thumbnail_url && <small className="thumbMark">이미지/링크</small>}
               {post.tags.length > 0 && (
                 <span className="miniTags">
@@ -1254,6 +1467,7 @@ function BoardPanel({
   search,
   tagFilter,
   tags: tagOptions,
+  theme,
   onRequireAuth,
   onRequireVerified,
   onSearchChange,
@@ -1281,6 +1495,7 @@ function BoardPanel({
   search: string
   tagFilter: string
   tags: Tag[]
+  theme: Theme
   onRequireAuth: () => void
   onRequireVerified: () => boolean
   onSearchChange: (value: string) => void
@@ -1394,6 +1609,11 @@ function BoardPanel({
       onChanged()
     },
   })
+  const shouldRenderBriefing = post ? shouldUseBriefingContent(post.category, post.content) : false
+  const parsedBriefing = useMemo(
+    () => (post && shouldRenderBriefing ? parseBriefingContent(post.content) : null),
+    [post?.content, post?.category, shouldRenderBriefing],
+  )
 
   if (mode === 'list') {
     return (
@@ -1408,6 +1628,7 @@ function BoardPanel({
         tagFilter={tagFilter}
         tags={tagOptions}
         user={user}
+        theme={theme}
         onSearchChange={onSearchChange}
         onTagChange={onTagChange}
         onSelect={onSelectPost}
@@ -1569,7 +1790,7 @@ function BoardPanel({
       </div>
       <div className="postHead">
         <div>
-          <span className="categoryBadge">{post.category}</span>
+          <CategoryBadge category={post.category} theme={theme} />
           <h2>{post.title}</h2>
           <div className="postMeta">
             <span>{post.author.display_name}</span>
@@ -1578,17 +1799,29 @@ function BoardPanel({
           </div>
         </div>
       </div>
-      <LinkedText className="postContent" text={post.content} />
-      {post.embeds.length > 0 && <EmbedList embeds={post.embeds} onOpenPost={() => undefined} />}
+      {parsedBriefing ? (
+        <BriefingContent text={post.content} parsed={parsedBriefing} />
+      ) : (
+        <LinkedText className="postContent" text={post.content} />
+      )}
+      {!parsedBriefing && post.embeds.length > 0 && <EmbedList embeds={post.embeds} onOpenPost={() => undefined} />}
       <div className="tags">{post.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
       {deletePost.error && <p className="error">{deletePost.error.message}</p>}
-      <div className="comments">
+      <section className="comments" aria-label="댓글">
+        <div className="commentsHead">
+          <strong>댓글</strong>
+          <span>{formatNumber(comments.data?.length ?? post.comment_count)}</span>
+        </div>
         {comments.data?.map((item) => (
-          <p key={item.id}>
-            <b>{item.author.display_name}</b> {item.content}
-          </p>
+          <article className="commentItem" key={item.id}>
+            <div>
+              <strong>{item.author.display_name}</strong>
+              <span>{formatDateTime(item.created_at)}</span>
+            </div>
+            <p>{item.content}</p>
+          </article>
         ))}
-      </div>
+      </section>
       {user ? (
         <form
           className="inlineForm"
@@ -1627,6 +1860,77 @@ function UrlPreviewNote({ content }: { content: string }) {
       <span>감지된 링크 {urls.length}개</span>
       {urls.slice(0, 3).map((url) => (
         <em key={url}>{url}</em>
+      ))}
+    </div>
+  )
+}
+
+function isYoutubeBriefingUrl(url: string) {
+  return /(?:youtube\.com|youtu\.be)/i.test(url)
+}
+
+function BriefingLinkCard({ item }: { item: Extract<BriefingContentItem, { type: 'link' }> }) {
+  const isYoutube = isYoutubeBriefingUrl(item.url)
+  return (
+    <a className="sourceCard briefingLinkCard" href={item.url} target="_blank" rel="noreferrer">
+      <span className="sourceType">{isYoutube ? 'YouTube' : 'Source'}</span>
+      <strong>{item.title}</strong>
+      <span className="briefingOpen">
+        {isYoutube && <PlayCircle size={15} />}
+        원문 보기
+        <ExternalLink size={14} />
+      </span>
+    </a>
+  )
+}
+
+function BriefingSectionItems({ items }: { items: BriefingContentItem[] }) {
+  const nodes: ReactNode[] = []
+  let bulletBuffer: string[] = []
+  const flushBullets = () => {
+    if (bulletBuffer.length === 0) return
+    const bullets = bulletBuffer
+    bulletBuffer = []
+    nodes.push(
+      <ul className="briefingList" key={`bullets-${nodes.length}`}>
+        {bullets.map((item, index) => (
+          <li key={`${item}-${index}`}>{item}</li>
+        ))}
+      </ul>,
+    )
+  }
+
+  items.forEach((item, index) => {
+    if (item.type === 'bullet') {
+      bulletBuffer.push(item.text)
+      return
+    }
+    flushBullets()
+    if (item.type === 'link') {
+      nodes.push(<BriefingLinkCard key={`${item.url}-${index}`} item={item} />)
+      return
+    }
+    nodes.push(
+      <p className="briefingText" key={`${item.text}-${index}`}>
+        {item.text}
+      </p>,
+    )
+  })
+  flushBullets()
+  return <>{nodes}</>
+}
+
+function BriefingContent({ text, parsed }: { text: string; parsed?: ParsedBriefingContent | null }) {
+  const content = parsed ?? parseBriefingContent(text)
+  if (!content) return <LinkedText className="postContent" text={text} />
+  return (
+    <div className="postContent briefingContent">
+      {content.dateLine && <p className="briefingDate">{content.dateLine}</p>}
+      {content.sections.map((section) => (
+        <section className="briefingSection" key={section.heading}>
+          <h3 className="serif">{section.heading}</h3>
+          <BriefingSectionItems items={section.items} />
+        </section>
       ))}
     </div>
   )
@@ -1771,7 +2075,7 @@ function RagPanel({
   return (
     <div className="stack">
       <form
-        className="qaBox"
+        className="qaBox archiveSearchCard"
         onSubmit={(event) => {
           event.preventDefault()
           if (!token) {
@@ -1791,7 +2095,7 @@ function RagPanel({
       >
         <div>
           <p className="eyebrow">Archive search</p>
-          <h2>리센느 자료 검색</h2>
+          <h2 className="serif">리센느 자료 검색</h2>
         </div>
         <textarea
           value={question}
@@ -1806,7 +2110,7 @@ function RagPanel({
       </form>
       {qa.error && <p className="error">{qa.error.message}</p>}
       {qaResult && (
-        <section className="answer">
+        <section className="answer archiveResults">
           <h2>검색 결과</h2>
           {qaResult.answer && <ArchiveAnswerBlock answer={qaResult.answer} />}
           <div className="sourceCards">
@@ -1929,9 +2233,10 @@ function SourceCard({ source, onOpenPost }: { source: QaSource; onOpenPost: (pos
   )
 }
 
-function YoutubePanel({ token, user }: { token: string | null; user?: User }) {
+function YoutubePanel({ token, user, theme }: { token: string | null; user?: User; theme: Theme }) {
   const queryClient = useQueryClient()
   const [videoSort, setVideoSort] = useState<VideoSort>('latest')
+  const [visibleCount, setVisibleCount] = useState(VIDEO_RENDER_STEP)
   const videos = useQuery({
     queryKey: ['videos', 1],
     queryFn: () => api<YoutubeVideo[]>('/artists/1/videos'),
@@ -2000,133 +2305,173 @@ function YoutubePanel({ token, user }: { token: string | null; user?: User }) {
   const sortedVideos = useMemo(() => {
     return sortYoutubeVideos(videos.data ?? [], videoSort)
   }, [videos.data, videoSort])
+  const visibleVideos = sortedVideos.slice(0, visibleCount)
+  const changeVideoSort = (nextSort: VideoSort) => {
+    setVideoSort(nextSort)
+    setVisibleCount(VIDEO_RENDER_STEP)
+  }
   return (
-    <div className="stack">
-      {user?.role !== 'admin' && (
-        <div className="emptyState">
-          <ShieldCheck size={24} />
-          <p>관리자가 동기화한 YouTube 캐시를 보여줍니다.</p>
+    <div className="stack youtubePanel">
+      <div className="sectionHead">
+        <div>
+          <p className="eyebrow">YouTube</p>
+          <h2 className="serif">영상 모아보기</h2>
         </div>
-      )}
-      {user?.role === 'admin' && (
-        <form
-          className="sourceForm"
-          onSubmit={(event) => {
-            event.preventDefault()
-            addSource.mutate()
-          }}
-        >
-          <select
-            value={sourceType}
-            onChange={(event) => setSourceType(event.target.value as YoutubeSourceType)}
-          >
-            {youtubeSourceOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <input
-            value={sourceTitle}
-            onChange={(event) => setSourceTitle(event.target.value)}
-            placeholder={sourceType === 'keyword_search' ? '소스 이름 (비워두면 자동 생성)' : '소스 이름'}
-          />
-          <input
-            value={sourceValue}
-            onChange={(event) => setSourceValue(event.target.value)}
-            placeholder={selectedSourceOption?.placeholder ?? "channel or video id"}
-          />
-          <button className="secondary" disabled={addSource.isPending || !sourceValue.trim()} title="소스 추가">
-            <Upload size={17} />
-            Add
-          </button>
-          <button type="button" className="primary" onClick={() => sync.mutate()} disabled={sync.isPending} title="동기화">
-            <RefreshCw size={17} />
-            Sync
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => backfill.mutate()}
-            disabled={backfill.isPending}
-            title="데뷔일부터 과거 YouTube 자료 가져오기"
-          >
-            <RefreshCw size={17} />
-            Backfill
-          </button>
-        </form>
-      )}
-      {addSource.error && <p className="error">{addSource.error.message}</p>}
-      {sync.error && <p className="error">{sync.error.message}</p>}
-      {backfill.error && <p className="error">{backfill.error.message}</p>}
-      {backfillResult && (
-        <p className="hint">
-          Backfill: {formatNumber(backfillResult.created)} new, {formatNumber(backfillResult.updated)} updated,
-          {` ${formatNumber(backfillResult.pages_fetched)} pages`}
-          {backfillResult.has_more ? ' · 더 가져올 수 있음' : ' · 완료'}
-        </p>
-      )}
-      <div className="sourceList">
-        {sources.data?.map((source) => (
-          <span key={source.id}>
-            {source.title}
-            {source.backfill_status && source.backfill_status !== 'idle' && (
-              <em>{source.backfill_status}</em>
-            )}
-            {user?.role === 'admin' && (
-              <button
-                className="chipButton"
-                onClick={() => deleteSource.mutate(source.id)}
-                disabled={deleteSource.isPending}
-                title="소스 삭제"
-              >
-                <Trash2 size={13} />
-              </button>
-            )}
-          </span>
-        ))}
+        <span className="feedCount">
+          {videos.isLoading ? '불러오는 중...' : `${formatNumber(videos.data?.length ?? 0)} videos`}
+        </span>
       </div>
       <div className="videoToolbar">
-        <span>{formatNumber(videos.data?.length ?? 0)} videos</span>
         <div className="sortGroup">
-          <button className={videoSort === 'latest' ? 'active' : ''} onClick={() => setVideoSort('latest')}>
+          <button className={videoSort === 'latest' ? 'active' : ''} onClick={() => changeVideoSort('latest')}>
             최신순
           </button>
-          <button className={videoSort === 'views' ? 'active' : ''} onClick={() => setVideoSort('views')}>
+          <button className={videoSort === 'views' ? 'active' : ''} onClick={() => changeVideoSort('views')}>
             조회수
           </button>
-          <button className={videoSort === 'title' ? 'active' : ''} onClick={() => setVideoSort('title')}>
+          <button className={videoSort === 'title' ? 'active' : ''} onClick={() => changeVideoSort('title')}>
             제목
           </button>
         </div>
       </div>
-      <div className="videoGrid">
-        {sortedVideos.map((video) => (
-          <article key={video.id} className="videoItem">
-            <a className="videoMainLink" href={video.url} target="_blank" rel="noreferrer">
-              <div className="videoThumb">
-                {video.thumbnail_url ? (
-                  <img src={video.thumbnail_url} alt="" loading="lazy" />
-                ) : (
-                  <PlayCircle size={24} />
+      {videos.isLoading ? (
+        <p className="muted">영상을 불러오는 중...</p>
+      ) : (
+        <>
+          <div className="videoGrid">
+            {visibleVideos.map((video) => {
+              const members = memberNamesFromText(video.title, video.channel_title, video.description)
+              const cardStyle = {
+                '--mcol': members[0] ? memberColor(members[0], theme) : 'var(--border)',
+              } as CSSProperties
+              return (
+                <article key={video.id} className="updateCard videoPoster" style={cardStyle}>
+                  <a className="updateMainLink videoMainLink" href={video.url} target="_blank" rel="noreferrer">
+                    <div className="videoThumb">
+                      <span className="typeBadge youtube">YouTube</span>
+                      {video.thumbnail_url ? (
+                        <img src={video.thumbnail_url} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                      ) : (
+                        <PlayCircle size={28} />
+                      )}
+                    </div>
+                    <div className="videoBody">
+                      <strong>{video.title}</strong>
+                      <div className="cardMembers">
+                        {members.slice(0, 5).map((name) => (
+                          <MemberAvatar key={name} name={name} theme={theme} size={22} />
+                        ))}
+                        <small>{members.length ? memberNamesText(members) : video.channel_title}</small>
+                      </div>
+                      <span className="videoStats">
+                        <span>
+                          <Eye size={14} />
+                          {formatNumber(video.view_count)}
+                        </span>
+                        <span>
+                          <CalendarDays size={14} />
+                          {formatDate(video.published_at)}
+                        </span>
+                      </span>
+                    </div>
+                  </a>
+                  <div className="cardActions">
+                    <YoutubeAppLink url={video.url} />
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+          {!videos.data?.length && <p className="muted">No cached videos yet.</p>}
+          {visibleCount < sortedVideos.length && (
+            <button className="loadMore" onClick={() => setVisibleCount((current) => current + VIDEO_RENDER_STEP)}>
+              더 보기
+            </button>
+          )}
+        </>
+      )}
+      {user?.role === 'admin' && (
+        <details className="adminTools">
+          <summary>
+            <span>관리 도구</span>
+            <small>Sync, Backfill, source management</small>
+          </summary>
+          <form
+            className="sourceForm"
+            onSubmit={(event) => {
+              event.preventDefault()
+              addSource.mutate()
+            }}
+          >
+            <select
+              value={sourceType}
+              onChange={(event) => setSourceType(event.target.value as YoutubeSourceType)}
+            >
+              {youtubeSourceOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <input
+              value={sourceTitle}
+              onChange={(event) => setSourceTitle(event.target.value)}
+              placeholder={sourceType === 'keyword_search' ? '소스 이름 (비워두면 자동 생성)' : '소스 이름'}
+            />
+            <input
+              value={sourceValue}
+              onChange={(event) => setSourceValue(event.target.value)}
+              placeholder={selectedSourceOption?.placeholder ?? "channel or video id"}
+            />
+            <button className="secondary" disabled={addSource.isPending || !sourceValue.trim()} title="소스 추가">
+              <Upload size={17} />
+              Add
+            </button>
+            <button type="button" className="primary" onClick={() => sync.mutate()} disabled={sync.isPending} title="동기화">
+              <RefreshCw size={17} />
+              Sync
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => backfill.mutate()}
+              disabled={backfill.isPending}
+              title="데뷔일부터 과거 YouTube 자료 가져오기"
+            >
+              <RefreshCw size={17} />
+              Backfill
+            </button>
+          </form>
+          {addSource.error && <p className="error">{addSource.error.message}</p>}
+          {sync.error && <p className="error">{sync.error.message}</p>}
+          {backfill.error && <p className="error">{backfill.error.message}</p>}
+          {backfillResult && (
+            <p className="hint">
+              Backfill: {formatNumber(backfillResult.created)} new, {formatNumber(backfillResult.updated)} updated,
+              {` ${formatNumber(backfillResult.pages_fetched)} pages`}
+              {backfillResult.has_more ? ' · 더 가져올 수 있음' : ' · 완료'}
+            </p>
+          )}
+          <div className="sourceList">
+            {sources.data?.map((source) => (
+              <span key={source.id}>
+                {source.title}
+                {source.backfill_status && source.backfill_status !== 'idle' && (
+                  <em>{source.backfill_status}</em>
                 )}
-              </div>
-              <div className="videoBody">
-                <strong>{video.title}</strong>
-                <small>{video.channel_title}</small>
-                <span className="videoStats">
-                  <Eye size={14} />
-                  {formatNumber(video.view_count)}
-                  <CalendarDays size={14} />
-                  {formatDate(video.published_at)}
-                </span>
-              </div>
-            </a>
-            <YoutubeAppLink url={video.url} className="youtubeAppButton videoAppButton" />
-          </article>
-        ))}
-      </div>
-      {!videos.isLoading && !videos.data?.length && <p className="muted">No cached videos yet.</p>}
+                <button
+                  className="chipButton"
+                  onClick={() => deleteSource.mutate(source.id)}
+                  disabled={deleteSource.isPending}
+                  title="소스 삭제"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </span>
+            ))}
+          </div>
+        </details>
+      )}
     </div>
   )
 }
@@ -2212,11 +2557,13 @@ function BriefingPanel({ token, user }: { token: string | null; user?: User }) {
 function SavedPanel({
   token,
   user,
+  theme,
   onRequireAuth,
   onOpenPost,
 }: {
   token: string | null
   user?: User
+  theme: Theme
   onRequireAuth: () => void
   onOpenPost: (postId: number) => void
 }) {
@@ -2245,7 +2592,7 @@ function SavedPanel({
     )
   }
   return (
-    <div className="stack">
+    <div className="stack savedPanel">
       <div className="sectionHead">
         <div>
           <p className="eyebrow">Saved</p>
@@ -2255,16 +2602,20 @@ function SavedPanel({
       </div>
       {savedItems.isLoading && <p className="muted">저장 항목을 불러오는 중...</p>}
       {savedItems.error && <p className="error">{savedItems.error.message}</p>}
-      <div className="feedList">
+      <div className="feedList savedGrid">
         {savedItems.data?.map((item) => {
           const postId = postIdFromUrl(item.url)
           const isExternal = item.url.startsWith('http')
           const isYoutube = item.item_type === 'youtube'
+          const members = memberNamesFromText(item.title, item.source_label)
+          const cardStyle = {
+            '--mcol': members[0] ? memberColor(members[0], theme) : 'var(--border)',
+          } as CSSProperties
           return (
-            <article className="updateCard" key={item.id}>
+            <article className="updateCard" key={item.id} style={cardStyle}>
               {isExternal ? (
                 <a className="updateMainLink" href={item.url} target="_blank" rel="noreferrer">
-                  <SavedItemBody item={item} />
+                  <SavedItemBody item={item} members={members} theme={theme} />
                   <ExternalLink className="sourceOpen" size={16} />
                 </a>
               ) : (
@@ -2273,7 +2624,7 @@ function SavedPanel({
                   onClick={() => postId && onOpenPost(postId)}
                   disabled={!postId}
                 >
-                  <SavedItemBody item={item} />
+                  <SavedItemBody item={item} members={members} theme={theme} />
                 </button>
               )}
               <div className={isYoutube ? 'cardActions multi' : 'cardActions'}>
@@ -2296,18 +2647,34 @@ function SavedPanel({
   )
 }
 
-function SavedItemBody({ item }: { item: SavedItem }) {
+function savedItemTypeLabel(item: SavedItem) {
+  if (item.item_type === 'youtube') return 'YouTube'
+  if (item.item_type === 'briefing') return '오늘의 요약'
+  if (item.item_type === 'naver_blog') return 'Naver Blog'
+  if (item.item_type === 'naver_news') return 'Naver News'
+  if (item.item_type === 'post') return '팬글'
+  return item.source_label || item.item_type
+}
+
+function SavedItemBody({ item, members, theme }: { item: SavedItem; members: string[]; theme: Theme }) {
+  const label = savedItemTypeLabel(item)
   return (
     <>
       <div className="updateThumb">
+        <span className={`typeBadge ${item.item_type}`}>{label}</span>
         {item.thumbnail_url ? <img src={item.thumbnail_url} alt="" loading="lazy" /> : <Bookmark size={24} />}
       </div>
       <div className="updateBody">
         <div className="updateMeta">
-          <span className={`typeBadge ${item.item_type}`}>{item.source_label || item.item_type}</span>
           <span>{formatDateTime(item.saved_at)}</span>
         </div>
         <strong>{item.title}</strong>
+        <div className="cardMembers">
+          {members.slice(0, 5).map((name) => (
+            <MemberAvatar key={name} name={name} theme={theme} size={22} />
+          ))}
+          <small>{members.length ? memberNamesText(members) : item.source_label || label}</small>
+        </div>
       </div>
     </>
   )
