@@ -21,6 +21,7 @@ export const ADMIN_DESKTOP_TAB_PANELS = [
   "saved",
   "admin",
 ] as const
+export const BACK_TO_TOP_SCROLL_THRESHOLD = 520
 
 export function nextBoardMode(current: BoardMode, action: BoardAction): BoardMode {
   if (action === "open-post") return "detail"
@@ -34,6 +35,17 @@ export function nextBoardMode(current: BoardMode, action: BoardAction): BoardMod
 
 export function shouldShowDesktopBoardSidebar(panel: AppPanel): boolean {
   return panel === "board"
+}
+
+export function shouldScrollToTopOnRepeatedMobileTab(currentPanel: AppPanel, nextPanel: AppPanel): boolean {
+  return currentPanel === nextPanel && (MOBILE_BOTTOM_TAB_PANELS as readonly AppPanel[]).includes(nextPanel)
+}
+
+export function shouldShowBackToTopButton(
+  scrollY: number,
+  threshold = BACK_TO_TOP_SCROLL_THRESHOLD,
+): boolean {
+  return scrollY > threshold
 }
 
 export function desktopTabPanelsForRole(role?: UserRole): AppPanel[] {

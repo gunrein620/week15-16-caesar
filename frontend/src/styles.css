@@ -100,6 +100,33 @@ button {
   display: none;
 }
 
+.backToTopButton {
+  align-items: center;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  bottom: 28px;
+  box-shadow: 0 12px 34px color-mix(in srgb, var(--text) 14%, transparent);
+  color: var(--text);
+  display: inline-flex;
+  height: 44px;
+  justify-content: center;
+  position: fixed;
+  right: 28px;
+  transition:
+    border-color 0.16s ease,
+    color 0.16s ease,
+    transform 0.16s ease;
+  width: 44px;
+  z-index: 35;
+}
+
+.backToTopButton:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-2px);
+}
+
 .topbar {
   align-items: center;
   background: var(--surface);
@@ -2750,6 +2777,10 @@ button:disabled {
   }
 
   .tabs {
+    display: none;
+  }
+
+  .backToTopButton {
     display: none;
   }
 

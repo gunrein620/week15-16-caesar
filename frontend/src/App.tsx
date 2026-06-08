@@ -4,6 +4,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Edit3,
   ExternalLink,
   Eye,
@@ -76,6 +77,8 @@ import {
   desktopTabPanelsForRole,
   MOBILE_BOTTOM_TAB_PANELS,
   nextBoardMode,
+  shouldScrollToTopOnRepeatedMobileTab,
+  shouldShowBackToTopButton,
   shouldShowDesktopBoardSidebar,
   type AppPanel,
   type BoardMode,
@@ -324,6 +327,7 @@ export default function App() {
   const [page, setPage] = useState(1)
   const [authOpen, setAuthOpen] = useState(false)
   const [verificationNotice, setVerificationNotice] = useState('')
+  const [showBackToTop, setShowBackToTop] = useState(false)
   const [theme, setTheme] = useState<Theme>(() => {
     const stored = localStorage.getItem('rescene_theme')
     if (stored === 'light' || stored === 'dark') return stored
@@ -435,6 +439,13 @@ export default function App() {
     }
   }, [me.data?.role, me.isLoading, panel])
 
+  useEffect(() => {
+    const updateBackToTop = () => setShowBackToTop(shouldShowBackToTopButton(window.scrollY))
+    updateBackToTop()
+    window.addEventListener('scroll', updateBackToTop, { passive: true })
+    return () => window.removeEventListener('scroll', updateBackToTop)
+  }, [])
+
   const logout = () => {
     void api<void>('/auth/logout', { method: 'POST' }, token).catch(() => undefined)
     setToken(null)
@@ -456,6 +467,16 @@ export default function App() {
   const openPanel = (nextPanel: AppPanel) => {
     setPanel(nextPanel)
     if (nextPanel === 'board') setBoardMode('list')
+  }
+  const scrollToPageTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  const openBottomPanel = (nextPanel: AppPanel) => {
+    if (shouldScrollToTopOnRepeatedMobileTab(panel, nextPanel)) {
+      scrollToPageTop()
+      return
+    }
+    openPanel(nextPanel)
   }
   const openPost = (postId: number) => {
     trackAnalyticsEvent({
@@ -680,7 +701,12 @@ export default function App() {
           {panel === 'admin' && <AdminPanel token={token} user={me.data} />}
         </section>
       </main>
-      <BottomTabBar panel={panel} onSelect={openPanel} />
+      {showBackToTop && (
+        <button className="backToTopButton" onClick={scrollToPageTop} title="맨 위로" aria-label="맨 위로 이동">
+          <ChevronUp size={22} />
+        </button>
+      )}
+      <BottomTabBar panel={panel} onSelect={openBottomPanel} />
     </div>
   )
 }

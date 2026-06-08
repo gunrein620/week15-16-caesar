@@ -2,10 +2,13 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
+  BACK_TO_TOP_SCROLL_THRESHOLD,
   desktopTabPanelsForRole,
   MOBILE_BOTTOM_TAB_PANELS,
   nextBoardMode,
+  shouldScrollToTopOnRepeatedMobileTab,
   shouldShowDesktopBoardSidebar,
+  shouldShowBackToTopButton,
 } from "./boardNavigation.ts"
 
 test("mobile bottom tabs keep the app-style primary destinations only", () => {
@@ -46,4 +49,17 @@ test("desktop tabs hide admin-only briefing tools from normal users", () => {
     "saved",
     "admin",
   ])
+})
+
+test("re-tapping the current mobile bottom tab scrolls the same panel to the top", () => {
+  assert.equal(shouldScrollToTopOnRepeatedMobileTab("home", "home"), true)
+  assert.equal(shouldScrollToTopOnRepeatedMobileTab("youtube", "youtube"), true)
+  assert.equal(shouldScrollToTopOnRepeatedMobileTab("home", "youtube"), false)
+  assert.equal(shouldScrollToTopOnRepeatedMobileTab("admin", "admin"), false)
+})
+
+test("desktop back-to-top button appears only after the scroll threshold", () => {
+  assert.equal(shouldShowBackToTopButton(0), false)
+  assert.equal(shouldShowBackToTopButton(BACK_TO_TOP_SCROLL_THRESHOLD), false)
+  assert.equal(shouldShowBackToTopButton(BACK_TO_TOP_SCROLL_THRESHOLD + 1), true)
 })
