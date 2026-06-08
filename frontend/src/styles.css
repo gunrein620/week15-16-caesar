@@ -20,8 +20,8 @@
   --badge-source: #5B6F63;
   --badge-on: #FFFFFF;
   --hero-overlay:
-    linear-gradient(180deg, rgba(8, 12, 10, 0.05) 18%, rgba(8, 12, 10, 0.56) 62%, rgba(8, 12, 10, 0.92) 100%),
-    linear-gradient(90deg, rgba(8, 12, 10, 0.82), rgba(8, 12, 10, 0.42) 46%, rgba(8, 12, 10, 0.03) 78%);
+    linear-gradient(180deg, rgba(8, 12, 10, 0.08) 14%, rgba(8, 12, 10, 0.64) 60%, rgba(8, 12, 10, 0.96) 100%),
+    linear-gradient(90deg, rgba(8, 12, 10, 0.86), rgba(8, 12, 10, 0.48) 46%, rgba(8, 12, 10, 0.05) 78%);
   --hero-text: #FFFFFF;
   --hero-meta: #EAE3D8;
   color: var(--text);
@@ -1173,7 +1173,7 @@ h2 {
   line-height: 1.28;
   max-width: 640px;
   overflow: hidden;
-  text-shadow: 0 2px 22px color-mix(in srgb, var(--text) 34%, transparent);
+  text-shadow: 0 2px 24px color-mix(in srgb, var(--text) 46%, transparent);
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
@@ -1185,6 +1185,7 @@ h2 {
   margin-top: 18px;
   font-size: 14px;
   color: var(--hero-meta);
+  text-shadow: 0 1px 18px color-mix(in srgb, var(--text) 42%, transparent);
 }
 
 .heroAvatars {
@@ -1730,6 +1731,81 @@ textarea {
 .postContent a {
   color: var(--accent);
   overflow-wrap: anywhere;
+}
+
+.briefingContent {
+  display: grid;
+  gap: 18px;
+  max-width: 82ch;
+  white-space: normal;
+}
+
+.briefingDate {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-soft);
+  font-size: 13px;
+  justify-self: start;
+  margin: 0;
+  padding: 4px 10px;
+}
+
+.briefingSection {
+  display: grid;
+  gap: 10px;
+}
+
+.briefingSection h3 {
+  font-size: 18px;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.briefingList {
+  display: grid;
+  gap: 6px;
+  line-height: 1.65;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.briefingText {
+  color: var(--text-soft);
+  line-height: 1.65;
+  margin: 0;
+}
+
+.briefingLinkCard {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  padding: 10px 12px;
+}
+
+.briefingLinkCard strong {
+  display: -webkit-box;
+  line-height: 1.35;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.briefingLinkCard:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow);
+}
+
+.briefingOpen {
+  align-items: center;
+  color: var(--text-soft);
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 4px;
+  white-space: nowrap;
 }
 
 .postHead span {
@@ -2637,6 +2713,15 @@ button:disabled {
 
   .sourceCard {
     gap: 10px;
+  }
+
+  .briefingLinkCard {
+    align-items: flex-start;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .briefingOpen {
+    justify-self: flex-start;
   }
 
   .sourceCardShell {

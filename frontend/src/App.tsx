@@ -27,7 +27,7 @@ import {
   UserPlus,
   X,
 } from 'lucide-react'
-import { FormEvent, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { FormEvent, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   ArtistArchiveTerm,
   ArtistKeyword,
@@ -81,6 +81,12 @@ import {
   buildArchiveAnswerPreview,
   buildArchiveSourceDisplay,
 } from './archiveSearch'
+import {
+  parseBriefingContent,
+  shouldUseBriefingContent,
+  type BriefingContentItem,
+  type ParsedBriefingContent,
+} from './briefingContent'
 import { buildFeedFooterParts, buildFeedMetaParts } from './feedMeta'
 import { sortYoutubeVideos, type VideoSort } from './videoSorting'
 import { youtubeAppUrl } from './youtubeLinks'
@@ -90,6 +96,8 @@ import { MEMBER_COLORS, MEMBER_ORDER, memberColor, memberOn } from './memberColo
 type AuthMode = 'login' | 'signup'
 type FeedSource = 'all' | 'youtube' | 'naver' | 'briefing' | 'post'
 type Theme = 'light' | 'dark'
+
+const VIDEO_RENDER_STEP = 48
 
 const CATEGORY_COLORS: Record<string, { color: string; lightText: string; darkText: string }> = {
   자유: { color: '#64748B', lightText: '#334155', darkText: '#CBD5E1' },
@@ -1601,6 +1609,11 @@ function BoardPanel({
       onChanged()
     },
   })
+  const shouldRenderBriefing = post ? shouldUseBriefingContent(post.category, post.content) : false
+  const parsedBriefing = useMemo(
+    () => (post && shouldRenderBriefing ? parseBriefingContent(post.content) : null),
+    [post?.content, post?.category, shouldRenderBriefing],
+  )
 
   if (mode === 'list') {
     return (
@@ -1786,8 +1799,12 @@ function BoardPanel({
           </div>
         </div>
       </div>
-      <LinkedText className="postContent" text={post.content} />
-      {post.embeds.length > 0 && <EmbedList embeds={post.embeds} onOpenPost={() => undefined} />}
+      {parsedBriefing ? (
+        <BriefingContent text={post.content} parsed={parsedBriefing} />
+      ) : (
+        <LinkedText className="postContent" text={post.content} />
+      )}
+      {!parsedBriefing && post.embeds.length > 0 && <EmbedList embeds={post.embeds} onOpenPost={() => undefined} />}
       <div className="tags">{post.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
       {deletePost.error && <p className="error">{deletePost.error.message}</p>}
       <section className="comments" aria-label="댓글">
@@ -1843,6 +1860,77 @@ function UrlPreviewNote({ content }: { content: string }) {
       <span>감지된 링크 {urls.length}개</span>
       {urls.slice(0, 3).map((url) => (
         <em key={url}>{url}</em>
+      ))}
+    </div>
+  )
+}
+
+function isYoutubeBriefingUrl(url: string) {
+  return /(?:youtube\.com|youtu\.be)/i.test(url)
+}
+
+function BriefingLinkCard({ item }: { item: Extract<BriefingContentItem, { type: 'link' }> }) {
+  const isYoutube = isYoutubeBriefingUrl(item.url)
+  return (
+    <a className="sourceCard briefingLinkCard" href={item.url} target="_blank" rel="noreferrer">
+      <span className="sourceType">{isYoutube ? 'YouTube' : 'Source'}</span>
+      <strong>{item.title}</strong>
+      <span className="briefingOpen">
+        {isYoutube && <PlayCircle size={15} />}
+        원문 보기
+        <ExternalLink size={14} />
+      </span>
+    </a>
+  )
+}
+
+function BriefingSectionItems({ items }: { items: BriefingContentItem[] }) {
+  const nodes: ReactNode[] = []
+  let bulletBuffer: string[] = []
+  const flushBullets = () => {
+    if (bulletBuffer.length === 0) return
+    const bullets = bulletBuffer
+    bulletBuffer = []
+    nodes.push(
+      <ul className="briefingList" key={`bullets-${nodes.length}`}>
+        {bullets.map((item, index) => (
+          <li key={`${item}-${index}`}>{item}</li>
+        ))}
+      </ul>,
+    )
+  }
+
+  items.forEach((item, index) => {
+    if (item.type === 'bullet') {
+      bulletBuffer.push(item.text)
+      return
+    }
+    flushBullets()
+    if (item.type === 'link') {
+      nodes.push(<BriefingLinkCard key={`${item.url}-${index}`} item={item} />)
+      return
+    }
+    nodes.push(
+      <p className="briefingText" key={`${item.text}-${index}`}>
+        {item.text}
+      </p>,
+    )
+  })
+  flushBullets()
+  return <>{nodes}</>
+}
+
+function BriefingContent({ text, parsed }: { text: string; parsed?: ParsedBriefingContent | null }) {
+  const content = parsed ?? parseBriefingContent(text)
+  if (!content) return <LinkedText className="postContent" text={text} />
+  return (
+    <div className="postContent briefingContent">
+      {content.dateLine && <p className="briefingDate">{content.dateLine}</p>}
+      {content.sections.map((section) => (
+        <section className="briefingSection" key={section.heading}>
+          <h3 className="serif">{section.heading}</h3>
+          <BriefingSectionItems items={section.items} />
+        </section>
       ))}
     </div>
   )
@@ -2148,6 +2236,7 @@ function SourceCard({ source, onOpenPost }: { source: QaSource; onOpenPost: (pos
 function YoutubePanel({ token, user, theme }: { token: string | null; user?: User; theme: Theme }) {
   const queryClient = useQueryClient()
   const [videoSort, setVideoSort] = useState<VideoSort>('latest')
+  const [visibleCount, setVisibleCount] = useState(VIDEO_RENDER_STEP)
   const videos = useQuery({
     queryKey: ['videos', 1],
     queryFn: () => api<YoutubeVideo[]>('/artists/1/videos'),
@@ -2216,6 +2305,11 @@ function YoutubePanel({ token, user, theme }: { token: string | null; user?: Use
   const sortedVideos = useMemo(() => {
     return sortYoutubeVideos(videos.data ?? [], videoSort)
   }, [videos.data, videoSort])
+  const visibleVideos = sortedVideos.slice(0, visibleCount)
+  const changeVideoSort = (nextSort: VideoSort) => {
+    setVideoSort(nextSort)
+    setVisibleCount(VIDEO_RENDER_STEP)
+  }
   return (
     <div className="stack youtubePanel">
       <div className="sectionHead">
@@ -2223,66 +2317,79 @@ function YoutubePanel({ token, user, theme }: { token: string | null; user?: Use
           <p className="eyebrow">YouTube</p>
           <h2 className="serif">영상 모아보기</h2>
         </div>
-        <span className="feedCount">{formatNumber(videos.data?.length ?? 0)} videos</span>
+        <span className="feedCount">
+          {videos.isLoading ? '불러오는 중...' : `${formatNumber(videos.data?.length ?? 0)} videos`}
+        </span>
       </div>
       <div className="videoToolbar">
         <div className="sortGroup">
-          <button className={videoSort === 'latest' ? 'active' : ''} onClick={() => setVideoSort('latest')}>
+          <button className={videoSort === 'latest' ? 'active' : ''} onClick={() => changeVideoSort('latest')}>
             최신순
           </button>
-          <button className={videoSort === 'views' ? 'active' : ''} onClick={() => setVideoSort('views')}>
+          <button className={videoSort === 'views' ? 'active' : ''} onClick={() => changeVideoSort('views')}>
             조회수
           </button>
-          <button className={videoSort === 'title' ? 'active' : ''} onClick={() => setVideoSort('title')}>
+          <button className={videoSort === 'title' ? 'active' : ''} onClick={() => changeVideoSort('title')}>
             제목
           </button>
         </div>
       </div>
-      <div className="videoGrid">
-        {sortedVideos.map((video) => {
-          const members = memberNamesFromText(video.title, video.channel_title, video.description)
-          const cardStyle = {
-            '--mcol': members[0] ? memberColor(members[0], theme) : 'var(--border)',
-          } as CSSProperties
-          return (
-            <article key={video.id} className="updateCard videoPoster" style={cardStyle}>
-              <a className="updateMainLink videoMainLink" href={video.url} target="_blank" rel="noreferrer">
-                <div className="videoThumb">
-                  <span className="typeBadge youtube">YouTube</span>
-                  {video.thumbnail_url ? (
-                    <img src={video.thumbnail_url} alt="" loading="lazy" referrerPolicy="no-referrer" />
-                  ) : (
-                    <PlayCircle size={28} />
-                  )}
-                </div>
-                <div className="videoBody">
-                  <strong>{video.title}</strong>
-                  <div className="cardMembers">
-                    {members.slice(0, 5).map((name) => (
-                      <MemberAvatar key={name} name={name} theme={theme} size={22} />
-                    ))}
-                    <small>{members.length ? memberNamesText(members) : video.channel_title}</small>
+      {videos.isLoading ? (
+        <p className="muted">영상을 불러오는 중...</p>
+      ) : (
+        <>
+          <div className="videoGrid">
+            {visibleVideos.map((video) => {
+              const members = memberNamesFromText(video.title, video.channel_title, video.description)
+              const cardStyle = {
+                '--mcol': members[0] ? memberColor(members[0], theme) : 'var(--border)',
+              } as CSSProperties
+              return (
+                <article key={video.id} className="updateCard videoPoster" style={cardStyle}>
+                  <a className="updateMainLink videoMainLink" href={video.url} target="_blank" rel="noreferrer">
+                    <div className="videoThumb">
+                      <span className="typeBadge youtube">YouTube</span>
+                      {video.thumbnail_url ? (
+                        <img src={video.thumbnail_url} alt="" loading="lazy" referrerPolicy="no-referrer" />
+                      ) : (
+                        <PlayCircle size={28} />
+                      )}
+                    </div>
+                    <div className="videoBody">
+                      <strong>{video.title}</strong>
+                      <div className="cardMembers">
+                        {members.slice(0, 5).map((name) => (
+                          <MemberAvatar key={name} name={name} theme={theme} size={22} />
+                        ))}
+                        <small>{members.length ? memberNamesText(members) : video.channel_title}</small>
+                      </div>
+                      <span className="videoStats">
+                        <span>
+                          <Eye size={14} />
+                          {formatNumber(video.view_count)}
+                        </span>
+                        <span>
+                          <CalendarDays size={14} />
+                          {formatDate(video.published_at)}
+                        </span>
+                      </span>
+                    </div>
+                  </a>
+                  <div className="cardActions">
+                    <YoutubeAppLink url={video.url} />
                   </div>
-                  <span className="videoStats">
-                    <span>
-                      <Eye size={14} />
-                      {formatNumber(video.view_count)}
-                    </span>
-                    <span>
-                      <CalendarDays size={14} />
-                      {formatDate(video.published_at)}
-                    </span>
-                  </span>
-                </div>
-              </a>
-              <div className="cardActions">
-                <YoutubeAppLink url={video.url} />
-              </div>
-            </article>
-          )
-        })}
-      </div>
-      {!videos.isLoading && !videos.data?.length && <p className="muted">No cached videos yet.</p>}
+                </article>
+              )
+            })}
+          </div>
+          {!videos.data?.length && <p className="muted">No cached videos yet.</p>}
+          {visibleCount < sortedVideos.length && (
+            <button className="loadMore" onClick={() => setVisibleCount((current) => current + VIDEO_RENDER_STEP)}>
+              더 보기
+            </button>
+          )}
+        </>
+      )}
       {user?.role === 'admin' && (
         <details className="adminTools">
           <summary>
