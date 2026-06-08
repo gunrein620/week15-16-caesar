@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
+  desktopTabPanelsForRole,
   MOBILE_BOTTOM_TAB_PANELS,
   nextBoardMode,
   shouldShowDesktopBoardSidebar,
@@ -31,4 +32,18 @@ test("desktop sidebar appears only inside the board panel", () => {
   assert.equal(shouldShowDesktopBoardSidebar("youtube"), false)
   assert.equal(shouldShowDesktopBoardSidebar("saved"), false)
   assert.equal(shouldShowDesktopBoardSidebar("admin"), false)
+})
+
+test("desktop tabs hide admin-only briefing tools from normal users", () => {
+  assert.deepEqual(desktopTabPanelsForRole(undefined), ["home", "board", "rag", "youtube", "saved"])
+  assert.deepEqual(desktopTabPanelsForRole("user"), ["home", "board", "rag", "youtube", "saved"])
+  assert.deepEqual(desktopTabPanelsForRole("admin"), [
+    "home",
+    "board",
+    "rag",
+    "youtube",
+    "briefing",
+    "saved",
+    "admin",
+  ])
 })

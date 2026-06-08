@@ -9,6 +9,10 @@
       "destination": "https://backend-production-97eb4.up.railway.app/artists/:path*"
     },
     {
+      "source": "/posts",
+      "destination": "https://backend-production-97eb4.up.railway.app/posts"
+    },
+    {
       "source": "/posts/:path*",
       "destination": "https://backend-production-97eb4.up.railway.app/posts/:path*"
     },
@@ -23,6 +27,10 @@
     {
       "source": "/admin/:path*",
       "destination": "https://backend-production-97eb4.up.railway.app/admin/:path*"
+    },
+    {
+      "source": "/saved-items",
+      "destination": "https://backend-production-97eb4.up.railway.app/saved-items"
     },
     {
       "source": "/saved-items/:path*",

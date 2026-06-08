@@ -1,4 +1,5 @@
 export type AppPanel = "home" | "board" | "rag" | "youtube" | "briefing" | "saved" | "admin"
+export type UserRole = "user" | "admin"
 export type BoardMode = "list" | "detail" | "write" | "edit"
 export type BoardAction =
   | "open-post"
@@ -10,6 +11,16 @@ export type BoardAction =
   | "deleted"
 
 export const MOBILE_BOTTOM_TAB_PANELS = ["home", "board", "rag", "youtube", "saved"] as const
+export const USER_DESKTOP_TAB_PANELS = ["home", "board", "rag", "youtube", "saved"] as const
+export const ADMIN_DESKTOP_TAB_PANELS = [
+  "home",
+  "board",
+  "rag",
+  "youtube",
+  "briefing",
+  "saved",
+  "admin",
+] as const
 
 export function nextBoardMode(current: BoardMode, action: BoardAction): BoardMode {
   if (action === "open-post") return "detail"
@@ -23,4 +34,8 @@ export function nextBoardMode(current: BoardMode, action: BoardAction): BoardMod
 
 export function shouldShowDesktopBoardSidebar(panel: AppPanel): boolean {
   return panel === "board"
+}
+
+export function desktopTabPanelsForRole(role?: UserRole): AppPanel[] {
+  return role === "admin" ? [...ADMIN_DESKTOP_TAB_PANELS] : [...USER_DESKTOP_TAB_PANELS]
 }

@@ -9,3 +9,8 @@ test('feed and archive cards hide long body text by default', () => {
   assert.match(globalCss, /\.updateBody p\s*\{[^}]*display:\s*none;/s)
   assert.match(globalCss, /\.sourceBody p\s*\{[^}]*display:\s*none;/s)
 })
+
+test('admin recent event table has a fixed scroll area', () => {
+  assert.match(css, /\.adminTable\s*\{[^}]*max-height:\s*260px;/s)
+  assert.match(css, /\.adminTable\s*\{[^}]*overflow-y:\s*auto;/s)
+})

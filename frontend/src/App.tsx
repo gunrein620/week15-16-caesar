@@ -71,6 +71,7 @@ import {
   storeAccessToken,
 } from './authSession'
 import {
+  desktopTabPanelsForRole,
   MOBILE_BOTTOM_TAB_PANELS,
   nextBoardMode,
   shouldShowDesktopBoardSidebar,
@@ -91,6 +92,7 @@ import {
 } from './briefingContent'
 import { buildFeedFooterParts, buildFeedMetaParts } from './feedMeta'
 import { selectHomeHeroItem } from './homeHero'
+import { findSavedFeedItem, savedFeedItemPayload } from './savedFeed'
 import { sortYoutubeVideos, type VideoSort } from './videoSorting'
 import { canUseYoutubeHoverPreview, youtubeAppUrl, youtubeEmbedPreviewUrl } from './youtubeLinks'
 import { buildYoutubeSourcePayload } from './youtubeSourceForm'
@@ -104,6 +106,16 @@ type FeedSource = 'all' | 'youtube' | 'naver' | 'briefing' | 'post'
 type Theme = 'light' | 'dark'
 
 const VIDEO_RENDER_STEP = 48
+
+const topTabLabels: Record<AppPanel, string> = {
+  home: '홈',
+  board: '팬 게시판',
+  rag: '아카이브',
+  youtube: 'YouTube',
+  briefing: '오늘의 요약',
+  saved: '저장한 자료',
+  admin: '관리',
+}
 
 const CATEGORY_COLORS: Record<string, { color: string; lightText: string; darkText: string }> = {
   자유: { color: '#64748B', lightText: '#334155', darkText: '#CBD5E1' },
@@ -408,6 +420,13 @@ export default function App() {
     trackAnalyticsEvent({ eventName: 'panel_view', panel, token })
   }, [panel, token])
 
+  useEffect(() => {
+    if (me.isLoading) return
+    if ((panel === 'briefing' || panel === 'admin') && me.data?.role !== 'admin') {
+      setPanel('home')
+    }
+  }, [me.data?.role, me.isLoading, panel])
+
   const logout = () => {
     void api<void>('/auth/logout', { method: 'POST' }, token).catch(() => undefined)
     setToken(null)
@@ -501,29 +520,15 @@ export default function App() {
       </header>
 
       <nav className="tabs">
-        <button className={panel === 'home' ? 'active' : ''} onClick={() => openPanel('home')}>
-          홈
-        </button>
-        <button className={panel === 'board' ? 'active' : ''} onClick={() => openPanel('board')}>
-          팬 게시판
-        </button>
-        <button className={panel === 'rag' ? 'active' : ''} onClick={() => openPanel('rag')}>
-          아카이브
-        </button>
-        <button className={panel === 'youtube' ? 'active' : ''} onClick={() => openPanel('youtube')}>
-          YouTube
-        </button>
-        <button className={panel === 'briefing' ? 'active' : ''} onClick={() => openPanel('briefing')}>
-          오늘의 요약
-        </button>
-        <button className={panel === 'saved' ? 'active' : ''} onClick={() => openPanel('saved')}>
-          저장한 자료
-        </button>
-        {me.data?.role === 'admin' && (
-          <button className={panel === 'admin' ? 'active' : ''} onClick={() => openPanel('admin')}>
-            관리
+        {desktopTabPanelsForRole(me.data?.role).map((tabPanel) => (
+          <button
+            key={tabPanel}
+            className={panel === tabPanel ? 'active' : ''}
+            onClick={() => openPanel(tabPanel)}
+          >
+            {topTabLabels[tabPanel]}
           </button>
-        )}
+        ))}
       </nav>
 
       {authOpen && (
@@ -906,20 +911,19 @@ function HomePanel({
     queryKey: ['artist-keywords', 1],
     queryFn: () => api<ArtistKeyword[]>('/artists/1/keywords'),
   })
+  const savedItems = useQuery({
+    queryKey: ['saved-items', token],
+    queryFn: () => api<SavedItem[]>('/saved-items', {}, token),
+    enabled: Boolean(token && user),
+    retry: false,
+  })
   const saveItem = useMutation({
     mutationFn: (item: UpdateFeedItem) =>
       api<SavedItem>(
         '/saved-items',
         {
           method: 'POST',
-          body: JSON.stringify({
-            item_type: item.item_type,
-            item_id: item.id,
-            url: item.url,
-            title: item.title,
-            thumbnail_url: item.thumbnail_url,
-            source_label: item.source_label,
-          }),
+          body: JSON.stringify(savedFeedItemPayload(item)),
         },
         token,
       ),
@@ -935,6 +939,12 @@ function HomePanel({
           source_label: item.source_label,
         },
       })
+      void queryClient.invalidateQueries({ queryKey: ['saved-items'] })
+    },
+  })
+  const removeSavedItem = useMutation({
+    mutationFn: (savedItemId: number) => api<void>(`/saved-items/${savedItemId}`, { method: 'DELETE' }, token),
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['saved-items'] })
     },
   })
@@ -1112,24 +1122,32 @@ function HomePanel({
         {updates.isLoading && <p className="muted">업데이트를 불러오는 중...</p>}
         {updates.error && <p className="error">{updates.error.message}</p>}
         <div className="feedList">
-          {feedItems.map((item) => (
-            <UpdateFeedCard
-              key={item.id}
-              item={item}
-              token={token}
-              onOpenPost={onOpenPost}
-              theme={theme}
-              onSave={() => {
-                if (!token) {
-                  onRequireAuth()
-                  return
-                }
-                if (!onRequireVerified()) return
-                saveItem.mutate(item)
-              }}
-              savePending={saveItem.isPending}
-            />
-          ))}
+          {feedItems.map((item) => {
+            const savedItem = findSavedFeedItem(savedItems.data, item)
+            return (
+              <UpdateFeedCard
+                key={item.id}
+                item={item}
+                token={token}
+                onOpenPost={onOpenPost}
+                theme={theme}
+                savedItem={savedItem}
+                onToggleSave={() => {
+                  if (!token) {
+                    onRequireAuth()
+                    return
+                  }
+                  if (!onRequireVerified()) return
+                  if (savedItem) {
+                    removeSavedItem.mutate(savedItem.id)
+                    return
+                  }
+                  saveItem.mutate(item)
+                }}
+                savePending={saveItem.isPending || removeSavedItem.isPending}
+              />
+            )
+          })}
         </div>
         {!updates.isLoading && feedItems.length === 0 && (
           <div className="emptyState">
@@ -1161,14 +1179,16 @@ function UpdateFeedCard({
   token,
   onOpenPost,
   theme,
-  onSave,
+  savedItem,
+  onToggleSave,
   savePending,
 }: {
   item: UpdateFeedItem
   token: string | null
   onOpenPost: (postId: number) => void
   theme: Theme
-  onSave: () => void
+  savedItem: SavedItem | null
+  onToggleSave: () => void
   savePending: boolean
 }) {
   const postId = postIdFromUrl(item.url)
@@ -1188,6 +1208,7 @@ function UpdateFeedCard({
             : 'Naver News'
   const meta = buildFeedMetaParts(item)
   const footer = buildFeedFooterParts(item)
+  const isSaved = Boolean(savedItem)
   const cardStyle = {
     '--mcol': primaryMember ? memberColor(primaryMember, theme) : 'var(--border)',
   } as CSSProperties
@@ -1282,8 +1303,14 @@ function UpdateFeedCard({
       )}
       <div className={isYoutube ? 'cardActions multi' : 'cardActions'}>
         {isYoutube && <YoutubeAppLink url={item.url} />}
-        <button className="saveButton" onClick={onSave} disabled={savePending} title="저장">
-          <Bookmark size={16} />
+        <button
+          className={['saveButton', isSaved ? 'saved' : ''].filter(Boolean).join(' ')}
+          onClick={onToggleSave}
+          disabled={savePending}
+          title={isSaved ? '저장됨 - 다시 누르면 해제' : '저장'}
+          aria-pressed={isSaved}
+        >
+          <Bookmark size={16} fill={isSaved ? 'currentColor' : 'none'} />
         </button>
       </div>
     </article>

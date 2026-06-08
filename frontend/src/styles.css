@@ -945,6 +945,12 @@ h2 {
   color: var(--text);
 }
 
+.saveButton.saved,
+.saveButton[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-on);
+}
+
 .updateCard:hover {
   border-color: var(--border-strong);
   box-shadow: var(--shadow);
@@ -1597,7 +1603,8 @@ h2 {
 }
 
 .homeStack .youtubeAppButton:hover,
-.homeStack .saveButton:hover {
+.homeStack .saveButton:hover,
+.homeStack .saveButton.saved {
   background: var(--accent);
   color: var(--accent-on);
 }
@@ -2466,7 +2473,9 @@ textarea {
 .adminTable {
   border: 1px solid var(--border);
   border-radius: 8px;
-  overflow: hidden;
+  max-height: 260px;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .adminTableHead,
@@ -2479,6 +2488,9 @@ textarea {
   background: var(--bg);
   color: var(--text-soft);
   font-weight: 700;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .adminTableRow {
