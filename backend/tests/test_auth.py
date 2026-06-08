@@ -199,6 +199,28 @@ def test_admin_delete_user_removes_owned_posts_and_blocks_login(client):
         assert db.get(Post, post_id) is None
 
 
+def test_admin_user_list_allows_legacy_local_email_accounts(client):
+    from app.core.security import hash_password
+
+    admin_token = login(client, "admin@example.com", "admin-password")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    with get_session_factory()() as db:
+        db.add(
+            User(
+                email="admin@week15-16-caesar.local",
+                display_name="Legacy Admin",
+                hashed_password=hash_password("password123"),
+                role="admin",
+            )
+        )
+        db.commit()
+
+    listed = client.get("/admin/users", headers=admin_headers)
+
+    assert listed.status_code == 200, listed.text
+    assert "admin@week15-16-caesar.local" in {item["email"] for item in listed.json()}
+
+
 def test_seed_admin_password_is_synchronized(client):
     response = client.post(
         "/auth/login", json={"email": "admin@example.com", "password": "admin-password"}
