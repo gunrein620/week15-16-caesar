@@ -60,8 +60,10 @@ import {
 } from './api'
 import { shouldTrackPanelView, trackAnalyticsEvent } from './analytics'
 import {
+  configuredOauthProviders,
   getInitialAccessToken,
   oauthStartUrl,
+  type OAuthStatus,
   shouldShowVerificationPrompt,
   storeAccessToken,
 } from './authSession'
@@ -994,6 +996,11 @@ function AuthPanel({
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const oauthStatus = useQuery({
+    queryKey: ['oauth-status'],
+    queryFn: () => api<OAuthStatus>('/auth/oauth/status'),
+  })
+  const oauthProviders = configuredOauthProviders(oauthStatus.data)
   useEffect(() => {
     if (!publicSignupEnabled && mode === 'signup') setMode('login')
   }, [mode, publicSignupEnabled])
@@ -1013,24 +1020,21 @@ function AuthPanel({
   }
   return (
     <form className="authPanel" onSubmit={submit}>
-      <button
-        type="button"
-        className="secondary"
-        onClick={() => {
-          window.location.href = oauthStartUrl('google', API_BASE)
-        }}
-      >
-        Google로 계속하기
-      </button>
-      <button
-        type="button"
-        className="secondary"
-        onClick={() => {
-          window.location.href = oauthStartUrl('kakao', API_BASE)
-        }}
-      >
-        Kakao로 계속하기
-      </button>
+      {oauthProviders.map((provider) => (
+        <button
+          key={provider}
+          type="button"
+          className="secondary"
+          onClick={() => {
+            window.location.href = oauthStartUrl(provider, API_BASE)
+          }}
+        >
+          {provider === 'google' ? 'Google로 계속하기' : 'Kakao로 계속하기'}
+        </button>
+      ))}
+      {!oauthStatus.isLoading && oauthProviders.length === 0 && (
+        <p className="hint">소셜 로그인은 관리자 설정 후 표시됩니다.</p>
+      )}
       <div className="segmented">
         <button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>
           Login

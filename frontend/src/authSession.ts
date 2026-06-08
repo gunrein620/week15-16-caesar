@@ -1,5 +1,8 @@
 import type { User } from './api.ts'
 
+export type OAuthProvider = 'google' | 'kakao'
+export type OAuthStatus = Record<OAuthProvider, boolean>
+
 let memoryAccessToken: string | null = null
 
 export function getInitialAccessToken(storage: Storage = window.localStorage): string | null {
@@ -13,8 +16,13 @@ export function storeAccessToken(token: string | null, storage: Storage = window
   return memoryAccessToken
 }
 
-export function oauthStartUrl(provider: 'google' | 'kakao', apiBase: string): string {
+export function oauthStartUrl(provider: OAuthProvider, apiBase: string): string {
   return `${apiBase.replace(/\/$/, '')}/auth/oauth/${provider}/start`
+}
+
+export function configuredOauthProviders(status?: OAuthStatus | null): OAuthProvider[] {
+  if (!status) return []
+  return (['google', 'kakao'] as const).filter((provider) => status[provider])
 }
 
 export function shouldShowVerificationPrompt(user?: User | null): boolean {

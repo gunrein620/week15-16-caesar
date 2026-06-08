@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  configuredOauthProviders,
   getInitialAccessToken,
   oauthStartUrl,
   shouldShowVerificationPrompt,
@@ -45,6 +46,12 @@ test('access token is kept in memory and not localStorage', () => {
 test('oauthStartUrl targets backend provider start endpoints', () => {
   assert.equal(oauthStartUrl('google', 'https://api.example.com'), 'https://api.example.com/auth/oauth/google/start')
   assert.equal(oauthStartUrl('kakao', 'https://api.example.com'), 'https://api.example.com/auth/oauth/kakao/start')
+})
+
+test('configuredOauthProviders only returns configured providers', () => {
+  assert.deepEqual(configuredOauthProviders({ google: false, kakao: false }), [])
+  assert.deepEqual(configuredOauthProviders({ google: true, kakao: false }), ['google'])
+  assert.deepEqual(configuredOauthProviders({ google: true, kakao: true }), ['google', 'kakao'])
 })
 
 test('unverified non-admin users should see verification prompt', () => {

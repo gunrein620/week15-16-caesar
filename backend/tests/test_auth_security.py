@@ -166,6 +166,22 @@ def test_oauth_callback_creates_and_reuses_identity(client, monkeypatch):
         assert db.query(AuthIdentity).filter(AuthIdentity.provider == "google").count() == 1
 
 
+def test_oauth_status_reports_configured_providers(client, monkeypatch):
+    default_status = client.get("/auth/oauth/status")
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "google-client")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "google-secret")
+    from app.core.config import reset_settings_cache
+
+    reset_settings_cache()
+    google_status = client.get("/auth/oauth/status")
+    reset_settings_cache()
+
+    assert default_status.status_code == 200, default_status.text
+    assert default_status.json() == {"google": False, "kakao": False}
+    assert google_status.status_code == 200, google_status.text
+    assert google_status.json() == {"google": True, "kakao": False}
+
+
 def test_expired_refresh_token_is_rejected(client):
     client.post("/auth/login", json={"email": "admin@example.com", "password": "admin-password"})
     with get_session_factory()() as db:

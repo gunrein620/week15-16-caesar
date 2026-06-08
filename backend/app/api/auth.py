@@ -178,6 +178,15 @@ def verify_email(
     return user
 
 
+@router.get("/oauth/status")
+def oauth_status() -> dict[str, bool]:
+    settings = get_settings()
+    return {
+        "google": bool(settings.google_client_id and settings.google_client_secret),
+        "kakao": bool(settings.kakao_client_id and settings.kakao_client_secret),
+    }
+
+
 @router.get("/oauth/{provider}/start")
 def oauth_start(provider: str) -> RedirectResponse:
     state = uuid4().hex
