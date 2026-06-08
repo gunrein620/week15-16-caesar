@@ -2924,6 +2924,31 @@ button:disabled {
     border-left-width: 4px;
   }
 
+  .videoPoster .videoThumb .typeBadge {
+    font-size: 12px;
+    left: 8px;
+    line-height: 1.1;
+    padding: 2px 7px;
+    top: 8px;
+  }
+
+  .videoPoster .cardActions {
+    right: 8px;
+    top: 8px;
+  }
+
+  .videoPoster .youtubeAppButton {
+    font-size: 10.5px;
+    min-height: 28px;
+    min-width: 30px;
+    padding: 0 7px;
+  }
+
+  .videoPoster .youtubeAppButton svg {
+    height: 14px;
+    width: 14px;
+  }
+
   .videoBody {
     gap: 7px;
     padding: 10px;
