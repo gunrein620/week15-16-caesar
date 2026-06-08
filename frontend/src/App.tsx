@@ -60,7 +60,7 @@ import {
   API_BASE,
   api,
 } from './api'
-import { shouldTrackPanelView, trackAnalyticsEvent } from './analytics'
+import { shouldTrackPanelView, trackAnalyticsEvent, type AnalyticsMetadata } from './analytics'
 import {
   configuredOauthProviders,
   getInitialAccessToken,
@@ -253,7 +253,19 @@ function postIdFromUrl(url: string) {
   return match ? Number(match[1]) : null
 }
 
-function YoutubeAppLink({ url, className = 'youtubeAppButton' }: { url: string; className?: string }) {
+function YoutubeAppLink({
+  url,
+  className = 'youtubeAppButton',
+  label = '앱',
+  panel,
+  metadata,
+}: {
+  url: string
+  className?: string
+  label?: string
+  panel?: string
+  metadata?: AnalyticsMetadata
+}) {
   const appUrl = youtubeAppUrl(url)
   if (!appUrl) return null
   const videoId = appUrl.split('/').pop() ?? ''
@@ -265,14 +277,15 @@ function YoutubeAppLink({ url, className = 'youtubeAppButton' }: { url: string; 
         event.stopPropagation()
         trackAnalyticsEvent({
           eventName: 'youtube_app_open',
-          metadata: { source: 'youtube', video_id: videoId },
+          panel,
+          metadata: { source: 'youtube', video_id: videoId, ...metadata },
         })
       }}
       title="YouTube 앱으로 열기"
       aria-label="YouTube 앱으로 열기"
     >
       <PlayCircle size={16} />
-      <span>앱</span>
+      <span>{label}</span>
     </a>
   )
 }
@@ -686,8 +699,42 @@ function BottomTabBar({ panel, onSelect }: { panel: AppPanel; onSelect: (panel: 
   )
 }
 
-function HomeHero({ item, theme }: { item: UpdateFeedItem; theme: Theme }) {
+function heroCtaLabel(item: UpdateFeedItem) {
+  if (item.item_type === 'youtube') return '영상 보기'
+  if (item.item_type === 'naver_news' || item.item_type === 'naver_blog') return '원문 보기'
+  return '자세히 보기'
+}
+
+function HomeHero({
+  item,
+  theme,
+  token,
+  onOpenPost,
+}: {
+  item: UpdateFeedItem
+  theme: Theme
+  token: string | null
+  onOpenPost: (postId: number) => void
+}) {
   const primaryMember = item.member_names[0] ?? ''
+  const postId = postIdFromUrl(item.url)
+  const isExternal = item.url.startsWith('http')
+  const isYoutube = item.item_type === 'youtube'
+  const ctaLabel = heroCtaLabel(item)
+  const analyticsMetadata = {
+    item_type: item.item_type,
+    item_key: item.id,
+    title: item.title,
+    source_label: item.source_label,
+  }
+  const trackHeroOpen = () => {
+    trackAnalyticsEvent({
+      eventName: 'feed_card_open',
+      panel: 'home',
+      token,
+      metadata: analyticsMetadata,
+    })
+  }
   return (
     <section
       className="hero"
@@ -718,6 +765,43 @@ function HomeHero({ item, theme }: { item: UpdateFeedItem; theme: Theme }) {
           </span>
         </div>
       </div>
+      {isYoutube ? (
+        <YoutubeAppLink
+          url={item.url}
+          className="heroCta"
+          label={ctaLabel}
+          panel="home"
+          metadata={analyticsMetadata}
+        />
+      ) : isExternal ? (
+        <a
+          className="heroCta"
+          href={item.url}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(event) => {
+            event.stopPropagation()
+            trackHeroOpen()
+          }}
+        >
+          <ExternalLink size={16} />
+          <span>{ctaLabel}</span>
+        </a>
+      ) : (
+        <button
+          type="button"
+          className="heroCta"
+          disabled={!postId}
+          onClick={(event) => {
+            event.stopPropagation()
+            trackHeroOpen()
+            if (postId) onOpenPost(postId)
+          }}
+        >
+          <ChevronRight size={16} />
+          <span>{ctaLabel}</span>
+        </button>
+      )}
     </section>
   )
 }
@@ -819,7 +903,7 @@ function HomePanel({
   } as CSSProperties
   return (
     <div className="homeStack" style={homeStyle}>
-      {heroItem && <HomeHero item={heroItem} theme={theme} />}
+      {heroItem && <HomeHero item={heroItem} theme={theme} token={token} onOpenPost={onOpenPost} />}
       <section className="feedPanel">
         <div className="sectionHead">
           <div>

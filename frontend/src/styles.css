@@ -1142,6 +1142,7 @@ h2 {
   left: 0;
   position: absolute;
   right: 0;
+  z-index: 3;
 }
 
 .hero > img,
@@ -1167,6 +1168,7 @@ h2 {
   position: absolute;
   inset: 0;
   background: var(--hero-overlay);
+  z-index: 1;
 }
 
 .heroContent {
@@ -1175,6 +1177,7 @@ h2 {
   right: 46px;
   bottom: 42px;
   color: var(--hero-text);
+  z-index: 2;
 }
 
 .heroKicker {
@@ -1221,6 +1224,31 @@ h2 {
 
 .heroAvatars .memAva:first-child {
   margin-left: 0;
+}
+
+.heroCta {
+  align-items: center;
+  backdrop-filter: blur(14px);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  border: 1px solid color-mix(in srgb, var(--hero-text) 34%, transparent);
+  border-radius: 8px;
+  bottom: 28px;
+  box-shadow: 0 14px 30px color-mix(in srgb, #000 22%, transparent);
+  color: var(--text);
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 800;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 13px;
+  position: absolute;
+  right: 28px;
+  text-decoration: none;
+  z-index: 4;
+}
+
+.heroCta:hover {
+  background: var(--surface);
 }
 
 .memAva {
@@ -3012,7 +3040,12 @@ button:disabled {
   .heroContent {
     left: 22px;
     right: 22px;
-    bottom: 24px;
+    bottom: 78px;
+  }
+
+  .heroCta {
+    bottom: 20px;
+    right: 20px;
   }
 
   .heroMeta {
