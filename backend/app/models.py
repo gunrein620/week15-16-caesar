@@ -407,6 +407,33 @@ class RagEmbeddingJob(Base, TimestampMixin):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class AnalyticsEvent(Base):
+    __tablename__ = "analytics_events"
+    __table_args__ = (
+        CheckConstraint("length(trim(event_name)) > 0", name="ck_analytics_event_name"),
+        CheckConstraint(
+            "length(trim(anonymous_session_id)) > 0",
+            name="ck_analytics_anonymous_session",
+        ),
+        Index("ix_analytics_events_created_at", "created_at"),
+        Index("ix_analytics_events_event_created", "event_name", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_name: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    anonymous_session_id: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    path: Mapped[str] = mapped_column(String(300), default="", nullable=False)
+    panel: Mapped[str] = mapped_column(String(60), default="", nullable=False)
+    source: Mapped[str] = mapped_column(String(80), default="", nullable=False)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class AiUsageCounter(Base):
     __tablename__ = "ai_usage_counters"
     __table_args__ = (UniqueConstraint("scope", "scope_id", "feature", "day", name="uq_ai_usage"),)

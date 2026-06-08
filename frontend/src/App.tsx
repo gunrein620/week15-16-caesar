@@ -29,6 +29,8 @@ import { FormEvent, useEffect, useMemo, useState } from 'react'
 import {
   ArtistArchiveTerm,
   ArtistKeyword,
+  AnalyticsEvent,
+  AnalyticsSummary,
   AuthResponse,
   BriefingPreview,
   Comment,
@@ -55,6 +57,7 @@ import {
   YoutubeVideo,
   api,
 } from './api'
+import { shouldTrackPanelView, trackAnalyticsEvent } from './analytics'
 import {
   MOBILE_BOTTOM_TAB_PANELS,
   nextBoardMode,
@@ -169,11 +172,18 @@ function postIdFromUrl(url: string) {
 function YoutubeAppLink({ url, className = 'youtubeAppButton' }: { url: string; className?: string }) {
   const appUrl = youtubeAppUrl(url)
   if (!appUrl) return null
+  const videoId = appUrl.split('/').pop() ?? ''
   return (
     <a
       className={className}
       href={appUrl}
-      onClick={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation()
+        trackAnalyticsEvent({
+          eventName: 'youtube_app_open',
+          metadata: { source: 'youtube', video_id: videoId },
+        })
+      }}
       title="YouTube 앱으로 열기"
       aria-label="YouTube 앱으로 열기"
     >
@@ -252,6 +262,15 @@ export default function App() {
   })
   const selectedPost = listedSelectedPost ?? selectedPostById.data ?? posts.data?.items[0] ?? null
 
+  useEffect(() => {
+    trackAnalyticsEvent({ eventName: 'app_open', panel: 'home', token })
+  }, [])
+
+  useEffect(() => {
+    if (!shouldTrackPanelView(panel)) return
+    trackAnalyticsEvent({ eventName: 'panel_view', panel, token })
+  }, [panel, token])
+
   const logout = () => {
     setToken(null)
     void queryClient.invalidateQueries()
@@ -263,6 +282,12 @@ export default function App() {
     if (nextPanel === 'board') setBoardMode('list')
   }
   const openPost = (postId: number) => {
+    trackAnalyticsEvent({
+      eventName: 'post_open',
+      panel: 'board',
+      metadata: { post_id: postId },
+      token,
+    })
     setSelectedPostId(postId)
     setBoardMode((current) => nextBoardMode(current, 'open-post'))
     setPanel('board')
@@ -561,7 +586,18 @@ function HomePanel({
         },
         token,
       ),
-    onSuccess: () => {
+    onSuccess: (_data, item) => {
+      trackAnalyticsEvent({
+        eventName: 'saved_item_add',
+        panel: 'home',
+        token,
+        metadata: {
+          item_type: item.item_type,
+          item_key: item.id,
+          title: item.title,
+          source_label: item.source_label,
+        },
+      })
       void queryClient.invalidateQueries({ queryKey: ['saved-items'] })
     },
   })
@@ -605,14 +641,34 @@ function HomePanel({
                 key={option.value}
                 type="button"
                 className={source === option.value ? 'active' : ''}
-                onClick={() => setSource(option.value)}
+                onClick={() => {
+                  setSource(option.value)
+                  trackAnalyticsEvent({
+                    eventName: 'feed_filter_change',
+                    panel: 'home',
+                    token,
+                    metadata: { filter: 'source', source: option.value },
+                  })
+                }}
               >
                 {option.label}
               </button>
             ))}
           </div>
           <div className="chipLine" aria-label="member filter">
-            <button type="button" className={!member ? 'active' : ''} onClick={() => setMember('')}>
+            <button
+              type="button"
+              className={!member ? 'active' : ''}
+              onClick={() => {
+                setMember('')
+                trackAnalyticsEvent({
+                  eventName: 'feed_filter_change',
+                  panel: 'home',
+                  token,
+                  metadata: { filter: 'member', member: 'all' },
+                })
+              }}
+            >
               멤버 전체
             </button>
             {members.data?.map((item) => (
@@ -620,14 +676,34 @@ function HomePanel({
                 key={item.id}
                 type="button"
                 className={member === item.name ? 'active' : ''}
-                onClick={() => setMember(item.name)}
+                onClick={() => {
+                  setMember(item.name)
+                  trackAnalyticsEvent({
+                    eventName: 'feed_filter_change',
+                    panel: 'home',
+                    token,
+                    metadata: { filter: 'member', member: item.name },
+                  })
+                }}
               >
                 {memberLabel(item.name)}
               </button>
             ))}
           </div>
           <div className="chipLine" aria-label="keyword filter">
-            <button type="button" className={!keyword ? 'active' : ''} onClick={() => setKeyword('')}>
+            <button
+              type="button"
+              className={!keyword ? 'active' : ''}
+              onClick={() => {
+                setKeyword('')
+                trackAnalyticsEvent({
+                  eventName: 'feed_filter_change',
+                  panel: 'home',
+                  token,
+                  metadata: { filter: 'keyword', keyword: 'all' },
+                })
+              }}
+            >
               키워드 전체
             </button>
             {keywordOptions.map((item) => (
@@ -635,7 +711,15 @@ function HomePanel({
                 key={item}
                 type="button"
                 className={keyword === item ? 'active' : ''}
-                onClick={() => setKeyword(item)}
+                onClick={() => {
+                  setKeyword(item)
+                  trackAnalyticsEvent({
+                    eventName: 'feed_filter_change',
+                    panel: 'home',
+                    token,
+                    metadata: { filter: 'keyword', keyword: item },
+                  })
+                }}
               >
                 {item}
               </button>
@@ -652,6 +736,7 @@ function HomePanel({
             <UpdateFeedCard
               key={item.id}
               item={item}
+              token={token}
               onOpenPost={onOpenPost}
               onSave={() => {
                 if (!token) {
@@ -691,11 +776,13 @@ function HomePanel({
 
 function UpdateFeedCard({
   item,
+  token,
   onOpenPost,
   onSave,
   savePending,
 }: {
   item: UpdateFeedItem
+  token: string | null
   onOpenPost: (postId: number) => void
   onSave: () => void
   savePending: boolean
@@ -755,7 +842,25 @@ function UpdateFeedCard({
   return (
     <article className="updateCard">
       {isExternal ? (
-        <a className="updateMainLink" href={item.url} target="_blank" rel="noreferrer">
+        <a
+          className="updateMainLink"
+          href={item.url}
+          target="_blank"
+          rel="noreferrer"
+          onClick={() =>
+            trackAnalyticsEvent({
+              eventName: 'feed_card_open',
+              panel: 'home',
+              token,
+              metadata: {
+                item_type: item.item_type,
+                item_key: item.id,
+                title: item.title,
+                source_label: item.source_label,
+              },
+            })
+          }
+        >
           {body}
           <ExternalLink className="sourceOpen" size={16} />
         </a>
@@ -763,7 +868,20 @@ function UpdateFeedCard({
         <button
           type="button"
           className="updateMainLink"
-          onClick={() => postId && onOpenPost(postId)}
+          onClick={() => {
+            trackAnalyticsEvent({
+              eventName: 'feed_card_open',
+              panel: 'home',
+              token,
+              metadata: {
+                item_type: item.item_type,
+                item_key: item.id,
+                title: item.title,
+                source_label: item.source_label,
+              },
+            })
+            if (postId) onOpenPost(postId)
+          }}
           disabled={!postId}
         >
           {body}
@@ -1132,6 +1250,12 @@ function BoardPanel({
         token,
       ),
     onSuccess: (createdPost) => {
+      trackAnalyticsEvent({
+        eventName: 'post_create',
+        panel: 'board',
+        token,
+        metadata: { post_id: createdPost.id, title: createdPost.title },
+      })
       setTitle('')
       setCategory('자유')
       setContent('')
@@ -1176,6 +1300,12 @@ function BoardPanel({
         token,
       ),
     onSuccess: () => {
+      trackAnalyticsEvent({
+        eventName: 'comment_create',
+        panel: 'board',
+        token,
+        metadata: { post_id: post?.id ?? 0 },
+      })
       setComment('')
       void queryClient.invalidateQueries({ queryKey: ['comments', post?.id] })
       onChanged()
@@ -1559,6 +1689,12 @@ function RagPanel({
             return
           }
           setQaResult(null)
+          trackAnalyticsEvent({
+            eventName: 'archive_search_submit',
+            panel: 'rag',
+            token,
+            metadata: { query: question, limit: 10, offset: 0 },
+          })
           qa.mutate({ offset: 0, includeAnswer: true })
         }}
       >
@@ -1595,7 +1731,16 @@ function RagPanel({
             <button
               className="secondary"
               disabled={qa.isPending}
-              onClick={() => qa.mutate({ offset: qaResult.next_offset ?? qaResult.sources.length, includeAnswer: false })}
+              onClick={() => {
+                const offset = qaResult.next_offset ?? qaResult.sources.length
+                trackAnalyticsEvent({
+                  eventName: 'archive_search_load_more',
+                  panel: 'rag',
+                  token,
+                  metadata: { query: question, limit: 10, offset },
+                })
+                qa.mutate({ offset, includeAnswer: false })
+              }}
             >
               더 보기
             </button>
@@ -2076,6 +2221,30 @@ function SavedItemBody({ item }: { item: SavedItem }) {
   )
 }
 
+function AnalyticsList({
+  title,
+  rows,
+}: {
+  title: string
+  rows?: { label: string; count: number }[]
+}) {
+  return (
+    <div className="analyticsList">
+      <strong>{title}</strong>
+      {rows?.length ? (
+        rows.map((row) => (
+          <span key={`${title}-${row.label}`}>
+            <em>{row.label}</em>
+            <small>{formatNumber(row.count)}</small>
+          </span>
+        ))
+      ) : (
+        <p className="muted">아직 데이터가 없습니다.</p>
+      )}
+    </div>
+  )
+}
+
 function AdminPanel({ token, user }: { token: string | null; user?: User }) {
   const queryClient = useQueryClient()
   const settings = useQuery({
@@ -2111,6 +2280,17 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
   const ragJob = useQuery({
     queryKey: ['rag-job-current', token],
     queryFn: () => api<RagEmbeddingJob | null>('/admin/rag/jobs/current', {}, token),
+    enabled: Boolean(token && user?.role === 'admin'),
+  })
+  const [analyticsDays, setAnalyticsDays] = useState<1 | 7 | 30>(7)
+  const analyticsSummary = useQuery({
+    queryKey: ['analytics-summary', token, analyticsDays],
+    queryFn: () => api<AnalyticsSummary>(`/admin/analytics/summary?days=${analyticsDays}`, {}, token),
+    enabled: Boolean(token && user?.role === 'admin'),
+  })
+  const analyticsEvents = useQuery({
+    queryKey: ['analytics-events', token, analyticsDays],
+    queryFn: () => api<AnalyticsEvent[]>(`/admin/analytics/events?days=${analyticsDays}&limit=30`, {}, token),
     enabled: Boolean(token && user?.role === 'admin'),
   })
   const [form, setForm] = useState<InfraCostSettings | null>(null)
@@ -2343,6 +2523,70 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
   const currentRagJob = ragJob.data
   return (
     <div className="stack">
+      <section className="adminBudget">
+        <div className="postHead">
+          <div>
+            <h2>Analytics</h2>
+            <p className="muted">익명 세션 기준 방문, 검색, 저장, 게시판 활동을 확인합니다.</p>
+          </div>
+          <div className="segmented compactSegmented">
+            {[1, 7, 30].map((days) => (
+              <button
+                key={days}
+                type="button"
+                className={analyticsDays === days ? 'active' : ''}
+                onClick={() => setAnalyticsDays(days as 1 | 7 | 30)}
+              >
+                {days === 1 ? '오늘' : `${days}일`}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="budgetStats">
+          <span>Today visitors {formatNumber(analyticsSummary.data?.today_visitors)}</span>
+          <span>{analyticsDays}d visitors {formatNumber(analyticsSummary.data?.visitors)}</span>
+          <span>Logged-in users {formatNumber(analyticsSummary.data?.logged_in_users)}</span>
+          <span>Events {formatNumber(analyticsSummary.data?.events)}</span>
+          <span>Searches {formatNumber(analyticsSummary.data?.searches)}</span>
+          <span>Saves {formatNumber(analyticsSummary.data?.saves)}</span>
+          <span>Posts {formatNumber(analyticsSummary.data?.posts)}</span>
+          <span>Comments {formatNumber(analyticsSummary.data?.comments)}</span>
+          <span>AI questions {formatNumber(analyticsSummary.data?.ai_questions)}</span>
+        </div>
+        <div className="analyticsGrid">
+          <AnalyticsList
+            title="인기 검색어"
+            rows={analyticsSummary.data?.popular_queries.map((item) => ({
+              label: item.query,
+              count: item.count,
+            }))}
+          />
+          <AnalyticsList
+            title="많이 열린 자료"
+            rows={analyticsSummary.data?.popular_cards.map((item) => ({
+              label: item.title,
+              count: item.count,
+            }))}
+          />
+          <AnalyticsList title="많이 쓰는 화면" rows={analyticsSummary.data?.popular_panels} />
+        </div>
+        <div className="adminTable">
+          <div className="adminTableHead">
+            <span>최근 이벤트</span>
+            <span>화면</span>
+            <span>시간</span>
+          </div>
+          {analyticsEvents.data?.map((event) => (
+            <div key={event.id} className="adminTableRow">
+              <span>{event.event_name}</span>
+              <span>{event.panel || event.path || '-'}</span>
+              <span>{formatDateTime(event.created_at)}</span>
+            </div>
+          ))}
+        </div>
+        {analyticsSummary.error && <p className="error">{analyticsSummary.error.message}</p>}
+        {analyticsEvents.error && <p className="error">{analyticsEvents.error.message}</p>}
+      </section>
       <section className="adminBudget">
         <div className="postHead">
           <div>

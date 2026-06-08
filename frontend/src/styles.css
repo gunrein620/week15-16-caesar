@@ -158,6 +158,17 @@ h2 {
   color: #17201b;
 }
 
+.compactSegmented button {
+  border: 1px solid #d9ded5;
+  border-radius: 999px;
+  height: 34px;
+}
+
+.compactSegmented button.active {
+  background: #e9f3ed;
+  border-color: #22684b;
+}
+
 .layout {
   display: grid;
   gap: 24px;
@@ -1340,6 +1351,78 @@ textarea {
   color: #44534a;
   min-height: 40px;
   padding: 10px;
+}
+
+.analyticsGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  margin: 12px 0;
+}
+
+.analyticsList {
+  border: 1px solid #d9ded5;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.analyticsList strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.analyticsList span,
+.adminTableHead,
+.adminTableRow {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.analyticsList span {
+  color: #44534a;
+  padding: 5px 0;
+}
+
+.analyticsList em {
+  font-style: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analyticsList small {
+  color: #6c766e;
+}
+
+.adminTable {
+  border: 1px solid #d9ded5;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.adminTableHead,
+.adminTableRow {
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
+  padding: 9px 12px;
+}
+
+.adminTableHead {
+  background: #f5f6f2;
+  color: #44534a;
+  font-weight: 700;
+}
+
+.adminTableRow {
+  border-top: 1px solid #e6ebe7;
+  color: #44534a;
+}
+
+.adminTableRow span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .budgetForm {

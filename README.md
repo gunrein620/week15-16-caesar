@@ -99,6 +99,7 @@ Beta constraints:
 - Keep `/artists/{id}/sync`, YouTube source CRUD, and `/ai/briefing/*` admin-only during beta.
 - Public signup defaults to `PUBLIC_SIGNUP_ENABLED`; admins can toggle it at runtime from the app.
 - Repeated failed login attempts are locked by email/IP for the configured lockout window.
+- Public beta collects anonymous usage events for service improvement. Raw IP, raw user-agent, emails, tokens, API keys, and search result bodies are not stored in analytics events.
 - Social login is not wired to a provider yet, but the DB now supports passwordless users linked through `auth_identities(provider, provider_subject)`.
 - Infra cost hard stop uses admin-managed monthly estimates. It blocks public API traffic with 503 when the elapsed monthly estimate exceeds the budget, while keeping login and admin recovery endpoints open.
 - Actual Railway scale-to-zero is a separate operational action. Use `railway scale --service backend sfo=0` only when you intentionally want to take the backend offline.

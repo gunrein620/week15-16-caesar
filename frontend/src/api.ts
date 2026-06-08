@@ -290,6 +290,52 @@ export type SavedItem = {
   saved_at: string
 }
 
+export type AnalyticsMetricRow = {
+  label: string
+  count: number
+}
+
+export type AnalyticsQueryRow = {
+  query: string
+  count: number
+}
+
+export type AnalyticsCardRow = {
+  title: string
+  item_type: string
+  item_key: string
+  count: number
+}
+
+export type AnalyticsSummary = {
+  days: number
+  visitors: number
+  today_visitors: number
+  logged_in_users: number
+  events: number
+  searches: number
+  saves: number
+  posts: number
+  comments: number
+  ai_questions: number
+  popular_panels: AnalyticsMetricRow[]
+  popular_paths: AnalyticsMetricRow[]
+  popular_queries: AnalyticsQueryRow[]
+  popular_cards: AnalyticsCardRow[]
+}
+
+export type AnalyticsEvent = {
+  id: number
+  event_name: string
+  anonymous_session_id: string
+  user_id: number | null
+  path: string
+  panel: string
+  source: string
+  metadata: Record<string, string | number | boolean>
+  created_at: string
+}
+
 export async function api<T>(
   path: string,
   options: RequestInit = {},

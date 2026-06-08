@@ -10,6 +10,7 @@ from app.dependencies import require_admin
 from app.models import (
     AgentRun,
     AiUsageCounter,
+    AnalyticsEvent,
     AuthIdentity,
     Briefing,
     Comment,
@@ -88,6 +89,9 @@ def _delete_user_owned_data(db: Session, user_id: int) -> None:
     db.execute(delete(AiUsageCounter).where(AiUsageCounter.scope == "user", AiUsageCounter.scope_id == str(user_id)))
     db.query(RagEmbeddingJob).filter(RagEmbeddingJob.user_id == user_id).update(
         {RagEmbeddingJob.user_id: None}, synchronize_session=False
+    )
+    db.query(AnalyticsEvent).filter(AnalyticsEvent.user_id == user_id).update(
+        {AnalyticsEvent.user_id: None}, synchronize_session=False
     )
 
 

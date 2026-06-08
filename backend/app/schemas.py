@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
 class UserRead(BaseModel):
@@ -429,3 +429,119 @@ class SavedItemRead(BaseModel):
     thumbnail_url: str
     source_label: str
     saved_at: datetime
+
+
+AnalyticsEventName = Literal[
+    "app_open",
+    "panel_view",
+    "feed_filter_change",
+    "archive_search_submit",
+    "archive_search_load_more",
+    "feed_card_open",
+    "youtube_app_open",
+    "saved_item_add",
+    "post_open",
+    "post_create",
+    "comment_create",
+]
+
+
+class AnalyticsEventCreate(BaseModel):
+    event_name: AnalyticsEventName
+    anonymous_session_id: str = Field(min_length=1, max_length=120)
+    path: str = Field(default="", max_length=300)
+    panel: str = Field(default="", max_length=60)
+    source: str = Field(default="frontend", max_length=80)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_metadata(self) -> "AnalyticsEventCreate":
+        query = self.metadata.get("query")
+        if isinstance(query, str) and len(query) > 120:
+            raise ValueError("metadata.query must be 120 characters or fewer")
+        if len(str(self.metadata)) > 2000:
+            raise ValueError("metadata is too large")
+        return self
+
+
+class AnalyticsEventsCreate(BaseModel):
+    event_name: AnalyticsEventName | None = None
+    anonymous_session_id: str | None = Field(default=None, min_length=1, max_length=120)
+    path: str = Field(default="", max_length=300)
+    panel: str = Field(default="", max_length=60)
+    source: str = Field(default="frontend", max_length=80)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    events: list[AnalyticsEventCreate] | None = Field(default=None, max_length=20)
+
+    @model_validator(mode="after")
+    def normalize_events(self) -> "AnalyticsEventsCreate":
+        if self.events is not None:
+            if not self.events:
+                raise ValueError("events must not be empty")
+            return self
+        if self.event_name is None or self.anonymous_session_id is None:
+            raise ValueError("event_name and anonymous_session_id are required")
+        event = AnalyticsEventCreate(
+            event_name=self.event_name,
+            anonymous_session_id=self.anonymous_session_id,
+            path=self.path,
+            panel=self.panel,
+            source=self.source,
+            metadata=self.metadata,
+        )
+        self.events = [event]
+        return self
+
+
+class AnalyticsCollectResponse(BaseModel):
+    accepted: int
+
+
+class AnalyticsEventRead(BaseModel):
+    id: int
+    event_name: str
+    anonymous_session_id: str
+    user_id: int | None
+    path: str
+    panel: str
+    source: str
+    metadata: dict[str, Any]
+    created_at: datetime
+
+
+class AnalyticsMetricRow(BaseModel):
+    label: str
+    count: int
+
+
+class AnalyticsQueryRow(BaseModel):
+    query: str
+    count: int
+
+
+class AnalyticsCardRow(BaseModel):
+    title: str
+    item_type: str
+    item_key: str
+    count: int
+
+
+class AnalyticsSummary(BaseModel):
+    days: int
+    visitors: int
+    today_visitors: int
+    logged_in_users: int
+    events: int
+    searches: int
+    saves: int
+    posts: int
+    comments: int
+    ai_questions: int
+    popular_panels: list[AnalyticsMetricRow]
+    popular_paths: list[AnalyticsMetricRow]
+    popular_queries: list[AnalyticsQueryRow]
+    popular_cards: list[AnalyticsCardRow]
+
+
+class AnalyticsCleanupResponse(BaseModel):
+    deleted: int
