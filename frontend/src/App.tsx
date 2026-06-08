@@ -93,6 +93,7 @@ import { sortYoutubeVideos, type VideoSort } from './videoSorting'
 import { youtubeAppUrl } from './youtubeLinks'
 import { buildYoutubeSourcePayload } from './youtubeSourceForm'
 import { MEMBER_COLORS, MEMBER_ORDER, memberColor, memberOn } from './memberColors'
+import { compactMemberNamesText, memberLabel, memberNamesText } from './memberDisplay'
 
 type AuthMode = 'login' | 'signup'
 type FeedSource = 'all' | 'youtube' | 'naver' | 'briefing' | 'post'
@@ -177,18 +178,6 @@ function excerpt(value: string, maxLength = 180) {
   return `${normalized.slice(0, maxLength)}...`
 }
 
-const memberLabels: Record<string, string> = {
-  Woni: '원이',
-  Liv: '리브',
-  Minami: '미나미',
-  May: '메이',
-  Zena: '제나',
-}
-
-function memberLabel(name: string) {
-  return memberLabels[name] ?? name
-}
-
 function MemberSpectrum({ theme, className = '' }: { theme: Theme; className?: string }) {
   return (
     <span className={['spectrum', className].filter(Boolean).join(' ')} aria-hidden="true">
@@ -218,10 +207,6 @@ function MemberAvatar({ name, theme, size = 24 }: { name: string; theme: Theme; 
       {label.slice(0, 1) || name.slice(0, 1)}
     </span>
   )
-}
-
-function memberNamesText(names: string[]) {
-  return names.length ? names.map(memberLabel).join(', ') : 'RESCENE'
 }
 
 function memberNamesFromText(...parts: Array<string | null | undefined>) {
@@ -2359,7 +2344,7 @@ function YoutubePanel({ token, user, theme }: { token: string | null; user?: Use
                         {members.slice(0, 5).map((name) => (
                           <MemberAvatar key={name} name={name} theme={theme} size={22} />
                         ))}
-                        <small>{members.length ? memberNamesText(members) : video.channel_title}</small>
+                        <small>{members.length ? compactMemberNamesText(members) : video.channel_title}</small>
                       </div>
                       <span className="videoStats">
                         <span>

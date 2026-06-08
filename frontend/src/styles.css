@@ -2136,6 +2136,8 @@ textarea {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
   transition: transform 0.18s, box-shadow 0.18s;
 }
 
@@ -2150,6 +2152,8 @@ textarea {
   flex: 1;
   flex-direction: column;
   gap: 0;
+  min-width: 0;
+  overflow: hidden;
   padding: 0;
   text-decoration: none;
 }
@@ -2180,6 +2184,16 @@ textarea {
 .videoBody strong {
   font-size: 16px;
   font-weight: 650;
+}
+
+.videoPoster .cardMembers {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.videoPoster .cardMembers small {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .videoStats {
