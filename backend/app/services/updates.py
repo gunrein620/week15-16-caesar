@@ -1,6 +1,7 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from html import unescape
 import re
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -23,6 +24,7 @@ from app.schemas import UpdateFeedItem, UpdateFeedResponse
 TAG_RE = re.compile(r"<[^>]+>")
 LATIN_ALIAS_RE = re.compile(r"^[0-9a-z]+$")
 HANGUL_RE = re.compile(r"[가-힣]")
+SEOUL_TIME_ZONE = ZoneInfo("Asia/Seoul")
 
 MEMBER_ALIASES = {
     "Woni": ("Woni", "원이", "RESCENE WONI", "rescenewoni", "리센느원이"),
@@ -58,6 +60,30 @@ def _aware(value: datetime | None) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value
+
+
+def _published_timestamp(item: UpdateFeedItem) -> float:
+    return _aware(item.published_at).timestamp()
+
+
+def _seoul_date(value: datetime) -> date:
+    return _aware(value).astimezone(SEOUL_TIME_ZONE).date()
+
+
+def _view_count(value: int | None) -> int:
+    return value if value is not None else -1
+
+
+def select_home_highlight_item(
+    items: list[UpdateFeedItem],
+    now: datetime | None = None,
+) -> UpdateFeedItem | None:
+    if not items:
+        return None
+    today = _seoul_date(now or datetime.now(UTC))
+    todays_items = [item for item in items if _seoul_date(item.published_at) == today]
+    candidates = todays_items or items
+    return max(candidates, key=lambda item: (_view_count(item.view_count), _published_timestamp(item)))
 
 
 def _normalize_match_text(value: str) -> str:

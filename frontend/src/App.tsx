@@ -772,13 +772,19 @@ function HomeHero({
         </div>
       </div>
       {isYoutube ? (
-        <YoutubeAppLink
-          url={item.url}
+        <a
           className="heroCta"
-          label={ctaLabel}
-          panel="home"
-          metadata={analyticsMetadata}
-        />
+          href={item.url}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(event) => {
+            event.stopPropagation()
+            trackHeroOpen()
+          }}
+        >
+          <PlayCircle size={16} />
+          <span>{ctaLabel}</span>
+        </a>
       ) : isExternal ? (
         <a
           className="heroCta"
@@ -902,7 +908,12 @@ function HomePanel({
   const feedItems = updates.data?.pages.flatMap((pageData) => pageData.items) ?? []
   const naverAvailable = updates.data?.pages.every((pageData) => pageData.naver_available) ?? true
   const showHero = source === 'all' && !member && !keyword && !feedQuery.trim()
-  const heroItem = showHero ? selectHomeHeroItem(feedItems) : null
+  const highlight = useQuery({
+    queryKey: ['updates-highlight', 1],
+    queryFn: () => api<UpdateFeedItem | null>('/artists/1/updates/highlight'),
+    enabled: showHero,
+  })
+  const heroItem = showHero ? highlight.data ?? selectHomeHeroItem(feedItems) : null
   const homeStyle = {
     '--accent': member ? memberColor(member, theme) : '',
     '--accent-on': member ? memberOn(member, theme) : '',

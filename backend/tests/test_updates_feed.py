@@ -1,4 +1,5 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from app.core.db import get_session_factory
 from app.models import (
@@ -139,6 +140,61 @@ def test_updates_feed_merges_recent_sources_and_marks_briefings(client):
     assert news["title"] == "RESCENE comeback article"
     assert news["url"] == "https://news.example.com/rescene"
     assert news["thumbnail_url"] == "https://thumb.example.com/news.jpg"
+
+
+def test_update_highlight_scans_beyond_first_updates_page(client):
+    seoul_today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+    base = datetime.combine(seoul_today, time(12), tzinfo=ZoneInfo("Asia/Seoul")).astimezone(UTC)
+
+    with get_session_factory()() as db:
+        source = YoutubeSource(
+            artist_id=1,
+            source_type="keyword_search",
+            source_value="highlight scan",
+            title="highlight scan",
+        )
+        db.add(source)
+        db.flush()
+        videos: list[YoutubeVideo] = []
+        for index in range(55):
+            videos.append(
+                YoutubeVideo(
+                    id=f"highlight-low-{index}",
+                    title=f"newer low view {index}",
+                    description="리센느",
+                    channel_title="RESCENE",
+                    published_at=base + timedelta(minutes=index + 1),
+                    thumbnail_url="",
+                    url=f"https://youtube.example.com/highlight-low-{index}",
+                    view_count=1,
+                    content_hash=f"highlight-low-{index}-hash",
+                )
+            )
+        high_video = YoutubeVideo(
+            id="highlight-high",
+            title="today highest view highlight",
+            description="리센느",
+            channel_title="RESCENE",
+            published_at=base,
+            thumbnail_url="",
+            url="https://youtube.example.com/highlight-high",
+            view_count=999_999,
+            content_hash="highlight-high-hash",
+        )
+        db.add_all([*videos, high_video])
+        db.flush()
+        db.add_all(
+            [YoutubeVideoSource(video_id=video.id, source_id=source.id) for video in [*videos, high_video]]
+        )
+        db.commit()
+
+    first_page = client.get("/artists/1/updates", params={"limit": 50})
+    highlight = client.get("/artists/1/updates/highlight")
+
+    assert first_page.status_code == 200, first_page.text
+    assert "youtube:highlight-high" not in {item["id"] for item in first_page.json()["items"]}
+    assert highlight.status_code == 200, highlight.text
+    assert highlight.json()["id"] == "youtube:highlight-high"
 
 
 def test_updates_feed_filters_by_member_keyword_and_source(client):

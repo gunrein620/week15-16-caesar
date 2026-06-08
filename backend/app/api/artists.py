@@ -25,6 +25,7 @@ from app.schemas import (
     ArtistRead,
     MemberCreate,
     MemberRead,
+    UpdateFeedItem,
     UpdateFeedResponse,
     YoutubeBackfillRequest,
     YoutubeBackfillResult,
@@ -34,7 +35,7 @@ from app.schemas import (
 )
 from app.services.quota import consume_ai_quota
 from app.services.external_updates import sync_external_updates
-from app.services.updates import get_artist_updates
+from app.services.updates import get_artist_updates, select_home_highlight_item
 from app.services.youtube import backfill_artist_videos, sync_artist_videos
 
 router = APIRouter(tags=["artists"])
@@ -125,6 +126,18 @@ def list_updates(
         limit=min(max(limit, 1), 50),
         cursor=cursor,
     )
+
+
+@router.get("/artists/{artist_id}/updates/highlight", response_model=UpdateFeedItem | None)
+@limiter.limit("60/minute")
+def get_update_highlight(
+    request: Request,
+    artist_id: int,
+    db: Annotated[Session, Depends(get_db)],
+) -> UpdateFeedItem | None:
+    _require_artist(db, artist_id)
+    response = get_artist_updates(db, artist_id, limit=600)
+    return select_home_highlight_item(response.items)
 
 
 @router.post("/artists/{artist_id}/sync-updates")
