@@ -88,6 +88,7 @@ import {
   type ParsedBriefingContent,
 } from './briefingContent'
 import { buildFeedFooterParts, buildFeedMetaParts } from './feedMeta'
+import { selectHomeHeroItem } from './homeHero'
 import { sortYoutubeVideos, type VideoSort } from './videoSorting'
 import { youtubeAppUrl } from './youtubeLinks'
 import { buildYoutubeSourcePayload } from './youtubeSourceForm'
@@ -825,10 +826,7 @@ function HomePanel({
   const feedItems = updates.data?.pages.flatMap((pageData) => pageData.items) ?? []
   const naverAvailable = updates.data?.pages.every((pageData) => pageData.naver_available) ?? true
   const showHero = source === 'all' && !member && !keyword && !feedQuery.trim()
-  const heroItem =
-    showHero && feedItems.length
-      ? feedItems.reduce((best, item) => ((item.view_count ?? -1) > (best.view_count ?? -1) ? item : best), feedItems[0])
-      : null
+  const heroItem = showHero ? selectHomeHeroItem(feedItems) : null
   const homeStyle = {
     '--accent': member ? memberColor(member, theme) : '',
     '--accent-on': member ? memberOn(member, theme) : '',
