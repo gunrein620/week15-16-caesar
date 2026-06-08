@@ -11,6 +11,8 @@ class UserRead(BaseModel):
     email: str
     display_name: str
     role: str
+    email_verified_at: datetime | None = None
+    active_session_count: int | None = None
 
 
 class AdminUserCreate(BaseModel):
@@ -42,6 +44,21 @@ class AuthToken(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserRead
+
+
+class EmailVerificationRequest(BaseModel):
+    token: str = Field(min_length=16, max_length=300)
+
+
+class UserSessionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    provider: str
+    expires_at: datetime
+    revoked_at: datetime | None
+    last_used_at: datetime | None
+    created_at: datetime
 
 
 class ArtistRead(BaseModel):

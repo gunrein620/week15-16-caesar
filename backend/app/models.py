@@ -55,6 +55,9 @@ class User(Base, TimestampMixin):
     hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     display_name: Mapped[str] = mapped_column(String(80), nullable=False)
     role: Mapped[str] = mapped_column(String(20), default="user", nullable=False)
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     posts: Mapped[list["Post"]] = relationship(back_populates="author")
     comments: Mapped[list["Comment"]] = relationship(back_populates="author")
@@ -64,6 +67,7 @@ class User(Base, TimestampMixin):
     auth_identities: Mapped[list["AuthIdentity"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    sessions: Mapped[list["UserSession"]] = relationship(back_populates="user")
 
 
 class AuthIdentity(Base, TimestampMixin):
@@ -93,6 +97,47 @@ class AuthLoginAttempt(Base, TimestampMixin):
     window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+    __table_args__ = (
+        UniqueConstraint("refresh_token_hash", name="uq_user_session_refresh_hash"),
+        UniqueConstraint("jti", name="uq_user_session_jti"),
+        CheckConstraint("length(trim(refresh_token_hash)) > 0", name="ck_user_session_refresh_hash"),
+        CheckConstraint("length(trim(jti)) > 0", name="ck_user_session_jti"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    refresh_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    jti: Mapped[str] = mapped_column(String(80), nullable=False)
+    provider: Mapped[str] = mapped_column(String(40), default="password", nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    user: Mapped[User | None] = relationship(back_populates="sessions")
+
+
+class EmailVerificationToken(Base):
+    __tablename__ = "email_verification_tokens"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_email_verification_token_hash"),
+        CheckConstraint("length(trim(token_hash)) > 0", name="ck_email_verification_token_hash"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class Artist(Base, TimestampMixin):

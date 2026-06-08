@@ -1,0 +1,178 @@
+from datetime import UTC, datetime, timedelta
+
+from app.core.db import get_session_factory
+from app.models import AuthIdentity, EmailVerificationToken, User, UserSession
+from tests.conftest import login
+
+
+def test_login_sets_refresh_cookie_and_refresh_rotates_session(client):
+    login_response = client.post(
+        "/auth/login", json={"email": "admin@example.com", "password": "admin-password"}
+    )
+    first_token = login_response.json()["access_token"]
+
+    refresh_response = client.post("/auth/refresh")
+
+    assert login_response.status_code == 200, login_response.text
+    assert "refresh_token=" in login_response.headers["set-cookie"]
+    assert refresh_response.status_code == 200, refresh_response.text
+    assert refresh_response.json()["access_token"] != first_token
+    with get_session_factory()() as db:
+        sessions = db.query(UserSession).all()
+        assert len(sessions) == 1
+        assert sessions[0].last_used_at is not None
+        assert sessions[0].revoked_at is None
+
+
+def test_logout_revokes_refresh_session_and_clears_cookie(client):
+    client.post("/auth/login", json={"email": "admin@example.com", "password": "admin-password"})
+
+    logout_response = client.post("/auth/logout")
+    refresh_response = client.post("/auth/refresh")
+
+    assert logout_response.status_code == 204
+    assert "Max-Age=0" in logout_response.headers["set-cookie"]
+    assert refresh_response.status_code == 401
+    with get_session_factory()() as db:
+        assert db.query(UserSession).one().revoked_at is not None
+
+
+def test_unverified_email_user_cannot_write_save_or_use_ai(client):
+    signup_response = client.post(
+        "/auth/signup",
+        json={"email": "unverified@example.com", "password": "password123", "display_name": "Unverified"},
+    )
+    headers = {"Authorization": f"Bearer {signup_response.json()['access_token']}"}
+
+    post = client.post("/posts", json={"title": "blocked", "content": "blocked"}, headers=headers)
+    save = client.post(
+        "/saved-items",
+        json={"item_type": "youtube", "item_id": "x", "title": "x"},
+        headers=headers,
+    )
+    ai = client.post("/ai/qa", json={"question": "리센느", "artist_id": 1}, headers=headers)
+
+    assert signup_response.status_code == 201, signup_response.text
+    assert signup_response.json()["user"]["email_verified_at"] is None
+    assert post.status_code == 403
+    assert save.status_code == 403
+    assert ai.status_code == 403
+
+
+def test_email_verification_token_is_hashed_single_use_and_verifies_user(client, monkeypatch):
+    sent_tokens: list[str] = []
+    monkeypatch.setattr(
+        "app.api.auth.send_verification_email",
+        lambda email, token: sent_tokens.append(token),
+    )
+    signup_response = client.post(
+        "/auth/signup",
+        json={"email": "verify@example.com", "password": "password123", "display_name": "Verify"},
+    )
+    headers = {"Authorization": f"Bearer {signup_response.json()['access_token']}"}
+
+    send_response = client.post("/auth/email/verification", headers=headers)
+    raw_token = sent_tokens[-1]
+    verify_response = client.post("/auth/email/verify", json={"token": raw_token}, headers=headers)
+    second_response = client.post("/auth/email/verify", json={"token": raw_token}, headers=headers)
+
+    assert send_response.status_code == 202
+    assert raw_token
+    with get_session_factory()() as db:
+        stored = db.query(EmailVerificationToken).one()
+        assert stored.token_hash != raw_token
+        user = db.query(User).filter(User.email == "verify@example.com").one()
+        assert user.email_verified_at is not None
+    assert verify_response.status_code == 200, verify_response.text
+    assert verify_response.json()["email_verified_at"] is not None
+    assert second_response.status_code == 400
+
+
+def test_admin_user_delete_revokes_user_sessions(client):
+    admin_token = login(client, "admin@example.com", "admin-password")
+    created = client.post(
+        "/admin/users",
+        json={
+            "email": "session-delete@example.com",
+            "password": "password123",
+            "display_name": "Session Delete",
+            "role": "user",
+        },
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    client.post("/auth/login", json={"email": "session-delete@example.com", "password": "password123"})
+    user_id = created.json()["id"]
+
+    deleted = client.delete(f"/admin/users/{user_id}", headers={"Authorization": f"Bearer {admin_token}"})
+
+    assert deleted.status_code == 204, deleted.text
+    with get_session_factory()() as db:
+        deleted_user_sessions = db.query(UserSession).filter(UserSession.provider == "password").all()
+        assert any(session.revoked_at is not None for session in deleted_user_sessions)
+
+
+def test_admin_can_revoke_user_sessions_without_deleting_user(client):
+    admin_token = login(client, "admin@example.com", "admin-password")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    created = client.post(
+        "/admin/users",
+        json={
+            "email": "revoke-session@example.com",
+            "password": "password123",
+            "display_name": "Revoke Session",
+            "role": "user",
+        },
+        headers=admin_headers,
+    )
+    client.post("/auth/login", json={"email": "revoke-session@example.com", "password": "password123"})
+    user_id = created.json()["id"]
+
+    response = client.delete(f"/admin/users/{user_id}/sessions", headers=admin_headers)
+    listed = client.get("/admin/users", headers=admin_headers)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["revoked"] == 1
+    listed_user = next(item for item in listed.json() if item["id"] == user_id)
+    assert listed_user["active_session_count"] == 0
+
+
+def test_oauth_callback_creates_and_reuses_identity(client, monkeypatch):
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "google-client")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "google-secret")
+    monkeypatch.setenv("OAUTH_REDIRECT_BASE_URL", "https://backend.example.com")
+    from app.core.config import reset_settings_cache
+
+    reset_settings_cache()
+    monkeypatch.setattr(
+        "app.api.auth.exchange_oauth_code",
+        lambda provider, code, redirect_uri: {
+            "provider_subject": "google-123",
+            "email": "google@example.com",
+            "email_verified": True,
+            "display_name": "Google User",
+        },
+    )
+    state = client.get("/auth/oauth/google/start", follow_redirects=False).headers["location"].split("state=")[1].split("&")[0]
+
+    first = client.get(f"/auth/oauth/google/callback?code=ok&state={state}", follow_redirects=False)
+    second_state = client.get("/auth/oauth/google/start", follow_redirects=False).headers["location"].split("state=")[1].split("&")[0]
+    second = client.get(f"/auth/oauth/google/callback?code=ok&state={second_state}", follow_redirects=False)
+
+    reset_settings_cache()
+    assert first.status_code == 307, first.text
+    assert second.status_code == 307, second.text
+    with get_session_factory()() as db:
+        assert db.query(User).filter(User.email == "google@example.com").count() == 1
+        assert db.query(AuthIdentity).filter(AuthIdentity.provider == "google").count() == 1
+
+
+def test_expired_refresh_token_is_rejected(client):
+    client.post("/auth/login", json={"email": "admin@example.com", "password": "admin-password"})
+    with get_session_factory()() as db:
+        session = db.query(UserSession).one()
+        session.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+        db.commit()
+
+    response = client.post("/auth/refresh")
+
+    assert response.status_code == 401

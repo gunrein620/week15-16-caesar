@@ -48,6 +48,7 @@ Required backend variables:
 
 - `DATABASE_URL`
 - `JWT_SECRET_KEY`
+- `REFRESH_TOKEN_EXPIRE_DAYS`
 - `LOGIN_LOCKOUT_MAX_ATTEMPTS`
 - `LOGIN_LOCKOUT_WINDOW_MINUTES`
 - `LOGIN_LOCKOUT_MINUTES`
@@ -58,6 +59,13 @@ Required backend variables:
 - `YOUTUBE_API_KEY`
 - `NAVER_CLIENT_ID`
 - `NAVER_CLIENT_SECRET`
+- `RESEND_API_KEY`
+- `EMAIL_FROM`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `KAKAO_CLIENT_ID`
+- `KAKAO_CLIENT_SECRET`
+- `OAUTH_REDIRECT_BASE_URL`
 - `AI_DAILY_USER_LIMIT`
 - `AI_DAILY_GLOBAL_LIMIT`
 - `PUBLIC_SIGNUP_ENABLED`
@@ -99,8 +107,10 @@ Beta constraints:
 - Keep `/artists/{id}/sync`, YouTube source CRUD, and `/ai/briefing/*` admin-only during beta.
 - Public signup defaults to `PUBLIC_SIGNUP_ENABLED`; admins can toggle it at runtime from the app.
 - Repeated failed login attempts are locked by email/IP for the configured lockout window.
+- Access tokens are short-lived and refresh sessions are stored in HttpOnly cookies. Production/preview uses `SameSite=None; Secure` because the Vercel frontend and Railway backend are cross-site.
+- Email/password signup requires email verification before write, save, comment, and AI features. Existing users are marked verified during migration to avoid breaking beta access.
 - Public beta collects anonymous usage events for service improvement. Raw IP, raw user-agent, emails, tokens, API keys, and search result bodies are not stored in analytics events.
-- Social login is not wired to a provider yet, but the DB now supports passwordless users linked through `auth_identities(provider, provider_subject)`.
+- Social login supports Google/Kakao OAuth when the provider client env vars are configured.
 - Infra cost hard stop uses admin-managed monthly estimates. It blocks public API traffic with 503 when the elapsed monthly estimate exceeds the budget, while keeping login and admin recovery endpoints open.
 - Actual Railway scale-to-zero is a separate operational action. Use `railway scale --service backend sfo=0` only when you intentionally want to take the backend offline.
 

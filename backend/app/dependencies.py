@@ -41,3 +41,12 @@ def require_admin(user: Annotated[User, Depends(get_current_user)]) -> User:
     if user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     return user
+
+
+def require_verified_user(user: Annotated[User, Depends(get_current_user)]) -> User:
+    if user.role == "admin" or user.email_verified_at is not None:
+        return user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Email verification required",
+    )

@@ -13,7 +13,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://caesar:caesar@localhost:5432/caesar"
     jwt_secret_key: str = "change-me"
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60 * 24 * 7
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 14
     login_lockout_max_attempts: int = 5
     login_lockout_window_minutes: int = 15
     login_lockout_minutes: int = 15
@@ -26,6 +27,13 @@ class Settings(BaseSettings):
     youtube_api_key: str | None = None
     naver_client_id: str | None = None
     naver_client_secret: str | None = None
+    resend_api_key: str | None = None
+    email_from: str = "RESCENE <noreply@example.com>"
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    kakao_client_id: str | None = None
+    kakao_client_secret: str | None = None
+    oauth_redirect_base_url: str | None = None
     ai_daily_user_limit: int = 20
     ai_daily_global_limit: int = 200
     public_signup_enabled: bool = True

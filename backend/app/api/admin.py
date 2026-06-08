@@ -5,7 +5,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.core.security import hash_password
+from app.core.security import hash_password, utc_now
 from app.dependencies import require_admin
 from app.models import (
     AgentRun,
@@ -21,6 +21,7 @@ from app.models import (
     RagEmbeddingJob,
     SavedItem,
     User,
+    UserSession,
 )
 from app.schemas import (
     AdminUserCreate,
@@ -47,6 +48,7 @@ from app.services.app_settings import (
     set_sync_settings,
 )
 from app.services.infra_budget import get_infra_cost_snapshot, update_infra_cost_settings
+from app.services.auth_sessions import revoke_user_sessions
 from app.services.rag_admin import (
     cleanup_rag_chunks,
     create_rag_embedding_job,
@@ -87,6 +89,7 @@ def _delete_user_owned_data(db: Session, user_id: int) -> None:
     db.execute(delete(SavedItem).where(SavedItem.user_id == user_id))
     db.execute(delete(AuthIdentity).where(AuthIdentity.user_id == user_id))
     db.execute(delete(AiUsageCounter).where(AiUsageCounter.scope == "user", AiUsageCounter.scope_id == str(user_id)))
+    revoke_user_sessions(db, user_id)
     db.query(RagEmbeddingJob).filter(RagEmbeddingJob.user_id == user_id).update(
         {RagEmbeddingJob.user_id: None}, synchronize_session=False
     )
@@ -103,8 +106,26 @@ def _admin_count(db: Session) -> int:
 def list_users(
     _: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
-) -> list[User]:
-    return db.scalars(select(User).order_by(User.id.asc())).all()
+) -> list[UserRead]:
+    users = db.scalars(select(User).order_by(User.id.asc())).all()
+    counts = dict(
+        db.execute(
+            select(UserSession.user_id, func.count(UserSession.id))
+            .where(UserSession.revoked_at.is_(None), UserSession.user_id.is_not(None))
+            .group_by(UserSession.user_id)
+        ).all()
+    )
+    return [
+        UserRead(
+            id=user.id,
+            email=user.email,
+            display_name=user.display_name,
+            role=user.role,
+            email_verified_at=user.email_verified_at,
+            active_session_count=int(counts.get(user.id, 0)),
+        )
+        for user in users
+    ]
 
 
 @router.post("/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)
@@ -121,6 +142,7 @@ def create_user(
         display_name=payload.display_name.strip(),
         hashed_password=hash_password(payload.password),
         role=_require_role(payload.role),
+        email_verified_at=utc_now(),
     )
     db.add(user)
     db.commit()
@@ -148,6 +170,7 @@ def update_user(
         user.display_name = payload.display_name.strip()
     if payload.password is not None:
         user.hashed_password = hash_password(payload.password)
+        revoke_user_sessions(db, user.id)
     if payload.role is not None:
         role = _require_role(payload.role)
         if user.id == admin.id and role != "admin":
@@ -176,6 +199,20 @@ def delete_user(
     _delete_user_owned_data(db, user.id)
     db.delete(user)
     db.commit()
+
+
+@router.delete("/users/{user_id}/sessions")
+def revoke_user_sessions_endpoint(
+    user_id: int,
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, int]:
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    revoked = revoke_user_sessions(db, user_id)
+    db.commit()
+    return {"revoked": revoked}
 
 
 @router.get("/settings/signup", response_model=SignupSettingsRead)

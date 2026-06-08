@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.rate_limit import limiter
-from app.dependencies import get_current_user
+from app.dependencies import require_verified_user
 from app.models import Post, User
 from app.schemas import QaRequest, QaResponse, SimilarRequest, PostRead
 from app.api.posts import _post_read, _post_query
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 def qa(
     request: Request,
     payload: QaRequest,
-    user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(require_verified_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> QaResponse:
     consume_ai_quota(db, user, "qa")
@@ -40,7 +40,7 @@ def qa(
 def similar(
     request: Request,
     payload: SimilarRequest,
-    user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(require_verified_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[PostRead]:
     consume_ai_quota(db, user, "similar")

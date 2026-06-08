@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.dependencies import get_current_user
+from app.dependencies import require_verified_user
 from app.models import SavedItem, User
 from app.schemas import SavedItemCreate, SavedItemRead
 
@@ -23,7 +23,7 @@ def _item_key(payload: SavedItemCreate) -> str:
 def save_item(
     payload: SavedItemCreate,
     response: Response,
-    user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(require_verified_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> SavedItem:
     item_type = payload.item_type.strip()
@@ -55,7 +55,7 @@ def save_item(
 
 @router.get("/saved-items", response_model=list[SavedItemRead])
 def list_saved_items(
-    user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(require_verified_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[SavedItem]:
     return db.scalars(
@@ -68,7 +68,7 @@ def list_saved_items(
 @router.delete("/saved-items/{saved_item_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_saved_item(
     saved_item_id: int,
-    user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(require_verified_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
     item = db.get(SavedItem, saved_item_id)

@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.db import get_db
-from app.dependencies import get_current_user
+from app.dependencies import require_verified_user
 from app.models import Artist, Comment, Post, PostTag, RagChunk, Tag, User
 from app.schemas import CommentCreate, CommentRead, PostCreate, PostList, PostRead, PostUpdate, TagRead
 from app.services.embeds import build_post_embeds
@@ -94,7 +94,7 @@ def list_posts(
 @router.post("/posts", response_model=PostRead, status_code=status.HTTP_201_CREATED)
 def create_post(
     payload: PostCreate,
-    user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(require_verified_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> PostRead:
     artist = db.get(Artist, payload.artist_id)
@@ -132,7 +132,7 @@ def get_post(post_id: int, db: Annotated[Session, Depends(get_db)]) -> PostRead:
 def update_post(
     post_id: int,
     payload: PostUpdate,
-    user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(require_verified_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> PostRead:
     post = db.scalars(_post_query().where(Post.id == post_id)).unique().first()
@@ -162,7 +162,7 @@ def update_post(
 @router.delete("/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_post(
     post_id: int,
-    user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(require_verified_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
     post = db.get(Post, post_id)
@@ -189,7 +189,7 @@ def list_comments(post_id: int, db: Annotated[Session, Depends(get_db)]) -> list
 def create_comment(
     post_id: int,
     payload: CommentCreate,
-    user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(require_verified_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> Comment:
     if db.get(Post, post_id) is None:

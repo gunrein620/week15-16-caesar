@@ -55,9 +55,16 @@ import {
   YoutubeSource,
   YoutubeSourceType,
   YoutubeVideo,
+  API_BASE,
   api,
 } from './api'
 import { shouldTrackPanelView, trackAnalyticsEvent } from './analytics'
+import {
+  getInitialAccessToken,
+  oauthStartUrl,
+  shouldShowVerificationPrompt,
+  storeAccessToken,
+} from './authSession'
 import {
   MOBILE_BOTTOM_TAB_PANELS,
   nextBoardMode,
@@ -107,10 +114,9 @@ const youtubeSourceOptions: { value: YoutubeSourceType; label: string; placehold
 ]
 
 function useStoredToken() {
-  const [token, setToken] = useState(() => localStorage.getItem('caesar_token'))
+  const [token, setToken] = useState(() => getInitialAccessToken())
   const saveToken = (next: string | null) => {
-    if (next) localStorage.setItem('caesar_token', next)
-    else localStorage.removeItem('caesar_token')
+    storeAccessToken(next)
     setToken(next)
   }
   return [token, saveToken] as const
@@ -250,6 +256,9 @@ export default function App() {
       queryClient.setQueryData(['admin-signup-settings', token], data)
     },
   })
+  const resendVerification = useMutation({
+    mutationFn: () => api<{ status: string }>('/auth/email/verification', { method: 'POST' }, token),
+  })
 
   const listedSelectedPost = useMemo(
     () => posts.data?.items.find((post) => post.id === selectedPostId) ?? null,
@@ -263,6 +272,25 @@ export default function App() {
   const selectedPost = listedSelectedPost ?? selectedPostById.data ?? posts.data?.items[0] ?? null
 
   useEffect(() => {
+    const verifyToken = new URLSearchParams(window.location.search).get('verify_email')
+    if (verifyToken) {
+      api<User>('/auth/email/verify', {
+        method: 'POST',
+        body: JSON.stringify({ token: verifyToken }),
+      })
+        .then(() => {
+          window.history.replaceState({}, '', window.location.pathname)
+          void queryClient.invalidateQueries({ queryKey: ['me'] })
+        })
+        .catch(() => undefined)
+    }
+    if (token) return
+    api<AuthResponse>('/auth/refresh', { method: 'POST' })
+      .then((data) => setToken(data.access_token))
+      .catch(() => undefined)
+  }, [])
+
+  useEffect(() => {
     trackAnalyticsEvent({ eventName: 'app_open', panel: 'home', token })
   }, [])
 
@@ -272,11 +300,23 @@ export default function App() {
   }, [panel, token])
 
   const logout = () => {
+    void api<void>('/auth/logout', { method: 'POST' }, token).catch(() => undefined)
     setToken(null)
     void queryClient.invalidateQueries()
   }
 
   const requireAuth = () => setAuthOpen(true)
+  const requireVerified = () => {
+    if (!me.data) {
+      requireAuth()
+      return false
+    }
+    if (shouldShowVerificationPrompt(me.data)) {
+      resendVerification.mutate()
+      return false
+    }
+    return true
+  }
   const openPanel = (nextPanel: AppPanel) => {
     setPanel(nextPanel)
     if (nextPanel === 'board') setBoardMode('list')
@@ -409,6 +449,7 @@ export default function App() {
             }}
             onPageChange={setPage}
             onWrite={() => {
+              if (!requireVerified()) return
               setPanel('board')
               setBoardMode('write')
             }}
@@ -418,11 +459,24 @@ export default function App() {
         )}
 
         <section className="mainPane">
+          {shouldShowVerificationPrompt(me.data) && (
+            <div className="verifyBanner">
+              <span>이메일 인증 후 글쓰기, 댓글, 저장, AI 검색을 사용할 수 있습니다.</span>
+              <button
+                className="secondary"
+                onClick={() => resendVerification.mutate()}
+                disabled={resendVerification.isPending}
+              >
+                인증 메일 다시 보내기
+              </button>
+            </div>
+          )}
           {panel === 'home' && (
             <HomePanel
               token={token}
               user={me.data}
               onRequireAuth={requireAuth}
+              onRequireVerified={requireVerified}
               onOpenPost={openPost}
             />
           )}
@@ -442,6 +496,7 @@ export default function App() {
               tagFilter={tagFilter}
               tags={tags.data ?? []}
               onRequireAuth={requireAuth}
+              onRequireVerified={requireVerified}
               onSearchChange={(value) => {
                 setSearch(value)
                 setPage(1)
@@ -478,6 +533,7 @@ export default function App() {
               token={token}
               selectedPost={selectedPost}
               onRequireAuth={requireAuth}
+              onRequireVerified={requireVerified}
               onOpenPost={openPost}
             />
           )}
@@ -534,11 +590,13 @@ function HomePanel({
   token,
   user,
   onRequireAuth,
+  onRequireVerified,
   onOpenPost,
 }: {
   token: string | null
   user?: User
   onRequireAuth: () => void
+  onRequireVerified: () => boolean
   onOpenPost: (postId: number) => void
 }) {
   const queryClient = useQueryClient()
@@ -743,6 +801,7 @@ function HomePanel({
                   onRequireAuth()
                   return
                 }
+                if (!onRequireVerified()) return
                 saveItem.mutate(item)
               }}
               savePending={saveItem.isPending}
@@ -954,6 +1013,24 @@ function AuthPanel({
   }
   return (
     <form className="authPanel" onSubmit={submit}>
+      <button
+        type="button"
+        className="secondary"
+        onClick={() => {
+          window.location.href = oauthStartUrl('google', API_BASE)
+        }}
+      >
+        Google로 계속하기
+      </button>
+      <button
+        type="button"
+        className="secondary"
+        onClick={() => {
+          window.location.href = oauthStartUrl('kakao', API_BASE)
+        }}
+      >
+        Kakao로 계속하기
+      </button>
       <div className="segmented">
         <button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>
           Login
@@ -1174,6 +1251,7 @@ function BoardPanel({
   tagFilter,
   tags: tagOptions,
   onRequireAuth,
+  onRequireVerified,
   onSearchChange,
   onTagChange,
   onSelectPost,
@@ -1200,6 +1278,7 @@ function BoardPanel({
   tagFilter: string
   tags: Tag[]
   onRequireAuth: () => void
+  onRequireVerified: () => boolean
   onSearchChange: (value: string) => void
   onTagChange: (value: string) => void
   onSelectPost: (id: number) => void
@@ -1329,7 +1408,10 @@ function BoardPanel({
         onTagChange={onTagChange}
         onSelect={onSelectPost}
         onPageChange={onPageChange}
-        onWrite={onStartWrite}
+        onWrite={() => {
+          if (!onRequireVerified()) return
+          onStartWrite()
+        }}
         onRequireAuth={onRequireAuth}
       />
     )
@@ -1353,6 +1435,7 @@ function BoardPanel({
         className="composer boardEditor"
         onSubmit={(event) => {
           event.preventDefault()
+          if (!onRequireVerified()) return
           createPost.mutate()
         }}
       >
@@ -1507,6 +1590,7 @@ function BoardPanel({
           className="inlineForm"
           onSubmit={(event) => {
             event.preventDefault()
+            if (!onRequireVerified()) return
             createComment.mutate()
           }}
         >
@@ -1636,11 +1720,13 @@ function RagPanel({
   token,
   selectedPost,
   onRequireAuth,
+  onRequireVerified,
   onOpenPost,
 }: {
   token: string | null
   selectedPost: Post | null
   onRequireAuth: () => void
+  onRequireVerified: () => boolean
   onOpenPost: (postId: number) => void
 }) {
   const [question, setQuestion] = useState('')
@@ -1688,6 +1774,7 @@ function RagPanel({
             onRequireAuth()
             return
           }
+          if (!onRequireVerified()) return
           setQaResult(null)
           trackAnalyticsEvent({
             eventName: 'archive_search_submit',
@@ -1755,6 +1842,7 @@ function RagPanel({
             onRequireAuth()
             return
           }
+          if (!onRequireVerified()) return
           similar.mutate()
         }}
       >
@@ -2404,6 +2492,12 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
       void queryClient.invalidateQueries({ queryKey: ['admin-users', token] })
     },
   })
+  const revokeUserSessions = useMutation({
+    mutationFn: (userId: number) => api<{ revoked: number }>(`/admin/users/${userId}/sessions`, { method: 'DELETE' }, token),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin-users', token] })
+    },
+  })
   const update = useMutation({
     mutationFn: () =>
       api<InfraCostSettings>(
@@ -2659,6 +2753,8 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
               <strong>{item.role}</strong>
               {item.email}
               <em>{item.display_name}</em>
+              <em>{item.email_verified_at ? 'verified' : 'unverified'}</em>
+              <em>{formatNumber(item.active_session_count ?? 0)} sessions</em>
               <button
                 className="chipButton"
                 onClick={() => {
@@ -2674,6 +2770,14 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
               </button>
               <button
                 className="chipButton"
+                onClick={() => revokeUserSessions.mutate(item.id)}
+                disabled={revokeUserSessions.isPending || (item.active_session_count ?? 0) === 0}
+                title="세션 모두 만료"
+              >
+                <LogOut size={13} />
+              </button>
+              <button
+                className="chipButton"
                 onClick={() => deleteUser.mutate(item.id)}
                 disabled={deleteUser.isPending || item.id === user.id}
                 title={item.id === user.id ? '본인 계정은 삭제할 수 없음' : '계정 삭제'}
@@ -2686,6 +2790,7 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
         {adminUsers.error && <p className="error">{adminUsers.error.message}</p>}
         {saveUser.error && <p className="error">{saveUser.error.message}</p>}
         {deleteUser.error && <p className="error">{deleteUser.error.message}</p>}
+        {revokeUserSessions.error && <p className="error">{revokeUserSessions.error.message}</p>}
       </section>
       <section className="adminBudget">
         <div className="postHead">

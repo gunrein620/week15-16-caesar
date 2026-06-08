@@ -2,7 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.security import hash_password
+from app.core.security import hash_password, utc_now
 from app.models import Artist, ArtistArchiveTerm, ArtistKeyword, Member, Post, Tag, User
 from app.services.rag import refresh_post_chunks
 
@@ -59,12 +59,15 @@ def ensure_admin_user(db: Session) -> User:
             display_name="Admin",
             hashed_password=hash_password(settings.seed_admin_password),
             role="admin",
+            email_verified_at=utc_now(),
         )
         db.add(user)
         db.flush()
     else:
         user.role = "admin"
         user.hashed_password = hash_password(settings.seed_admin_password)
+        if user.email_verified_at is None:
+            user.email_verified_at = utc_now()
     return user
 
 

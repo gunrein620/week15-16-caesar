@@ -136,6 +136,19 @@ h2 {
   gap: 4px;
 }
 
+.verifyBanner {
+  align-items: center;
+  background: #fff8df;
+  border: 1px solid #ead48d;
+  border-radius: 8px;
+  color: #5b4a14;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding: 12px;
+}
+
 .tabs {
   background: #ffffff;
   border-bottom: 1px solid #d9ded5;

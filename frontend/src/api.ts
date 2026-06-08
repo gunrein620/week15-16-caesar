@@ -5,6 +5,8 @@ export type User = {
   email: string
   display_name: string
   role: 'user' | 'admin'
+  email_verified_at: string | null
+  active_session_count?: number | null
 }
 
 export type Artist = {
@@ -344,7 +346,7 @@ export async function api<T>(
   const headers = new Headers(options.headers)
   headers.set('Content-Type', 'application/json')
   if (token) headers.set('Authorization', `Bearer ${token}`)
-  const response = await fetch(`${API_BASE}${path}`, { ...options, headers })
+  const response = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: 'include' })
   if (!response.ok) {
     const body = await response.json().catch(() => ({ detail: response.statusText }))
     throw new Error(typeof body.detail === 'string' ? body.detail : response.statusText)

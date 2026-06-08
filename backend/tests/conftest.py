@@ -39,6 +39,14 @@ def signup(client: TestClient, email: str = "user@example.com") -> str:
         json={"email": email, "password": "password123", "display_name": "User"},
     )
     assert response.status_code == 201, response.text
+    from app.core.db import get_session_factory
+    from app.core.security import utc_now
+    from app.models import User
+
+    with get_session_factory()() as db:
+        user = db.query(User).filter(User.email == email).one()
+        user.email_verified_at = utc_now()
+        db.commit()
     return response.json()["access_token"]
 
 
