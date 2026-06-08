@@ -43,6 +43,7 @@ def collect_analytics_events(
     return AnalyticsCollectResponse(accepted=len(events))
 
 
+@router.get("/admin/activity/summary", response_model=AnalyticsSummary)
 @router.get("/admin/analytics/summary", response_model=AnalyticsSummary)
 def get_admin_analytics_summary(
     _: Annotated[User, Depends(require_admin)],
@@ -52,6 +53,7 @@ def get_admin_analytics_summary(
     return analytics_summary(db, days)
 
 
+@router.get("/admin/activity/events", response_model=list[AnalyticsEventRead])
 @router.get("/admin/analytics/events", response_model=list[AnalyticsEventRead])
 def get_admin_analytics_events(
     _: Annotated[User, Depends(require_admin)],

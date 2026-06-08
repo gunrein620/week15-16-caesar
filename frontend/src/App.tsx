@@ -82,6 +82,7 @@ import {
   buildArchiveAnswerPreview,
   buildArchiveSourceDisplay,
 } from './archiveSearch'
+import { adminActivityEventsPath, adminActivitySummaryPath } from './adminAnalytics'
 import {
   parseBriefingContent,
   shouldUseBriefingContent,
@@ -2891,12 +2892,12 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
   const [analyticsDays, setAnalyticsDays] = useState<1 | 7 | 30>(7)
   const analyticsSummary = useQuery({
     queryKey: ['analytics-summary', token, analyticsDays],
-    queryFn: () => api<AnalyticsSummary>(`/admin/analytics/summary?days=${analyticsDays}`, {}, token),
+    queryFn: () => api<AnalyticsSummary>(adminActivitySummaryPath(analyticsDays), {}, token),
     enabled: Boolean(token && user?.role === 'admin'),
   })
   const analyticsEvents = useQuery({
     queryKey: ['analytics-events', token, analyticsDays],
-    queryFn: () => api<AnalyticsEvent[]>(`/admin/analytics/events?days=${analyticsDays}&limit=30`, {}, token),
+    queryFn: () => api<AnalyticsEvent[]>(adminActivityEventsPath(analyticsDays, 30), {}, token),
     enabled: Boolean(token && user?.role === 'admin'),
   })
   const [form, setForm] = useState<InfraCostSettings | null>(null)

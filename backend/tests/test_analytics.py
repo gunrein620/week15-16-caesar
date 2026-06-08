@@ -192,3 +192,18 @@ def test_admin_analytics_recent_events_and_cleanup(client):
     assert events.json()[0]["event_name"] == "panel_view"
     assert cleanup.status_code == 200, cleanup.text
     assert cleanup.json()["deleted"] == 1
+
+
+def test_admin_activity_alias_serves_recent_events_without_analytics_event_path(client):
+    admin_token = login(client, "admin@example.com", "admin-password")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    client.post(
+        "/analytics/events",
+        json={"event_name": "panel_view", "anonymous_session_id": "anon-alias", "path": "/", "panel": "home"},
+    )
+
+    response = client.get("/admin/activity/events?days=7&limit=5", headers=admin_headers)
+
+    assert response.status_code == 200, response.text
+    assert response.json()[0]["event_name"] == "panel_view"
