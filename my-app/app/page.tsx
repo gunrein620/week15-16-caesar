@@ -52,11 +52,37 @@ export default function Home() {
 
       <ul className="flex flex-col gap-4">
         {posts.map((post: any) => (
-          <li key={post.id} className="border p-4 rounded">
-            <h2 className="font-bold">{post.title}</h2>
-            <p>{post.content}</p>
-          </li>
-        ))}
+            <li key={post.id} className="border p-4 rounded">
+              <h2 className="font-bold">{post.title}</h2>
+              <p>{post.content}</p>
+              <div className="flex gap-2 mt-2">
+                <button
+                  className="text-sm text-blue-500"
+                  onClick={() => {
+                    const title = prompt("새 제목", post.title);
+                    const content = prompt("새 내용", post.content);
+                    if (!title || !content) return;
+                    fetch(`/api/posts/${post.id}`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ title, content }),
+                    }).then(() => window.location.reload());
+                  }}
+                >
+                  수정
+                </button>
+                <button
+                  className="text-sm text-red-500"
+                  onClick={() => {
+                    fetch(`/api/posts/${post.id}`, { method: "DELETE" })
+                      .then(() => window.location.reload());
+                  }}
+                >
+                  삭제
+                </button>
+              </div>
+            </li>
+          ))}
       </ul>
     </main>
   );
