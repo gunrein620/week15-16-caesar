@@ -7,10 +7,20 @@ from app.core.db import get_db
 from app.core.rate_limit import limiter
 from app.dependencies import require_verified_user
 from app.models import Post, User
-from app.schemas import QaRequest, QaResponse, SimilarRequest, PostRead
+from app.schemas import (
+    QaRequest,
+    QaResponse,
+    RagContextRequest,
+    RagContextResponse,
+    SavedSummaryRequest,
+    SimilarRequest,
+    PostRead,
+    WritingAssistRequest,
+)
 from app.api.posts import _post_read, _post_query
 from app.services.quota import consume_ai_quota
 from app.services.rag import answer_question, similar_posts
+from app.services.rag_context import build_rag_context, saved_summary_context
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -33,6 +43,61 @@ def qa(
         include_answer=payload.include_answer,
     )
     return QaResponse(answer=answer, sources=sources, has_more=has_more, next_offset=next_offset)
+
+
+@router.post("/context", response_model=RagContextResponse)
+@limiter.limit("20/day")
+def rag_context(
+    request: Request,
+    payload: RagContextRequest,
+    user: Annotated[User, Depends(require_verified_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> RagContextResponse:
+    consume_ai_quota(db, user, "rag_context")
+    if payload.saved_only or payload.mode == "saved_summary":
+        result = saved_summary_context(db, user=user, artist_id=payload.artist_id, limit=payload.limit)
+    else:
+        result = build_rag_context(
+            db,
+            artist_id=payload.artist_id,
+            query=payload.query,
+            mode=payload.mode,
+            limit=payload.limit,
+        )
+    return RagContextResponse(summary=result.summary, sources=result.sources, insert_text=result.insert_text)
+
+
+@router.post("/saved-summary", response_model=RagContextResponse)
+@limiter.limit("20/day")
+def saved_summary(
+    request: Request,
+    payload: SavedSummaryRequest,
+    user: Annotated[User, Depends(require_verified_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> RagContextResponse:
+    consume_ai_quota(db, user, "saved_summary")
+    result = saved_summary_context(db, user=user, artist_id=payload.artist_id, limit=payload.limit)
+    return RagContextResponse(summary=result.summary, sources=result.sources, insert_text=result.insert_text)
+
+
+@router.post("/writing-assist", response_model=RagContextResponse)
+@limiter.limit("20/day")
+def writing_assist(
+    request: Request,
+    payload: WritingAssistRequest,
+    user: Annotated[User, Depends(require_verified_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> RagContextResponse:
+    consume_ai_quota(db, user, "writing_assist")
+    query = " ".join([payload.category, payload.title, payload.content])
+    result = build_rag_context(
+        db,
+        artist_id=payload.artist_id,
+        query=query,
+        mode="writing_assist",
+        limit=payload.limit,
+    )
+    return RagContextResponse(summary=result.summary, sources=result.sources, insert_text=result.insert_text)
 
 
 @router.post("/similar", response_model=list[PostRead])

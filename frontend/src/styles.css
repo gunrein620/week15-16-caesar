@@ -2534,6 +2534,51 @@ textarea {
   margin-bottom: 0;
 }
 
+.ragContextPanel {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.ragContextHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ragContextHead h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.inlineActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.compactSourceCards {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.assistSource {
+  display: grid;
+  gap: 8px;
+}
+
+.assistSource > .secondary {
+  justify-self: start;
+}
+
+.savedSummaryPanel {
+  margin-bottom: 8px;
+}
+
 .compact {
   align-items: center;
   display: flex;

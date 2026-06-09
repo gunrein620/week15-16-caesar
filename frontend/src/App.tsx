@@ -45,6 +45,7 @@ import {
   PostList,
   QaResponse,
   QaSource,
+  RagContextResponse,
   RagCleanupResult,
   RagCoverage,
   RagEmbeddingJob,
@@ -88,6 +89,12 @@ import {
   buildArchiveAnswerPreview,
   buildArchiveSourceDisplay,
 } from './archiveSearch'
+import {
+  appendReferenceText,
+  buildWritingAssistQuery,
+  canSummarizeSavedItems,
+  shouldRequestWritingAssist,
+} from './ragContext'
 import { adminActivityEventsPath, adminActivitySummaryPath } from './adminAnalytics'
 import {
   parseBriefingContent,
@@ -1738,6 +1745,7 @@ function BoardPanel({
   const [editCategory, setEditCategory] = useState('자유')
   const [editContent, setEditContent] = useState('')
   const [editTags, setEditTags] = useState('')
+  const lastWritingAssistQuery = useRef('')
   useEffect(() => {
     setEditTitle(post?.title ?? '')
     setEditCategory(post?.category ?? '자유')
@@ -1828,6 +1836,34 @@ function BoardPanel({
       onChanged()
     },
   })
+  const writingAssist = useMutation({
+    mutationFn: () =>
+      api<RagContextResponse>(
+        '/ai/writing-assist',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            title,
+            content,
+            category,
+            artist_id: 1,
+            limit: 5,
+          }),
+        },
+        token,
+      ),
+  })
+  const writingAssistQuery = buildWritingAssistQuery(category, title, content)
+  const writingAssistReady = shouldRequestWritingAssist(writingAssistQuery)
+  useEffect(() => {
+    if (mode !== 'write' || !token || !user || !writingAssistReady) return
+    if (lastWritingAssistQuery.current === writingAssistQuery) return
+    const timer = window.setTimeout(() => {
+      lastWritingAssistQuery.current = writingAssistQuery
+      writingAssist.mutate()
+    }, 700)
+    return () => window.clearTimeout(timer)
+  }, [mode, token, user, writingAssistReady, writingAssistQuery])
   const shouldRenderBriefing = post ? shouldUseBriefingContent(post.category, post.content) : false
   const parsedBriefing = useMemo(
     () => (post && shouldRenderBriefing ? parseBriefingContent(post.content) : null),
@@ -1909,6 +1945,19 @@ function BoardPanel({
           placeholder="내용을 입력해주세요. 이미지 URL, YouTube URL, 외부 링크는 저장 후 카드로 표시됩니다."
         />
         <UrlPreviewNote content={content} />
+        <WritingAssistPanel
+          ready={writingAssistReady}
+          loading={writingAssist.isPending}
+          result={writingAssist.data ?? null}
+          error={writingAssist.error?.message ?? ''}
+          onRefresh={() => {
+            if (!onRequireVerified()) return
+            lastWritingAssistQuery.current = writingAssistQuery
+            writingAssist.mutate()
+          }}
+          onInsert={(source) => setContent((current) => appendReferenceText(current, source))}
+          onOpenPost={onSelectPost}
+        />
         <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="태그, 태그" />
         <div className="editorActionBar">
           <button type="button" className="secondary" onClick={onCancel}>
@@ -2434,6 +2483,56 @@ function RagPanel({
   )
 }
 
+function WritingAssistPanel({
+  ready,
+  loading,
+  result,
+  error,
+  onRefresh,
+  onInsert,
+  onOpenPost,
+}: {
+  ready: boolean
+  loading: boolean
+  result: RagContextResponse | null
+  error: string
+  onRefresh: () => void
+  onInsert: (source: QaSource) => void
+  onOpenPost: (postId: number) => void
+}) {
+  return (
+    <section className="ragContextPanel">
+      <div className="ragContextHead">
+        <div>
+          <p className="eyebrow">RAG Assist</p>
+          <h3>관련 자료</h3>
+        </div>
+        <button type="button" className="secondary" disabled={!ready || loading} onClick={onRefresh}>
+          <RefreshCw size={16} />
+          새로고침
+        </button>
+      </div>
+      {!ready && <p className="hint">제목이나 본문을 8자 이상 입력하면 관련 자료를 추천합니다.</p>}
+      {loading && <p className="muted">관련 자료를 찾는 중...</p>}
+      {error && <p className="error">{error}</p>}
+      {result?.summary && <p className="hint">{result.summary}</p>}
+      {result?.sources.length ? (
+        <div className="sourceCards compactSourceCards">
+          {result.sources.map((source, index) => (
+            <div className="assistSource" key={`${source.source_type}-${source.url}-${index}`}>
+              <SourceCard source={source} onOpenPost={onOpenPost} />
+              <button type="button" className="secondary" disabled={!source.url} onClick={() => onInsert(source)}>
+                <Save size={16} />
+                본문에 추가
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 function ArchiveAnswerBlock({ answer }: { answer: string }) {
   const preview = buildArchiveAnswerPreview(answer)
   return (
@@ -2849,6 +2948,17 @@ function SavedPanel({
     queryFn: () => api<SavedItem[]>('/saved-items', {}, token),
     enabled: Boolean(token && user),
   })
+  const savedSummary = useMutation({
+    mutationFn: () =>
+      api<RagContextResponse>(
+        '/ai/saved-summary',
+        {
+          method: 'POST',
+          body: JSON.stringify({ artist_id: 1, limit: 5 }),
+        },
+        token,
+      ),
+  })
   const remove = useMutation({
     mutationFn: (item: SavedItem) => api<void>(`/saved-items/${item.id}`, { method: 'DELETE' }, token),
     onMutate: async (item) => {
@@ -2897,6 +3007,51 @@ function SavedPanel({
       {savedItems.isLoading && <p className="muted">저장 항목을 불러오는 중...</p>}
       {savedItems.error && <p className="error">{savedItems.error.message}</p>}
       {removeError && <p className="error">{removeError}</p>}
+      <section className="ragContextPanel savedSummaryPanel">
+        <div className="ragContextHead">
+          <div>
+            <p className="eyebrow">Personal RAG</p>
+            <h3>저장한 자료 요약</h3>
+          </div>
+          <div className="inlineActions">
+            <button
+              type="button"
+              className="secondary"
+              disabled={!canSummarizeSavedItems(savedItems.data) || savedSummary.isPending}
+              onClick={() => savedSummary.mutate()}
+            >
+              <Send size={16} />
+              요약 생성
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={!canSummarizeSavedItems(savedItems.data) || savedSummary.isPending}
+              onClick={() => savedSummary.mutate()}
+            >
+              <Search size={16} />
+              관련 자료 더 찾기
+            </button>
+          </div>
+        </div>
+        {!canSummarizeSavedItems(savedItems.data) && (
+          <p className="hint">저장한 자료가 생기면 개인 요약과 관련 아카이브를 볼 수 있습니다.</p>
+        )}
+        {savedSummary.isPending && <p className="muted">저장한 자료를 요약하는 중...</p>}
+        {savedSummary.error && <p className="error">{savedSummary.error.message}</p>}
+        {savedSummary.data?.summary && <p className="hint">{savedSummary.data.summary}</p>}
+        {savedSummary.data?.sources.length ? (
+          <div className="sourceCards compactSourceCards">
+            {savedSummary.data.sources.map((source, index) => (
+              <SourceCard
+                key={`${source.source_type}-${source.url}-${index}`}
+                source={source}
+                onOpenPost={onOpenPost}
+              />
+            ))}
+          </div>
+        ) : null}
+      </section>
       <div className="feedList savedGrid">
         {savedItems.data?.map((item) => {
           const postId = postIdFromUrl(item.url)

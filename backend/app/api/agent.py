@@ -18,6 +18,7 @@ from app.schemas import AgentRunRead, BriefingPreviewResponse, PostRead
 from app.services.mcp_client import McpToolClient
 from app.services.quota import consume_ai_quota
 from app.services.rag import refresh_post_chunks
+from app.services.rag_context import build_rag_context, dedupe_sources
 from app.services.updates import get_artist_updates
 
 router = APIRouter(tags=["agent"])
@@ -87,6 +88,26 @@ def _source_card_from_update(item: Any) -> dict[str, Any]:
     }
 
 
+def _source_card_from_rag_source(source: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "source_card",
+        "item_type": source.get("source_type") or "post",
+        "title": source.get("title") or "",
+        "description": _clip(source.get("content") or source.get("description") or "", 140),
+        "url": source.get("url") or "",
+        "thumbnail_url": source.get("thumbnail_url") or "",
+        "source_label": source.get("source_label") or source.get("channel_title") or "",
+        "published_at": source.get("published_at") or datetime.now(UTC).isoformat(),
+    }
+
+
+def _briefing_context_query(items: list[Any]) -> str:
+    return " ".join(
+        " ".join([getattr(item, "title", ""), getattr(item, "description", "")])
+        for item in items
+    )
+
+
 def _render_briefing_markdown(
     db: Session, artist_id: int, refresh: bool, agent_run_id: int | None = None
 ) -> str:
@@ -105,6 +126,13 @@ def _render_briefing_markdown(
     mcp.call_tool("youtube_get_cached", {"artist_id": artist_id})
     mcp.call_tool("naver_news_search", {"query": artist.name, "display": 3})
     videos, fan_posts, naver_items = _briefing_feed_sections(db, artist_id)
+    context = build_rag_context(
+        db,
+        artist_id=artist_id,
+        query=_briefing_context_query([*videos[:5], *fan_posts[:3], *naver_items[:3]]),
+        mode="briefing",
+        limit=3,
+    )
     lines = [
         f"{artist.name} 오늘의 요약",
         f"기준일: {datetime.now(UTC).date().isoformat()}",
@@ -143,6 +171,16 @@ def _render_briefing_markdown(
                 lines.append(f"   링크: {item.url}")
     else:
         lines.append("- 아직 동기화된 Naver 소식이 없습니다.")
+    lines.append("")
+    lines.append("과거 맥락")
+    if context.sources:
+        for index, source in enumerate(context.sources[:3], start=1):
+            title = _clip(_clean_external_text(source.get("title")), 90)
+            lines.append(f"{index}. {title}")
+            if source.get("url"):
+                lines.append(f"   링크: {source['url']}")
+    else:
+        lines.append("- 연결할 만한 과거 아카이브 자료를 아직 찾지 못했습니다.")
     return "\n".join(lines)
 
 
@@ -179,11 +217,41 @@ def _briefing_markdown(
 def _briefing_source_cards(db: Session, artist_id: int, limit: int = 12) -> list[dict[str, Any]]:
     cards: list[dict[str, Any]] = []
     videos, fan_posts, naver_items = _briefing_feed_sections(db, artist_id)
+    context = build_rag_context(
+        db,
+        artist_id=artist_id,
+        query=_briefing_context_query([*videos[:5], *fan_posts[:3], *naver_items[:3]]),
+        mode="briefing",
+        limit=5,
+    )
     for item in [*videos[:5], *fan_posts[:3], *naver_items[:3]]:
         cards.append(_source_card_from_update(item))
-        if len(cards) >= limit:
-            break
-    return cards
+    cards.extend(_source_card_from_rag_source(source) for source in context.sources)
+    deduped = dedupe_sources(
+        [
+            {
+                **card,
+                "source_type": card.get("item_type"),
+                "post_id": None,
+                "youtube_video_id": None,
+                "content": card.get("description", ""),
+            }
+            for card in cards
+        ]
+    )
+    return [
+        {
+            "type": card.get("type", "source_card"),
+            "item_type": card.get("item_type") or card.get("source_type"),
+            "title": card.get("title", ""),
+            "description": card.get("description", ""),
+            "url": card.get("url", ""),
+            "thumbnail_url": card.get("thumbnail_url", ""),
+            "source_label": card.get("source_label", ""),
+            "published_at": card.get("published_at", datetime.now(UTC).isoformat()),
+        }
+        for card in deduped[:limit]
+    ]
 
 
 @router.post("/ai/briefing/preview", response_model=BriefingPreviewResponse)

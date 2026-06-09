@@ -15,7 +15,7 @@ from app.models import (
     YoutubeVideoSource,
 )
 from app.services.mcp_client import McpToolClient
-from app.services.rag import refresh_video_chunks
+from app.services.rag import refresh_post_chunks, refresh_video_chunks
 from tests.conftest import login, signup
 
 
@@ -33,6 +33,100 @@ def test_ai_requires_auth_and_enforces_daily_quota(client):
     assert second.status_code == 200
     third = client.post("/ai/qa", json={"question": "세 번째", "artist_id": 1}, headers=headers)
     assert third.status_code == 429
+
+
+def test_writing_assist_returns_empty_response_for_short_draft(client):
+    token = signup(client, "writing-short@example.com")
+    response = client.post(
+        "/ai/writing-assist",
+        json={"title": "원", "content": "", "category": "자유", "artist_id": 1},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["summary"] == "제목이나 본문을 조금 더 입력하면 관련 자료를 추천합니다."
+    assert body["sources"] == []
+    assert body["insert_text"] == ""
+
+
+def test_writing_assist_recommends_sources_with_insert_text(client):
+    token = signup(client, "writing-assist@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    with get_session_factory()() as db:
+        video = YoutubeVideo(
+            id="writing-woni-video",
+            title="RESCENE 원이 직캠",
+            description="원이 무대 영상 참고자료",
+            channel_title="RESCENE",
+            published_at=datetime.now(UTC),
+            thumbnail_url="https://img.example.com/writing.jpg",
+            url="https://youtube.example.com/writing-woni-video",
+            view_count=100,
+            content_hash="writing-woni-video-hash",
+        )
+        db.add(video)
+        db.flush()
+        refresh_video_chunks(db, video, artist_id=1)
+        db.commit()
+
+    response = client.post(
+        "/ai/writing-assist",
+        json={
+            "title": "원이 직캠 이야기",
+            "content": "오늘 원이 무대 영상 관련해서 같이 보고 싶어요",
+            "category": "영상",
+            "artist_id": 1,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["sources"]
+    assert body["sources"][0]["youtube_video_id"] == "writing-woni-video"
+    assert body["insert_text"] == "\n\n참고자료: RESCENE 원이 직캠\nhttps://youtube.example.com/writing-woni-video"
+
+
+def test_saved_summary_only_uses_current_users_saved_items(client):
+    first_token = signup(client, "saved-first@example.com")
+    second_token = signup(client, "saved-second@example.com")
+    first_headers = {"Authorization": f"Bearer {first_token}"}
+    second_headers = {"Authorization": f"Bearer {second_token}"}
+
+    first_save = client.post(
+        "/saved-items",
+        json={
+            "item_type": "youtube",
+            "item_id": "first-video",
+            "title": "원이 저장 영상",
+            "url": "https://youtube.example.com/first-video",
+            "thumbnail_url": "",
+            "source_label": "YouTube",
+        },
+        headers=first_headers,
+    )
+    second_save = client.post(
+        "/saved-items",
+        json={
+            "item_type": "youtube",
+            "item_id": "second-video",
+            "title": "다른 사용자 저장 영상",
+            "url": "https://youtube.example.com/second-video",
+            "thumbnail_url": "",
+            "source_label": "YouTube",
+        },
+        headers=second_headers,
+    )
+    assert first_save.status_code == 201
+    assert second_save.status_code == 201
+
+    response = client.post("/ai/saved-summary", json={"artist_id": 1}, headers=first_headers)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert "원이 저장 영상" in body["summary"]
+    assert "다른 사용자 저장 영상" not in body["summary"]
 
 
 def test_infra_budget_hard_stop_blocks_public_api_but_allows_admin_recovery(client):
@@ -534,6 +628,41 @@ def test_briefing_uses_linked_fan_posts_instead_of_raw_rag_text(client):
         card["item_type"] == "post" and card["url"] == f"/posts/{fan_post_id}"
         for card in source_cards
     )
+
+
+def test_briefing_preview_adds_rag_context_section_and_deduped_cards(client):
+    admin_token = login(client, "admin@example.com", "admin-password")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    with get_session_factory()() as db:
+        admin = db.scalar(select(User).where(User.email == "admin@example.com"))
+        recent_post = Post(
+            category="후기",
+            title="원이 무대 오늘 후기",
+            content="오늘 원이 무대를 보고 남긴 최신 팬 게시글입니다.",
+            author_id=admin.id,
+            artist_id=1,
+        )
+        context_post = Post(
+            category="정보",
+            title="원이 무대 아카이브 정리",
+            content="원이 무대 흐름과 직캠 자료를 정리한 과거 아카이브 글입니다.",
+            author_id=admin.id,
+            artist_id=1,
+        )
+        db.add_all([recent_post, context_post])
+        db.flush()
+        refresh_post_chunks(db, recent_post)
+        refresh_post_chunks(db, context_post)
+        db.commit()
+
+    preview = client.post("/ai/briefing/preview", headers=admin_headers)
+
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert "\n과거 맥락\n" in body["preview_markdown"]
+    urls = [card["url"] for card in body["source_cards"]]
+    assert len(urls) == len(set(urls))
+    assert any(card["url"].startswith("/posts/") for card in body["source_cards"])
 
 
 def test_admin_can_manage_home_keywords(client):

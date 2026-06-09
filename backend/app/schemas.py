@@ -204,6 +204,33 @@ class QaResponse(BaseModel):
     next_offset: int | None = None
 
 
+class RagContextRequest(BaseModel):
+    query: str = Field(default="", max_length=2000)
+    artist_id: int = 1
+    mode: Literal["briefing", "saved_summary", "writing_assist"] = "writing_assist"
+    saved_only: bool = False
+    limit: int = Field(default=5, ge=1, le=10)
+
+
+class RagContextResponse(BaseModel):
+    summary: str
+    sources: list[dict]
+    insert_text: str = ""
+
+
+class SavedSummaryRequest(BaseModel):
+    artist_id: int = 1
+    limit: int = Field(default=5, ge=1, le=10)
+
+
+class WritingAssistRequest(BaseModel):
+    title: str = Field(default="", max_length=255)
+    content: str = Field(default="", max_length=5000)
+    category: str = Field(default="", max_length=40)
+    artist_id: int = 1
+    limit: int = Field(default=5, ge=1, le=10)
+
+
 class SimilarRequest(BaseModel):
     post_id: int
     limit: int = Field(default=5, ge=1, le=10)

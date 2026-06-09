@@ -158,6 +158,25 @@ export type QaResponse = {
   next_offset: number | null
 }
 
+export type RagContextResponse = {
+  summary: string
+  sources: QaSource[]
+  insert_text: string
+}
+
+export type WritingAssistRequest = {
+  title: string
+  content: string
+  category: string
+  artist_id: number
+  limit?: number
+}
+
+export type SavedSummaryRequest = {
+  artist_id: number
+  limit?: number
+}
+
 export type UpdateFeedItem = {
   id: string
   item_type: 'youtube' | 'post' | 'briefing' | 'naver_news' | 'naver_blog'
