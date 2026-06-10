@@ -5778,11 +5778,29 @@ button:disabled {
 
   .feedScreen .updateBody {
     bottom: calc(86px + env(safe-area-inset-bottom));
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: start;
+    justify-items: start;
     padding-bottom: 14px;
+    text-align: left;
+  }
+
+  .feedScreen .updateBody > * {
+    justify-self: start;
+    width: 100%;
+  }
+
+  .feedScreen .cardMembers,
+  .feedScreen .updateFoot {
+    justify-content: flex-start;
   }
 
   .feedScreen .cardActions.actionRail {
     bottom: calc(104px + env(safe-area-inset-bottom));
+  }
+
+  .feedScreen .mediaStage > .typeBadge {
+    display: none;
   }
 
   .feedSourceTabs {
