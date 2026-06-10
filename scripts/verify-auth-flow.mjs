@@ -55,4 +55,10 @@ assertContains(".env.example", 'NEXTAUTH_URL="http://localhost:3000"');
 assertContains(".env.example", 'AUTH_GOOGLE_ID=""');
 assertContains(".env.example", 'AUTH_GOOGLE_SECRET=""');
 
+assertContains("package.json", '"sync:rpi-auth-env": "node scripts/sync-rpi-auth-env.mjs"');
+assertContains("scripts/sync-rpi-auth-env.mjs", "AUTH_GOOGLE_ID");
+assertContains("scripts/sync-rpi-auth-env.mjs", "AUTH_GOOGLE_SECRET");
+assertContains("scripts/sync-rpi-auth-env.mjs", ".next/standalone/.env");
+assertContains("README.md", "npm run sync:rpi-auth-env");
+
 console.log("Auth flow verification passed.");

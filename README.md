@@ -77,6 +77,7 @@ npm run dev
 - `npm run lint`: 현재는 TypeScript 타입체크와 동일한 비대화형 정적 검증
 - `npm run verify:auth`: OAuth 후처리 라우트, 로그인 callback URL, 환경 예시 검증
 - `npm run deploy:rpi`: rpi에 소스 동기화, DB 마이그레이션, standalone 빌드, 서버 재시작
+- `npm run sync:rpi-auth-env`: 로컬 Google OAuth 키를 rpi `.env`와 standalone `.env`에 반영 후 서버 재시작
 - `npm run db:generate`: Prisma Client 생성
 - `npm run db:migrate`: 로컬 DB 마이그레이션 적용
 - `npm run db:seed`: 데모 데이터 시드
@@ -113,6 +114,12 @@ PORT=3400 HOSTNAME=0.0.0.0 /home/user/.nvm/versions/node/v22.22.3/bin/node serve
 
 ```text
 https://titles-night-unix-record.trycloudflare.com/api/auth/callback/google
+```
+
+Google OAuth Client ID/Secret을 발급받은 뒤 로컬 `.env`에 `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`을 넣고 아래 명령으로 rpi 환경에 반영합니다.
+
+```bash
+npm run sync:rpi-auth-env
 ```
 
 배포 후 서버 내부에서 최소한 아래 엔드포인트를 확인합니다.
