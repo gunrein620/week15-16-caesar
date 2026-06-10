@@ -58,7 +58,11 @@ assertContains(".env.example", 'AUTH_GOOGLE_SECRET=""');
 assertContains("package.json", '"sync:rpi-auth-env": "node scripts/sync-rpi-auth-env.mjs"');
 assertContains("scripts/sync-rpi-auth-env.mjs", "AUTH_GOOGLE_ID");
 assertContains("scripts/sync-rpi-auth-env.mjs", "AUTH_GOOGLE_SECRET");
+assertContains("scripts/sync-rpi-auth-env.mjs", "SYNC_AUTH_ORIGIN");
+assertContains("scripts/sync-rpi-auth-env.mjs", "REMOTE_SCRIPT_B64");
 assertContains("scripts/sync-rpi-auth-env.mjs", ".next/standalone/.env");
+assertContains("scripts/deploy-rpi.sh", ".next/standalone/.next/static");
 assertContains("README.md", "npm run sync:rpi-auth-env");
+assertContains("README.md", "SYNC_AUTH_ORIGIN=1 npm run sync:rpi-auth-env");
 
 console.log("Auth flow verification passed.");

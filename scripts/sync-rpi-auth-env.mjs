@@ -7,7 +7,9 @@ const remoteNode = process.env.RPI_NODE || "/home/user/.nvm/versions/node/v22.22
 const port = process.env.PORT || "3400";
 
 const requiredKeys = ["AUTH_GOOGLE_ID", "AUTH_GOOGLE_SECRET"];
-const syncedKeys = ["AUTH_GOOGLE_ID", "AUTH_GOOGLE_SECRET", "AUTH_URL", "NEXTAUTH_URL"];
+const syncedKeys = process.env.SYNC_AUTH_ORIGIN === "1"
+  ? ["AUTH_GOOGLE_ID", "AUTH_GOOGLE_SECRET", "AUTH_URL", "NEXTAUTH_URL"]
+  : ["AUTH_GOOGLE_ID", "AUTH_GOOGLE_SECRET"];
 
 function parseEnv(contents) {
   const env = {};
@@ -41,6 +43,10 @@ if (missing.length) {
 const payload = Object.fromEntries(
   syncedKeys.filter((key) => key in localEnv).map((key) => [key, localEnv[key]]),
 );
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\"'\"'")}'`;
+}
 
 const remoteScript = `(${function syncRpiAuthEnv() {
   const fs = require("fs");
@@ -102,6 +108,7 @@ const remoteScript = `(${function syncRpiAuthEnv() {
   env.PORT = env.PORT || port;
   env.HOSTNAME = env.HOSTNAME || "0.0.0.0";
 
+  fs.mkdirSync(`${appDir}/logs`, { recursive: true });
   const out = fs.openSync(`${appDir}/logs/server.log`, "a");
   const child = spawn(nodeBin, ["server.js"], {
     cwd: `${appDir}/.next/standalone`,
@@ -115,14 +122,19 @@ const remoteScript = `(${function syncRpiAuthEnv() {
   console.log(`Synced ${Object.keys(payload).join(", ")} and restarted rpi auth server`);
 }.toString()})();`;
 
+const remoteCommand = [
+  `APP_DIR=${shellQuote(remoteAppDir)}`,
+  `NODE_BIN=${shellQuote(remoteNode)}`,
+  `PORT=${shellQuote(port)}`,
+  `REMOTE_SCRIPT_B64=${shellQuote(Buffer.from(remoteScript).toString("base64"))}`,
+  shellQuote(remoteNode),
+  "-e",
+  shellQuote('eval(Buffer.from(process.env.REMOTE_SCRIPT_B64, "base64").toString())'),
+].join(" ");
+
 const result = spawnSync(
   "ssh",
-  [
-    "rpi",
-    `APP_DIR=${remoteAppDir} NODE_BIN=${remoteNode} PORT=${port} ${remoteNode} -e ${JSON.stringify(
-      remoteScript,
-    )}`,
-  ],
+  ["rpi", remoteCommand],
   {
     input: JSON.stringify(payload),
     encoding: "utf8",

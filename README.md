@@ -106,6 +106,8 @@ cd /home/user/apps/week15-16-caesar
 /home/user/.nvm/versions/node/v22.22.3/bin/npx prisma migrate deploy
 /home/user/.nvm/versions/node/v22.22.3/bin/npm run build
 cp .env .next/standalone/.env
+cp -R .next/static .next/standalone/.next/static
+cp -R public .next/standalone/public
 cd .next/standalone
 PORT=3400 HOSTNAME=0.0.0.0 /home/user/.nvm/versions/node/v22.22.3/bin/node server.js
 ```
@@ -116,10 +118,16 @@ PORT=3400 HOSTNAME=0.0.0.0 /home/user/.nvm/versions/node/v22.22.3/bin/node serve
 https://titles-night-unix-record.trycloudflare.com/api/auth/callback/google
 ```
 
-Google OAuth Client ID/Secret을 발급받은 뒤 로컬 `.env`에 `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`을 넣고 아래 명령으로 rpi 환경에 반영합니다.
+Google OAuth Client ID/Secret을 발급받은 뒤 로컬 `.env`에 `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`을 넣고 아래 명령으로 rpi 환경에 반영합니다. 기본 실행은 rpi의 `AUTH_URL`, `NEXTAUTH_URL`을 건드리지 않고 Google 키만 갱신합니다.
 
 ```bash
 npm run sync:rpi-auth-env
+```
+
+origin까지 함께 갱신해야 하는 경우에만 아래처럼 실행합니다.
+
+```bash
+SYNC_AUTH_ORIGIN=1 npm run sync:rpi-auth-env
 ```
 
 배포 후 서버 내부에서 최소한 아래 엔드포인트를 확인합니다.

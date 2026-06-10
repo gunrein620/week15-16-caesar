@@ -33,6 +33,12 @@ cd "\$APP_DIR"
 
 mkdir -p "\$APP_DIR/logs"
 cp "\$APP_DIR/.env" "\$APP_DIR/.next/standalone/.env"
+rm -rf "\$APP_DIR/.next/standalone/.next/static"
+cp -R "\$APP_DIR/.next/static" "\$APP_DIR/.next/standalone/.next/static"
+rm -rf "\$APP_DIR/.next/standalone/public"
+if [ -d "\$APP_DIR/public" ]; then
+  cp -R "\$APP_DIR/public" "\$APP_DIR/.next/standalone/public"
+fi
 
 OLD_PID=\$(ss -ltnp 2>/dev/null | awk "/:\$PORT /{print}" | sed -n 's/.*pid=\\([0-9][0-9]*\\).*/\\1/p' | head -1)
 if [ -n "\$OLD_PID" ]; then
