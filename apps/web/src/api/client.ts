@@ -50,6 +50,20 @@ const TOKEN_KEY = 'localmind.accessToken';
 
 let accessToken = localStorage.getItem(TOKEN_KEY) ?? '';
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+export function isAuthError(error: unknown) {
+  return error instanceof ApiError && error.status === 401;
+}
+
 export function getAccessToken() {
   return accessToken;
 }
@@ -80,7 +94,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const text = await response.text();
   const data = text ? JSON.parse(text) : null;
   if (!response.ok) {
-    throw new Error(data?.message ?? `API ${response.status}`);
+    if (response.status === 401 && path !== '/auth/login') {
+      clearAccessToken();
+      throw new ApiError('로그인이 만료되었습니다. 다시 로그인해주세요.', response.status);
+    }
+    if (response.status === 401 && path === '/auth/login') {
+      throw new ApiError(data?.message ?? '이메일 또는 비밀번호를 확인해주세요.', response.status);
+    }
+    throw new ApiError(data?.message ?? `API ${response.status}`, response.status);
   }
   return data as T;
 }

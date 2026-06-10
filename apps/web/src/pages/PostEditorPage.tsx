@@ -1,6 +1,6 @@
 import { Bot, CheckCircle2, SearchCheck } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
-import { api, fallbackCategories, type Category } from '../api/client.js';
+import { api, fallbackCategories, isAuthError, type Category } from '../api/client.js';
 
 type PostEditorPageProps = {
   isAuthed: boolean;
@@ -41,6 +41,10 @@ export function PostEditorPage({ isAuthed, onDone, onLogin }: PostEditorPageProp
       });
       onDone();
     } catch (error) {
+      if (isAuthError(error)) {
+        onLogin();
+        return;
+      }
       setMessage(error instanceof Error ? error.message : '게시글 저장에 실패했습니다.');
     }
   }
@@ -55,6 +59,10 @@ export function PostEditorPage({ isAuthed, onDone, onLogin }: PostEditorPageProp
       setTags(result.tags?.join(', ') ?? tags);
       setMessage('AI 태그 추천을 반영했습니다.');
     } catch (error) {
+      if (isAuthError(error)) {
+        onLogin();
+        return;
+      }
       setMessage(error instanceof Error ? error.message : 'AI 태그 추천을 사용할 수 없습니다.');
     }
   }
@@ -68,6 +76,10 @@ export function PostEditorPage({ isAuthed, onDone, onLogin }: PostEditorPageProp
       const result = await api.agent('duplicate-check', `${title}\n${content}`);
       setMessage(result.answer);
     } catch (error) {
+      if (isAuthError(error)) {
+        onLogin();
+        return;
+      }
       setMessage(error instanceof Error ? error.message : '중복 확인을 사용할 수 없습니다.');
     }
   }

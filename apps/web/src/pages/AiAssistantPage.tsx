@@ -1,6 +1,6 @@
 import { Bot, ExternalLink, FileText, MapPin, Megaphone, Send } from 'lucide-react';
 import { useState } from 'react';
-import { api, type ExternalSource, type RagSource } from '../api/client.js';
+import { api, isAuthError, type ExternalSource, type RagSource } from '../api/client.js';
 
 type AiAssistantPageProps = {
   isAuthed: boolean;
@@ -43,6 +43,13 @@ export function AiAssistantPage({ isAuthed, onLogin }: AiAssistantPageProps) {
         setExternalSources([]);
       }
     } catch (error) {
+      if (isAuthError(error)) {
+        setAnswer('로그인이 만료되었습니다. 다시 로그인해주세요.');
+        setSources([]);
+        setExternalSources([]);
+        onLogin();
+        return;
+      }
       setAnswer(error instanceof Error ? error.message : 'AI 답변을 생성하지 못했습니다.');
       setSources([]);
       setExternalSources([]);
