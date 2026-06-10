@@ -84,32 +84,35 @@ npm run dev
 
 ## 라즈베리파이 배포
 
-서버는 `ssh rpi`로 접속하는 것을 기준으로 합니다. 서버에서 사용하는 실제 접속 origin이 `http://<server>:3000`이라면 서버 `.env`의 `AUTH_URL`, `NEXTAUTH_URL`, Google Cloud redirect URI도 같은 origin을 써야 합니다.
+서버는 `ssh rpi`로 접속하는 것을 기준으로 합니다. 현재 rpi 배포본은 `/home/user/apps/week15-16-caesar`에서 Next.js standalone 서버로 실행하며, 공개 origin은 Cloudflare Tunnel의 `https://titles-night-unix-record.trycloudflare.com`입니다. 서버 `.env`의 `AUTH_URL`, `NEXTAUTH_URL`, Google Cloud redirect URI는 모두 이 origin과 맞아야 합니다.
+
+rpi의 기본 `node`가 18.x이면 Next.js 런타임에서 `Headers.prototype.getSetCookie`가 없어 500이 날 수 있습니다. 배포와 실행은 rpi에 설치된 Node 22 런타임을 사용합니다.
 
 ```bash
 ssh rpi
-cd ~/WS/jungle-12/week15-16-caesar
-git pull
-npm ci
-npx prisma generate
-npx prisma migrate deploy
-npm run build
-pm2 restart jungle-market || pm2 start npm --name jungle-market -- start
-pm2 save
+cd /home/user/apps/week15-16-caesar
+/home/user/.nvm/versions/node/v22.22.3/bin/npm ci
+/home/user/.nvm/versions/node/v22.22.3/bin/npm run db:generate
+/home/user/.nvm/versions/node/v22.22.3/bin/npx prisma migrate deploy
+/home/user/.nvm/versions/node/v22.22.3/bin/npm run build
+cp .env .next/standalone/.env
+cd .next/standalone
+PORT=3400 HOSTNAME=0.0.0.0 /home/user/.nvm/versions/node/v22.22.3/bin/node server.js
 ```
 
 서버용 Google redirect URI 예시는 아래 형태입니다.
 
 ```text
-http://<server>:3000/api/auth/callback/google
+https://titles-night-unix-record.trycloudflare.com/api/auth/callback/google
 ```
 
 배포 후 서버 내부에서 최소한 아래 엔드포인트를 확인합니다.
 
 ```bash
-curl -I http://localhost:3000
-curl -I http://localhost:3000/login
-curl -I http://localhost:3000/api/auth/providers
+curl -I http://127.0.0.1:3400
+curl -I http://127.0.0.1:3400/login
+curl -I http://127.0.0.1:3400/api/auth/providers
+curl -I https://titles-night-unix-record.trycloudflare.com/login
 ```
 
 ## 구현 범위
