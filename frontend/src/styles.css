@@ -226,7 +226,8 @@ button {
 .searchMode {
   --search-content-left: 72px;
   --search-rail-left: 14px;
-  --search-rail-width: 56px;
+  --search-rail-top: 162px;
+  --search-rail-width: 54px;
   width: 360px;
 }
 
@@ -297,10 +298,10 @@ button {
 }
 
 .searchMode .topFeedTabs {
-  gap: 18px;
+  gap: 12px;
   left: var(--search-rail-left);
   position: absolute;
-  top: 98px;
+  top: var(--search-rail-top);
   width: var(--search-rail-width);
 }
 
@@ -419,7 +420,8 @@ button {
     align-items: stretch;
     --search-content-left: 72px;
     --search-rail-left: 22px;
-    --search-rail-width: 56px;
+    --search-rail-top: 156px;
+    --search-rail-width: 54px;
     padding: 24px 16px 18px 22px;
     width: 360px;
   }
@@ -442,7 +444,7 @@ button {
   .searchMode .topFeedTabs {
     left: var(--search-rail-left);
     position: absolute;
-    top: 90px;
+    top: var(--search-rail-top);
     width: var(--search-rail-width);
   }
 
