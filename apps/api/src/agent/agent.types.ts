@@ -37,5 +37,8 @@ export type RunAgentResult = {
   status: AgentStatus;
   answer: string;
   tags?: string[];
+  sources?: unknown[];
+  externalSources?: unknown[];
+  routedMode?: 'agent' | 'rag';
   state: AgentState;
 };

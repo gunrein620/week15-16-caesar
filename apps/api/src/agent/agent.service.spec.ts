@@ -165,6 +165,53 @@ describe('AgentService', () => {
     );
   });
 
+  it('routes non-complaint complaint-helper input to local Q&A', async () => {
+    toolRegistry.execute.mockResolvedValue({
+      answer: '세교동 플리마켓 게시글을 확인해 보세요.',
+      sources: [{ sourceId: 'post-1', content: '이번 주말 세교동 플리마켓 열리나요?' }]
+    });
+    const service = new AgentService(prisma as never, llm as never, toolRegistry as never);
+
+    const result = await service.run({
+      purpose: 'complaint_helper',
+      input: '이번 주말 세교동 플리마켓 열려?'
+    });
+
+    expect(result.status).toBe('COMPLETED');
+    expect(result.answer).toContain('플리마켓');
+    expect(result.sources).toEqual([{ sourceId: 'post-1', content: '이번 주말 세교동 플리마켓 열리나요?' }]);
+    expect(llm.chatWithTools).not.toHaveBeenCalled();
+    expect(toolRegistry.execute).toHaveBeenCalledWith('answer_local_question', {
+      question: '이번 주말 세교동 플리마켓 열려?'
+    });
+    expect(prisma.agentToolLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          sessionId: 'session-1',
+          toolName: 'answer_local_question'
+        })
+      })
+    );
+  });
+
+  it('keeps complaint-helper flow for actual complaint requests', async () => {
+    llm.chatWithTools.mockResolvedValueOnce({
+      type: 'message',
+      content: '오산역 뒤쪽 불법 주차 민원글 초안입니다.'
+    });
+    const service = new AgentService(prisma as never, llm as never, toolRegistry as never);
+
+    const result = await service.run({
+      purpose: 'complaint_helper',
+      input: '오산역 뒤쪽 불법 주차 민원글 작성 도와줘'
+    });
+
+    expect(result.status).toBe('COMPLETED');
+    expect(result.answer).toContain('불법 주차');
+    expect(llm.chatWithTools).toHaveBeenCalledTimes(1);
+    expect(toolRegistry.execute).not.toHaveBeenCalledWith('answer_local_question', expect.any(Object));
+  });
+
   it('tag-suggestion returns tags directly from the suggest_tags tool', async () => {
     llm.chatWithTools.mockResolvedValueOnce({
       type: 'tool_call',

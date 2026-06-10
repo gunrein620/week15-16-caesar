@@ -148,7 +148,14 @@ export const api = {
     );
   },
   async agent(path: 'post-helper' | 'complaint-helper' | 'tag-suggestion' | 'duplicate-check', input: string) {
-    return request<{ answer: string; status: string; tags?: string[] }>(`/agent/${path}`, {
+    return request<{
+      answer: string;
+      status: string;
+      tags?: string[];
+      sources?: RagSource[];
+      externalSources?: ExternalSource[];
+      routedMode?: 'agent' | 'rag';
+    }>(`/agent/${path}`, {
       method: 'POST',
       body: JSON.stringify({ input })
     });

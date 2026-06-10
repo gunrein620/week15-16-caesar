@@ -35,6 +35,11 @@ export class AgentService {
     });
 
     try {
+      if (state.purpose === 'complaint_helper' && !this.hasComplaintIntent(state.input)) {
+        const result = await this.answerLocalQuestionFromComplaintTab(state);
+        await this.finishSession(state, result.status, result);
+        return result;
+      }
       const result = await this.runLoop(state);
       await this.finishSession(state, result.status, result);
       return result;
@@ -43,6 +48,30 @@ export class AgentService {
       await this.finishSession(state, 'FAILED', fallback);
       return fallback;
     }
+  }
+
+  private async answerLocalQuestionFromComplaintTab(state: AgentState): Promise<RunAgentResult> {
+    const input = { question: state.input };
+    const output = await this.toolRegistry.execute('answer_local_question', input);
+    await this.logTool(state, 'answer_local_question', input, output);
+    return {
+      ...this.completedResult(state, this.answerFromToolOutput(output)),
+      sources: this.arrayValue(output, 'sources'),
+      externalSources: this.arrayValue(output, 'externalSources'),
+      routedMode: 'rag'
+    };
+  }
+
+  private hasComplaintIntent(text: string) {
+    const normalized = text.replace(/\s+/g, ' ').trim();
+    return (
+      /(민원|신고|불편|불법|단속|악취|소음|쓰레기|파손|고장|위험|방치|막혀|개선\s*요청|처리\s*요청|정비\s*요청)/i.test(
+        normalized
+      ) ||
+      /(불법\s*주차|통행.*(어렵|불편|방해)|가로등.*(고장|꺼짐)|신호등.*(고장|위험)|도로.*(파손|위험)|보도.*(파손|위험)|인도.*(파손|위험)|하수구.*(막힘|냄새)|배수로.*(막힘|냄새))/i.test(
+        normalized
+      )
+    );
   }
 
   private async runLoop(state: AgentState): Promise<RunAgentResult> {
@@ -308,6 +337,21 @@ export class AgentService {
 
   private errorMessage(error: unknown) {
     return error instanceof Error ? error.message : String(error);
+  }
+
+  private answerFromToolOutput(output: unknown) {
+    if (output && typeof output === 'object' && typeof (output as { answer?: unknown }).answer === 'string') {
+      return (output as { answer: string }).answer;
+    }
+    return '일반 생활 질문으로 판단해 Q&A 답변을 생성했습니다.';
+  }
+
+  private arrayValue(output: unknown, key: 'sources' | 'externalSources') {
+    if (!output || typeof output !== 'object') {
+      return undefined;
+    }
+    const value = (output as Record<string, unknown>)[key];
+    return Array.isArray(value) ? value : undefined;
   }
 
   private toJson(value: unknown) {

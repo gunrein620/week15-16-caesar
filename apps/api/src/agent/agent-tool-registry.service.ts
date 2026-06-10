@@ -103,6 +103,8 @@ export class AgentToolRegistryService {
         return this.draftComplaintPost(input);
       case 'summarize_context':
         return { summary: String(input.context ?? input.text ?? '').slice(0, 500) };
+      case 'answer_local_question':
+        return this.ragService.ask({ question: String(input.question ?? input.text ?? '') });
       default:
         throw new BadRequestException(`Unknown agent tool: ${name}`);
     }

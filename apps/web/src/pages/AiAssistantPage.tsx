@@ -39,8 +39,8 @@ export function AiAssistantPage({ isAuthed, onLogin }: AiAssistantPageProps) {
       } else {
         const result = await api.agent(mode, input);
         setAnswer(result.answer);
-        setSources([]);
-        setExternalSources([]);
+        setSources(result.sources ?? []);
+        setExternalSources(result.externalSources ?? []);
       }
     } catch (error) {
       if (isAuthError(error)) {
