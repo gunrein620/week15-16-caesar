@@ -921,6 +921,20 @@ textarea {
   color: var(--color-subtext);
 }
 
+.feed-empty {
+  margin-top: 12px;
+}
+
+.feed-empty strong {
+  color: var(--color-text);
+  font-size: 16px;
+}
+
+.feed-empty span {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .empty-state button {
   min-height: 42px;
   border-radius: var(--radius);

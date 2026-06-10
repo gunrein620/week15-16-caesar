@@ -1,5 +1,6 @@
 import { Bell, Bot, Home, LogIn, LogOut, Map, Menu, Plus, Search, UserRound, UsersRound } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
+import { boardCategories, boardFilters, type BoardCategory, type BoardFilter } from '../board/boardFilters.js';
 import { BottomNav } from './BottomNav.js';
 import { FloatingWriteButton } from './FloatingWriteButton.js';
 
@@ -10,17 +11,28 @@ type AppShellProps = {
   view: AppView;
   regionName: string;
   isAuthed: boolean;
+  activeCategory: BoardCategory;
+  activeFilter: BoardFilter;
+  onCategoryChange: (category: BoardCategory) => void;
+  onFilterChange: (filter: BoardFilter) => void;
   onNavigate: (view: AppView) => void;
   onLogout: () => void;
 };
 
-export function AppShell({ children, view, regionName, isAuthed, onNavigate, onLogout }: AppShellProps) {
-  const [activeCategory, setActiveCategory] = useState('동네생활');
-  const [activeFilter, setActiveFilter] = useState('추천');
+export function AppShell({
+  children,
+  view,
+  regionName,
+  isAuthed,
+  activeCategory,
+  activeFilter,
+  onCategoryChange,
+  onFilterChange,
+  onNavigate,
+  onLogout
+}: AppShellProps) {
   const showWrite = view === 'home' || view === 'community' || view === 'detail';
   const showBoardTabs = view === 'home' || view === 'community';
-  const boardCategories = ['동네생활', '모임', '카페', '아파트', '게임', '맛집/음식'];
-  const boardFilters = ['추천', '인기', '투표', '생활정보', 'AI추천'];
 
   return (
     <div className="app-shell">
@@ -51,7 +63,7 @@ export function AppShell({ children, view, regionName, isAuthed, onNavigate, onL
                 type="button"
                 key={item}
                 onClick={() => {
-                  setActiveCategory(item);
+                  onCategoryChange(item);
                   if (view !== 'community') {
                     onNavigate('community');
                   }
@@ -70,7 +82,7 @@ export function AppShell({ children, view, regionName, isAuthed, onNavigate, onL
                 type="button"
                 key={item}
                 onClick={() => {
-                  setActiveFilter(item);
+                  onFilterChange(item);
                   if (view !== 'community') {
                     onNavigate('community');
                   }

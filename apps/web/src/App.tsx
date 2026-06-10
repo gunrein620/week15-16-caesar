@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { clearAccessToken, getAccessToken, setAccessToken, type AuthResponse, type Post } from './api/client.js';
+import type { BoardCategory, BoardFilter } from './board/boardFilters.js';
 import { AppShell, type AppView } from './components/AppShell.js';
 import { AiAssistantPage } from './pages/AiAssistantPage.js';
 import { CommunityPage } from './pages/CommunityPage.js';
@@ -14,8 +15,14 @@ export function App() {
   const [view, setView] = useState<AppView>(getAccessToken() ? 'home' : 'home');
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [user, setUser] = useState<AuthResponse['user'] | null>(null);
+  const [activeCategory, setActiveCategory] = useState<BoardCategory>('동네생활');
+  const [activeFilter, setActiveFilter] = useState<BoardFilter>('추천');
 
   const isAuthed = useMemo(() => Boolean(getAccessToken()), [user, view]);
+  const boardState = useMemo(
+    () => ({ category: activeCategory, filter: activeFilter }),
+    [activeCategory, activeFilter]
+  );
 
   function handleAuth(auth: AuthResponse) {
     setAccessToken(auth.accessToken);
@@ -34,6 +41,10 @@ export function App() {
       view={view}
       regionName="오산"
       isAuthed={isAuthed}
+      activeCategory={activeCategory}
+      activeFilter={activeFilter}
+      onCategoryChange={setActiveCategory}
+      onFilterChange={setActiveFilter}
       onNavigate={(next) => {
         setView(next);
         if (next !== 'detail') {
@@ -49,10 +60,12 @@ export function App() {
             setView('detail');
           }}
           onAskAi={() => setView('ai')}
+          boardState={boardState}
         />
       )}
       {view === 'community' && (
         <CommunityPage
+          boardState={boardState}
           onOpenPost={(post) => {
             setSelectedPost(post);
             setView('detail');

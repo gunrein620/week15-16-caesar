@@ -1,16 +1,19 @@
 import { Bot } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api, fallbackCategories, fallbackPosts, type Category, type Post } from '../api/client.js';
+import { emptyFeedMessage, selectBoardPosts, type BoardFeedState } from '../board/boardFilters.js';
 import { PostCard } from '../components/PostCard.js';
 
 type HomePageProps = {
   onOpenPost: (post: Post) => void;
   onAskAi: () => void;
+  boardState: BoardFeedState;
 };
 
-export function HomePage({ onOpenPost, onAskAi }: HomePageProps) {
+export function HomePage({ onOpenPost, onAskAi, boardState }: HomePageProps) {
   const [posts, setPosts] = useState<Post[]>(fallbackPosts);
   const [categories, setCategories] = useState<Category[]>(fallbackCategories);
+  const visiblePosts = useMemo(() => selectBoardPosts(posts, boardState), [posts, boardState]);
 
   useEffect(() => {
     void Promise.all([api.posts(), api.categories()])
@@ -49,9 +52,16 @@ export function HomePage({ onOpenPost, onAskAi }: HomePageProps) {
       </section>
 
       <section className="feed" aria-label="게시글 목록">
-        {posts.map((post, index) => (
-          <PostCard post={post} index={index} key={post.id} onClick={() => onOpenPost(post)} />
-        ))}
+        {visiblePosts.length > 0 ? (
+          visiblePosts.map((post, index) => (
+            <PostCard post={post} index={index} key={post.id} onClick={() => onOpenPost(post)} />
+          ))
+        ) : (
+          <div className="empty-state feed-empty">
+            <strong>게시글이 없습니다.</strong>
+            <span>{emptyFeedMessage(boardState)}</span>
+          </div>
+        )}
       </section>
     </div>
   );
