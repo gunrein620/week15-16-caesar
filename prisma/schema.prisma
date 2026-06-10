@@ -1,0 +1,212 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── 사용자 / Auth.js ────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+
+  // 서비스 프로필 — 회원가입(프로필 설정)에서 채움
+  nickname   String? @unique
+  town       String? // 우리 동네 (예: 역삼동)
+  mannerTemp Float   @default(36.5)
+  isGuest    Boolean @default(false)
+
+  accounts     Account[]
+  sessions     Session[]
+  products     Product[]
+  favorites    Favorite[]
+  posts        Post[]
+  comments     Comment[]
+  buyingRooms  ChatRoom[] @relation("buyer")
+  sellingRooms ChatRoom[] @relation("seller")
+  messages     Message[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+// ── 마켓 (상품) ─────────────────────────────────────────────
+
+model Category {
+  id       Int       @id @default(autoincrement())
+  name     String    @unique
+  order    Int       @default(0)
+  products Product[]
+}
+
+enum ProductStatus {
+  ON_SALE // 판매중
+  RESERVED // 예약중
+  DONE // 거래완료
+}
+
+model Product {
+  id          String        @id @default(cuid())
+  title       String
+  description String        @default("")
+  price       Int // 0 = 나눔
+  status      ProductStatus @default(ON_SALE)
+  location    String // 동네 (예: 역삼동)
+  meetPlace   String? // 거래 희망 장소
+  viewCount   Int           @default(0)
+
+  seller     User       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  sellerId   String
+  category   Category   @relation(fields: [categoryId], references: [id])
+  categoryId Int
+
+  images    ProductImage[]
+  favorites Favorite[]
+  rooms     ChatRoom[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([categoryId, createdAt])
+}
+
+model ProductImage {
+  id        String  @id @default(cuid())
+  url       String
+  order     Int     @default(0)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+}
+
+model Favorite {
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  createdAt DateTime @default(now())
+
+  @@id([userId, productId])
+}
+
+// ── 게시판 (동네 생활) ──────────────────────────────────────
+
+model Post {
+  id      String @id @default(cuid())
+  title   String
+  content String
+
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId String
+
+  comments Comment[]
+  tags     PostTag[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([createdAt])
+}
+
+model Comment {
+  id   String @id @default(cuid())
+  body String
+
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId String
+  post     Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId   String
+
+  createdAt DateTime @default(now())
+}
+
+model Tag {
+  id    Int       @id @default(autoincrement())
+  name  String    @unique
+  posts PostTag[]
+}
+
+model PostTag {
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId String
+  tag    Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  tagId  Int
+
+  @@id([postId, tagId])
+}
+
+// ── 채팅 / 거래 ─────────────────────────────────────────────
+
+model ChatRoom {
+  id String @id @default(cuid())
+
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  buyer     User    @relation("buyer", fields: [buyerId], references: [id], onDelete: Cascade)
+  buyerId   String
+  seller    User    @relation("seller", fields: [sellerId], references: [id], onDelete: Cascade)
+  sellerId  String
+
+  // 거래 약속
+  meetAt    DateTime?
+  meetPlace String?
+
+  messages  Message[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([productId, buyerId])
+}
+
+model Message {
+  id   String @id @default(cuid())
+  body String
+
+  room     ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId   String
+  sender   User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  senderId String
+
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([roomId, createdAt])
+}

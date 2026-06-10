@@ -1,0 +1,48 @@
+@import "../styles/tokens.css";
+@import "../styles/components.css";
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--text-body);
+  /* 와이어프레임 .jb-art: 우상단 민트 글로우 + 근흑색 그린 캔버스 */
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(118, 248, 183, 0.06), transparent 60%),
+    var(--surface-app);
+  background-attachment: fixed;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+::selection {
+  background: var(--accent-soft);
+}

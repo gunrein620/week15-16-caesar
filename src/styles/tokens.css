@@ -1,0 +1,106 @@
+/* ── Jungle Market · Design tokens ──────────────────────────────
+   번들 tokens/colors.css · typography.css · spacing.css 이식.
+   폰트 패밀리는 next/font가 주입하는 --font-en/--font-kr 변수를 소비한다. */
+:root {
+  /* Base ramp — near-black greens */
+  --jm-bg:            #090b0c;  /* app background */
+  --jm-bg-muted:      #111514;  /* secondary background */
+  --jm-ink-0:         #06140d;  /* text on mint (deep green-black) */
+
+  /* Glass surfaces (use over --jm-bg) */
+  --jm-panel:         rgba(18,23,22,0.88);
+  --jm-panel-strong:  rgba(28,35,34,0.96);
+  --jm-surface-2:     rgba(255,255,255,0.02);  /* faint inset fill */
+  --jm-surface-inset: rgba(0,0,0,0.40);        /* input / well */
+
+  /* Lines (mint-tinted hairlines) */
+  --jm-line:          rgba(121,255,194,0.16);
+  --jm-line-strong:   rgba(121,255,194,0.32);
+  --jm-line-plain:    rgba(255,255,255,0.05);
+
+  /* Text */
+  --jm-text:          #f1f5f2;
+  --jm-text-muted:    #9aa79d;
+  --jm-text-dim:      #5f6b63;
+
+  /* Mint accent */
+  --jm-mint:          #76f8b7;
+  --jm-mint-strong:   #5ce59f;
+  --jm-mint-soft:     rgba(118,248,183,0.16);
+
+  /* Semantic */
+  --jm-danger:        #ff7c7c;
+  --jm-danger-soft:   rgba(255,124,124,0.16);
+  --jm-warning:       #ffcc7a;  /* 나눔 / 주의 */
+  --jm-warning-soft:  rgba(255,204,122,0.16);
+
+  /* ── Semantic aliases (prefer these in product code) ── */
+  --surface-app:      var(--jm-bg);
+  --surface-card:     var(--jm-panel);
+  --surface-raised:   var(--jm-panel-strong);
+  --surface-inset:    var(--jm-surface-inset);
+  --border-card:      var(--jm-line);
+  --border-strong:    var(--jm-line-strong);
+  --text-body:        var(--jm-text);
+  --text-secondary:   var(--jm-text-muted);
+  --text-tertiary:    var(--jm-text-dim);
+  --accent:           var(--jm-mint);
+  --accent-soft:      var(--jm-mint-soft);
+  --on-accent:        var(--jm-ink-0);
+
+  /* ── Typography ── */
+  --jm-font-en:  var(--font-en, "Space Grotesk"), "Noto Sans KR", sans-serif;
+  --jm-font-kr:  var(--font-kr, "Noto Sans KR"), "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --jm-font-mono: var(--font-en, "Space Grotesk"), ui-monospace, "SFMono-Regular", monospace;
+
+  --font-display: var(--jm-font-kr);  /* titles (한국어, weight 700) */
+  --font-body:    var(--jm-font-kr);
+  --font-label:   var(--jm-font-en);  /* EYEBROW LABELS (uppercase, tracked) */
+  --font-mono:    var(--jm-font-mono);
+
+  /* Type scale (px) — desktop board UI */
+  --text-eyebrow: 12px;   /* tracked 2.5px, uppercase */
+  --text-meta:    12.5px; /* timestamps, captions */
+  --text-sm:      13.5px;
+  --text-base:    15px;
+  --text-lg:      18px;
+  --text-title:   21px;
+  --text-h1:      26px;
+  --text-hero:    34px;
+
+  /* Weights */
+  --weight-regular: 400;
+  --weight-medium:  500;  /* product card titles */
+  --weight-bold:    700;  /* titles, prices, CTAs */
+  --weight-black:   900;
+
+  /* Tracking */
+  --track-label:  2.5px;  /* eyebrows */
+  --track-tight: -0.5px;  /* large titles */
+
+  /* ── Spacing scale (4px base) ── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 18px;
+  --space-6: 22px;
+  --space-7: 26px;
+  --space-8: 34px;
+
+  /* Radii — generous, soft glass */
+  --radius-xs:  8px;   /* chips */
+  --radius-sm:  12px;  /* thumbnails */
+  --radius-md:  16px;  /* inputs, small cards */
+  --radius-lg:  24px;  /* inner panels */
+  --radius-xl:  28px;  /* glass panels */
+  --radius-pill: 999px;
+
+  /* Elevation — deep, soft, no colored glow except on accent */
+  --shadow-panel: 0 24px 80px rgba(0,0,0,0.35);
+  --shadow-float: 0 8px 30px rgba(0,0,0,0.40);
+  --glow-accent:  0 0 0 1px rgba(118,248,183,0.30), 0 8px 30px rgba(118,248,183,0.18);
+
+  /* Hit target */
+  --tap-min: 44px;
+}

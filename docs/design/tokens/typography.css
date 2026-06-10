@@ -1,0 +1,34 @@
+/* ── Jungle Market · Typography tokens ─────────────────────────
+   Space Grotesk = English display labels / eyebrows / mono-ish data.
+   Noto Sans KR  = all Korean UI copy and body text. */
+:root {
+  --jm-font-en:  "Space Grotesk", "Noto Sans KR", sans-serif;
+  --jm-font-kr:  "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --jm-font-mono:"Space Grotesk", ui-monospace, "SFMono-Regular", monospace;
+
+  /* Semantic aliases */
+  --font-display: var(--jm-font-kr);  /* titles (한국어, weight 700) */
+  --font-body:    var(--jm-font-kr);
+  --font-label:   var(--jm-font-en);  /* EYEBROW LABELS (uppercase, tracked) */
+  --font-mono:    var(--jm-font-mono);
+
+  /* Type scale (px) — desktop board UI */
+  --text-eyebrow: 12px;   /* tracked 2.5px, uppercase */
+  --text-meta:    12.5px; /* timestamps, captions */
+  --text-sm:      13.5px;
+  --text-base:    15px;
+  --text-lg:      18px;
+  --text-title:   21px;
+  --text-h1:      26px;
+  --text-hero:    34px;
+
+  /* Weights */
+  --weight-regular: 400;
+  --weight-medium:  500;  /* product card titles */
+  --weight-bold:    700;  /* titles, prices, CTAs */
+  --weight-black:   900;
+
+  /* Tracking */
+  --track-label:  2.5px;  /* eyebrows */
+  --track-tight: -0.5px;  /* large titles */
+}

@@ -1,0 +1,50 @@
+/* ── Jungle Market · Color tokens ──────────────────────────────
+   Dark-glass surfaces with a single mint accent. Mint is reserved
+   for action, selection, and "live/예약중" states — never decoration. */
+:root {
+  /* Base ramp — near-black greens */
+  --jm-bg:            #090b0c;  /* app background */
+  --jm-bg-muted:      #111514;  /* secondary background */
+  --jm-ink-0:         #06140d;  /* text on mint (deep green-black) */
+
+  /* Glass surfaces (use over --jm-bg) */
+  --jm-panel:         rgba(18,23,22,0.88);
+  --jm-panel-strong:  rgba(28,35,34,0.96);
+  --jm-surface-2:     rgba(255,255,255,0.02);  /* faint inset fill */
+  --jm-surface-inset: rgba(0,0,0,0.40);        /* input / well */
+
+  /* Lines (mint-tinted hairlines) */
+  --jm-line:          rgba(121,255,194,0.16);
+  --jm-line-strong:   rgba(121,255,194,0.32);
+  --jm-line-plain:    rgba(255,255,255,0.05);
+
+  /* Text */
+  --jm-text:          #f1f5f2;
+  --jm-text-muted:    #9aa79d;
+  --jm-text-dim:      #5f6b63;
+
+  /* Mint accent */
+  --jm-mint:          #76f8b7;
+  --jm-mint-strong:   #5ce59f;
+  --jm-mint-soft:     rgba(118,248,183,0.16);
+
+  /* Semantic */
+  --jm-danger:        #ff7c7c;
+  --jm-danger-soft:   rgba(255,124,124,0.16);
+  --jm-warning:       #ffcc7a;  /* 나눔 / 주의 */
+  --jm-warning-soft:  rgba(255,204,122,0.16);
+
+  /* ── Semantic aliases (prefer these in product code) ── */
+  --surface-app:      var(--jm-bg);
+  --surface-card:     var(--jm-panel);
+  --surface-raised:   var(--jm-panel-strong);
+  --surface-inset:    var(--jm-surface-inset);
+  --border-card:      var(--jm-line);
+  --border-strong:    var(--jm-line-strong);
+  --text-body:        var(--jm-text);
+  --text-secondary:   var(--jm-text-muted);
+  --text-tertiary:    var(--jm-text-dim);
+  --accent:           var(--jm-mint);
+  --accent-soft:      var(--jm-mint-soft);
+  --on-accent:        var(--jm-ink-0);
+}
