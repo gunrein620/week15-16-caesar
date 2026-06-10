@@ -1,9 +1,9 @@
 import { Bell, Bot, Home, LogIn, LogOut, Map, Menu, Plus, Search, UserRound, UsersRound } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { BottomNav } from './BottomNav.js';
 import { FloatingWriteButton } from './FloatingWriteButton.js';
 
-export type AppView = 'home' | 'detail' | 'editor' | 'ai' | 'login' | 'signup';
+export type AppView = 'home' | 'community' | 'map' | 'detail' | 'editor' | 'ai' | 'login' | 'signup';
 
 type AppShellProps = {
   children: ReactNode;
@@ -15,7 +15,12 @@ type AppShellProps = {
 };
 
 export function AppShell({ children, view, regionName, isAuthed, onNavigate, onLogout }: AppShellProps) {
-  const showWrite = view === 'home' || view === 'detail';
+  const [activeCategory, setActiveCategory] = useState('동네생활');
+  const [activeFilter, setActiveFilter] = useState('추천');
+  const showWrite = view === 'home' || view === 'community' || view === 'detail';
+  const showBoardTabs = view === 'home' || view === 'community';
+  const boardCategories = ['동네생활', '모임', '카페', '아파트', '게임', '맛집/음식'];
+  const boardFilters = ['추천', '인기', '투표', '생활정보', 'AI추천'];
 
   return (
     <div className="app-shell">
@@ -36,21 +41,47 @@ export function AppShell({ children, view, regionName, isAuthed, onNavigate, onL
         </nav>
       </header>
 
-      <nav className="category-tabs" aria-label="게시판 카테고리">
-        {['동네생활', '모임', '카페', '아파트', '게임', '맛집/음식'].map((item, index) => (
-          <button className={index === 0 ? 'active' : ''} type="button" key={item}>
-            {item}
-          </button>
-        ))}
-      </nav>
+      {showBoardTabs && (
+        <>
+          <nav className="category-tabs" aria-label="게시판 카테고리">
+            {boardCategories.map((item) => (
+              <button
+                aria-pressed={activeCategory === item}
+                className={activeCategory === item ? 'active' : ''}
+                type="button"
+                key={item}
+                onClick={() => {
+                  setActiveCategory(item);
+                  if (view !== 'community') {
+                    onNavigate('community');
+                  }
+                }}
+              >
+                {item}
+              </button>
+            ))}
+          </nav>
 
-      <nav className="filter-chips" aria-label="게시글 필터">
-        {['추천', '인기', '투표', '생활정보', 'AI추천'].map((item, index) => (
-          <button className={index === 0 ? 'selected' : ''} type="button" key={item}>
-            {item}
-          </button>
-        ))}
-      </nav>
+          <nav className="filter-chips" aria-label="게시글 필터">
+            {boardFilters.map((item) => (
+              <button
+                aria-pressed={activeFilter === item}
+                className={activeFilter === item ? 'selected' : ''}
+                type="button"
+                key={item}
+                onClick={() => {
+                  setActiveFilter(item);
+                  if (view !== 'community') {
+                    onNavigate('community');
+                  }
+                }}
+              >
+                {item}
+              </button>
+            ))}
+          </nav>
+        </>
+      )}
 
       <main className="screen-content">{children}</main>
 
@@ -69,8 +100,8 @@ export function AppShell({ children, view, regionName, isAuthed, onNavigate, onL
         active={view}
         items={[
           { view: 'home', label: '홈', icon: <Home size={23} /> },
-          { view: 'home', label: '커뮤니티', icon: <UsersRound size={24} /> },
-          { view: 'home', label: '동네지도', icon: <Map size={23} /> },
+          { view: 'community', label: '커뮤니티', icon: <UsersRound size={24} /> },
+          { view: 'map', label: '동네지도', icon: <Map size={23} /> },
           { view: 'ai', label: 'AI도우미', icon: <Bot size={23} /> },
           {
             view: 'login',

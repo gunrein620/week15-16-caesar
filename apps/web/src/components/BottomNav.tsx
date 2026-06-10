@@ -22,7 +22,7 @@ export function BottomNav({ active, items, onNavigate }: BottomNavProps) {
         .filter((item) => !item.hidden)
         .map((item) => (
           <button
-            className={active === item.view && (item.view !== 'home' || item.label === '홈') ? 'active' : ''}
+            className={active === item.view ? 'active' : ''}
             type="button"
             key={`${item.label}-${item.view}`}
             onClick={() => {
