@@ -307,9 +307,9 @@ button {
 
 .searchMode .topFeedTabs button {
   gap: 0;
-  height: var(--search-rail-width);
+  height: var(--search-rail-button-height, var(--search-rail-width));
   justify-content: center;
-  min-height: var(--search-rail-width);
+  min-height: var(--search-rail-button-height, var(--search-rail-width));
   padding: 0;
   width: var(--search-rail-width);
 }
@@ -419,8 +419,9 @@ button {
   .searchMode {
     align-items: stretch;
     --search-content-left: 72px;
-    --search-rail-left: 22px;
-    --search-rail-top: 156px;
+    --search-rail-button-height: 48px;
+    --search-rail-left: 17px;
+    --search-rail-top: 158px;
     --search-rail-width: 54px;
     padding: 24px 16px 18px 22px;
     width: 360px;
