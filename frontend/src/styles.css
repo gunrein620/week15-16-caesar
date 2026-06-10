@@ -5770,7 +5770,7 @@ button:disabled {
     justify-content: center;
     padding: calc(env(safe-area-inset-top) + 14px) 12px 0;
     pointer-events: none;
-    position: absolute;
+    position: fixed;
     right: 0;
     top: 0;
     z-index: 9;
