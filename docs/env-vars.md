@@ -35,8 +35,14 @@ MVP는 mock fallback이 있어 비워둬도 실행됩니다. 실제 외부 API�
 | 변수 | 예시 | 설명 |
 | --- | --- | --- |
 | `WEATHER_API_KEY` | `...` | 날씨 API Key |
-| `PUBLIC_DATA_API_KEY` | `...` | 공공데이터 API Key |
-| `MAP_API_KEY` | `...` | 지도/장소 API Key |
+| `PUBLIC_DATA_API_KEY` | `...` | 공공데이터포털 지역행사 API Key |
+| `MAP_API_KEY` | `...` | 카카오 로컬 API REST API Key |
+
+현재 MCP 실제 연동 기준:
+
+- `WEATHER_API_KEY`: 공공데이터포털 `기상청_단기예보 조회서비스`의 인증키를 사용합니다.
+- `MAP_API_KEY`: Kakao Developers 앱의 REST API 키를 사용합니다. 앱 설정에서 로컬/지도 계열 API 권한이 비활성화되어 있으면 `OPEN_MAP_AND_LOCAL service` 403 오류가 납니다.
+- `PUBLIC_DATA_API_KEY`: 한국관광공사 TourAPI `KorService2/searchFestival2` 지역행사 조회에 사용합니다. 공공데이터포털에서 해당 API를 별도로 활용신청하지 않은 키면 403이 날 수 있습니다.
 
 ## 로컬 실행 순서
 
