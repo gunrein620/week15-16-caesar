@@ -5776,6 +5776,15 @@ button:disabled {
     z-index: 9;
   }
 
+  .feedScreen .updateBody {
+    bottom: calc(86px + env(safe-area-inset-bottom));
+    padding-bottom: 14px;
+  }
+
+  .feedScreen .cardActions.actionRail {
+    bottom: calc(104px + env(safe-area-inset-bottom));
+  }
+
   .feedSourceTabs {
     background: rgb(0 0 0 / 35%);
     border-radius: 999px;
