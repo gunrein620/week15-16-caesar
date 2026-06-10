@@ -14,7 +14,7 @@
 - Frontend: React, Vite, TypeScript, TanStack Query
 - Backend: FastAPI, SQLAlchemy, Alembic, slowapi
 - DB: PostgreSQL 16 + pgvector
-- AI: OpenAI `gpt-4o-mini`, `text-embedding-3-small`
+- AI: OpenAI `gpt-5.5`, `text-embedding-3-small`
 - Tools: MCP Python SDK, YouTube Data API, Naver Search API
 - Public beta: Vercel frontend + Railway backend + Railway pgvector DB
 
@@ -84,6 +84,10 @@ Required backend variables:
 Public frontend variable:
 
 - `VITE_API_BASE_URL`
+
+Optional backend model override:
+
+- `CHAT_MODEL`
 
 ## Public Beta Deploy
 

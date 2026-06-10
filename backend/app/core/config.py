@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     seed_admin_email: str = "admin@example.com"
     seed_admin_password: str = "change-me-admin"
     embedding_model: str = "text-embedding-3-small"
-    chat_model: str = "gpt-4o-mini"
+    chat_model: str = "gpt-5.5"
 
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
