@@ -219,6 +219,7 @@ describe('RagService', () => {
     const userMessage = llmService.chat.mock.calls[0][0][1].content;
     expect(userMessage.indexOf('외부 장소 검색 결과')).toBeLessThan(userMessage.indexOf('게시판 보조 근거'));
     expect(userMessage).toContain('오산역온누리약국');
+    expect(llmService.searchWeb).not.toHaveBeenCalled();
     expect(result.externalSources).toEqual([
       expect.objectContaining({
         name: '오산역온누리약국',

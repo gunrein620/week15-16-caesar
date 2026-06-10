@@ -456,7 +456,7 @@ export class RagService {
     places: ExternalPlaceSource[],
     question: string
   ): Promise<ExternalPlaceSource[]> {
-    if (places.length === 0) {
+    if (places.length === 0 || !this.hasOperatingHoursIntent(question)) {
       return places;
     }
 
@@ -478,6 +478,12 @@ export class RagService {
       })
     );
     return enrichedPlaces;
+  }
+
+  private hasOperatingHoursIntent(question: string) {
+    return /(운영\s*시간|영업\s*시간|진료\s*시간|몇\s*시|언제\s*(열|닫|까지)|지금|현재|문\s*(열|닫)|열어|열려|열었|닫아|닫혀|휴무|휴일|공휴일|야간|심야|밤|새벽|24\s*시간|24시)/i.test(
+      question
+    );
   }
 
   private operatingHoursSearchPrompt(place: ExternalPlaceSource, question: string) {
