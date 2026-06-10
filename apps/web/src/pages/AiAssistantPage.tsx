@@ -1,6 +1,6 @@
 import { Bot, FileText, Megaphone, Send } from 'lucide-react';
 import { useState } from 'react';
-import { api } from '../api/client.js';
+import { api, type RagSource } from '../api/client.js';
 
 type AiAssistantPageProps = {
   isAuthed: boolean;
@@ -13,6 +13,7 @@ export function AiAssistantPage({ isAuthed, onLogin }: AiAssistantPageProps) {
   const [mode, setMode] = useState<AiMode>('rag');
   const [input, setInput] = useState('근처 야간 약국 어디 있어?');
   const [answer, setAnswer] = useState('오산 게시판에 쌓인 글과 외부 도구를 활용해 답변합니다.');
+  const [sources, setSources] = useState<RagSource[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   async function ask() {
@@ -25,12 +26,15 @@ export function AiAssistantPage({ isAuthed, onLogin }: AiAssistantPageProps) {
       if (mode === 'rag') {
         const result = await api.ragAsk(input);
         setAnswer(result.answer);
+        setSources(result.sources ?? []);
       } else {
         const result = await api.agent(mode, input);
         setAnswer(result.answer);
+        setSources([]);
       }
     } catch (error) {
       setAnswer(error instanceof Error ? error.message : 'AI 답변을 생성하지 못했습니다.');
+      setSources([]);
     } finally {
       setIsLoading(false);
     }
@@ -73,7 +77,25 @@ export function AiAssistantPage({ isAuthed, onLogin }: AiAssistantPageProps) {
           <strong>답변</strong>
         </header>
         <p>{answer}</p>
+        {sources.length > 0 && (
+          <div className="source-list" aria-label="AI 답변 근거">
+            <strong>근거</strong>
+            {sources.slice(0, 3).map((source) => (
+              <div className="source-item" key={`${source.sourceType ?? 'source'}-${source.sourceId}`}>
+                <span>{sourceTitle(source)}</span>
+                <small>{source.sourceType ?? 'SOURCE'}</small>
+              </div>
+            ))}
+          </div>
+        )}
       </article>
     </section>
   );
+}
+
+function sourceTitle(source: RagSource) {
+  const titleLine = source.content
+    .split('\n')
+    .find((line) => line.startsWith('제목:'));
+  return titleLine?.replace('제목:', '').trim() || source.content.slice(0, 48);
 }

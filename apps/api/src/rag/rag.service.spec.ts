@@ -114,6 +114,66 @@ describe('RagService', () => {
     });
   });
 
+  it('ask keeps directly matched vector sources before unrelated nearest rows', async () => {
+    vectorSearchService.search.mockResolvedValue([
+      { sourceType: 'POST', sourceId: 'post-1', content: '오산 야간 약국 정보', similarity: 0.82 },
+      { sourceType: 'POST', sourceId: 'post-2', content: '오산역 분실물 안내', similarity: 0.79 }
+    ]);
+    llmService.chat.mockResolvedValue('야간 약국 정보 게시글을 확인하세요.');
+    const service = new RagService(
+      prisma as never,
+      embeddingService as never,
+      vectorSearchService as never,
+      llmService as never
+    );
+
+    const result = await service.ask({
+      question: '근처 야간 약국 어디 있어?'
+    });
+
+    expect(result.sources.map((source) => source.sourceId)).toEqual(['post-1']);
+  });
+
+  it('ask falls back to keyword post search when vector search returns no sources', async () => {
+    vectorSearchService.search.mockResolvedValue([]);
+    prisma.post.findMany.mockResolvedValue([
+      {
+        id: 'post-1',
+        title: '오산 야간 약국 정보 모아봐요',
+        content: '오산역과 원동 주변 야간 약국 정보를 댓글로 모아두면 좋겠습니다.',
+        regionId: 'osan-id',
+        category: { name: '병원/약국' },
+        region: { name: '오산시' },
+        tags: [{ tag: { name: '야간약국' } }, { tag: { name: '생활정보' } }]
+      }
+    ]);
+    llmService.chat.mockResolvedValue('오산 야간 약국 정보 게시글을 먼저 확인해 보세요.');
+    const service = new RagService(
+      prisma as never,
+      embeddingService as never,
+      vectorSearchService as never,
+      llmService as never
+    );
+
+    const result = await service.ask({
+      question: '근처 야간 약국 어디 있어?'
+    });
+
+    expect(prisma.post.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          regionId: 'osan-id'
+        })
+      })
+    );
+    expect(result.sources).toEqual([
+      expect.objectContaining({
+        sourceId: 'post-1',
+        content: expect.stringContaining('오산 야간 약국 정보 모아봐요')
+      })
+    ]);
+  });
+
   it('regional issues resolves OSAN when regionId is missing', async () => {
     prisma.post.findMany.mockResolvedValue([
       {

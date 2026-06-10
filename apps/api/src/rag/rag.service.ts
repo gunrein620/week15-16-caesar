@@ -14,6 +14,16 @@ type RagSource = VectorSearchResult & {
   url: string | null;
 };
 
+type KeywordPost = {
+  id: string;
+  title: string;
+  content: string;
+  regionId: string | null;
+  category: { name: string };
+  region: { name: string };
+  tags: Array<{ tag: { name: string } }>;
+};
+
 @Injectable()
 export class RagService {
   constructor(
@@ -63,26 +73,38 @@ export class RagService {
   async ask(dto: RagAskDto) {
     const regionId = await this.resolveRegionId(dto.regionId);
     const embedding = await this.embeddingService.createEmbedding(dto.question);
-    const sources = (
+    const questionTerms = this.keywordTerms(dto.question);
+    let sources = (
       await this.vectorSearchService.search({
         embedding,
         regionId,
         limit: dto.topK ?? 5
       })
     ).map((row) => this.toSource(row));
+    const directlyMatchedSources = sources.filter((source) =>
+      questionTerms.some((term) => source.content.includes(term))
+    );
+    if (directlyMatchedSources.length > 0) {
+      sources = directlyMatchedSources;
+    }
+    if (sources.length === 0) {
+      sources = await this.keywordPostSources(dto.question, regionId, dto.topK ?? 5);
+    }
 
     const messages: ChatMessage[] = [
       {
         role: 'system',
         content:
-          '너는 오산 지역 생활 커뮤니티 LocalMind Board의 Q&A 봇이다. 제공된 게시글/댓글/공지 근거만 사용하고, 불확실하면 관련 글 확인을 안내한다.'
+          '너는 오산 지역 생활 커뮤니티 LocalMind Board의 Q&A 봇이다. 제공된 게시글/댓글/공지 근거만 사용한다. 근거에 관련 게시글이 있으면 반드시 제목이나 내용을 언급하고, 정확한 위치나 운영시간이 근거에 없으면 추가 확인이 필요하다고 말한다.'
       },
       {
         role: 'user',
         content: [
           `질문: ${dto.question}`,
           '검색된 근거:',
-          sources.map((source, index) => `${index + 1}. [${source.sourceType}] ${source.content}`).join('\n')
+          sources.length > 0
+            ? sources.map((source, index) => `${index + 1}. [${source.sourceType}] ${source.content}`).join('\n')
+            : '관련 근거 없음'
         ].join('\n\n')
       }
     ];
@@ -159,6 +181,78 @@ export class RagService {
     return {
       ...row,
       url: row.sourceType === EmbeddingSourceType.POST ? `/posts/${row.sourceId}` : null
+    };
+  }
+
+  private async keywordPostSources(question: string, regionId: string, limit: number): Promise<RagSource[]> {
+    const terms = this.keywordTerms(question);
+    if (terms.length === 0) {
+      return [];
+    }
+    const posts = await this.prisma.post.findMany({
+      where: {
+        regionId,
+        status: PostStatus.PUBLISHED,
+        OR: terms.flatMap((term) => [{ title: { contains: term } }, { content: { contains: term } }])
+      },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(Math.max(limit, 1), 10),
+      select: {
+        id: true,
+        title: true,
+        content: true,
+        regionId: true,
+        category: {
+          select: { name: true }
+        },
+        region: {
+          select: { name: true }
+        },
+        tags: {
+          select: {
+            tag: {
+              select: { name: true }
+            }
+          }
+        }
+      }
+    });
+
+    return posts.map((post) => this.keywordPostToSource(post));
+  }
+
+  private keywordTerms(question: string) {
+    const stopWords = new Set(['근처', '어디', '있어', '있나요', '알려줘', '추천', '해줘', '혹시']);
+    return [
+      ...new Set(
+        question
+          .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+          .split(/\s+/)
+          .map((term) => term.trim())
+          .filter((term) => term.length >= 2 && !stopWords.has(term))
+      )
+    ].slice(0, 6);
+  }
+
+  private keywordPostToSource(post: KeywordPost): RagSource {
+    const tags = post.tags.map((postTag) => postTag.tag.name).join(', ');
+    return {
+      id: `keyword-post-${post.id}`,
+      sourceType: EmbeddingSourceType.POST,
+      sourceId: post.id,
+      regionId: post.regionId,
+      similarity: 0,
+      url: `/posts/${post.id}`,
+      content: [
+        '[게시글]',
+        `제목: ${post.title}`,
+        `지역: ${post.region.name}`,
+        `카테고리: ${post.category.name}`,
+        tags ? `태그: ${tags}` : null,
+        `내용: ${post.content}`
+      ]
+        .filter(Boolean)
+        .join('\n')
     };
   }
 }

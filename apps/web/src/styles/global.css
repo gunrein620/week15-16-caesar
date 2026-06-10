@@ -595,6 +595,40 @@ textarea {
   white-space: pre-wrap;
 }
 
+.source-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.source-list > strong {
+  color: #3f454d;
+  font-size: 13px;
+}
+
+.source-item {
+  display: grid;
+  gap: 3px;
+  padding: 10px 11px;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.source-item span {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
+.source-item small {
+  color: var(--color-subtext);
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .empty-state {
   display: grid;
   gap: 12px;

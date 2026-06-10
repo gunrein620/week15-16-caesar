@@ -27,6 +27,14 @@ export type AuthResponse = {
   };
 };
 
+export type RagSource = {
+  sourceType?: string;
+  sourceId: string;
+  content: string;
+  similarity?: number;
+  url?: string | null;
+};
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000/api';
 const TOKEN_KEY = 'localmind.accessToken';
 
@@ -96,7 +104,7 @@ export const api = {
     });
   },
   async ragAsk(question: string) {
-    return request<{ answer: string; sources?: Array<{ sourceId: string; content: string; similarity: number }> }>(
+    return request<{ answer: string; sources?: RagSource[] }>(
       '/rag/ask',
       {
         method: 'POST',
