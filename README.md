@@ -39,6 +39,20 @@ cp .env.example .env
 DATABASE_URL="postgresql://jungle:jungle@localhost:5432/jungle_market"
 ```
 
+Google OAuth를 사용할 때는 Google Cloud Console에서 Web application OAuth Client를 만들고 아래 값을 `.env`에 넣습니다.
+
+```bash
+AUTH_URL="http://localhost:3000"
+AUTH_GOOGLE_ID="..."
+AUTH_GOOGLE_SECRET="..."
+```
+
+Google Cloud의 Authorized redirect URI에는 로컬 개발용으로 아래 주소를 등록해야 합니다.
+
+```text
+http://localhost:3000/api/auth/callback/google
+```
+
 3. 스키마와 시드 데이터를 넣습니다.
 
 ```bash
@@ -60,11 +74,42 @@ npm run dev
 - `npm run build`: 프로덕션 빌드
 - `npm run typecheck`: TypeScript 타입체크
 - `npm run lint`: 현재는 TypeScript 타입체크와 동일한 비대화형 정적 검증
+- `npm run verify:auth`: OAuth 후처리 라우트, 로그인 callback URL, 환경 예시 검증
 - `npm run db:generate`: Prisma Client 생성
 - `npm run db:migrate`: 로컬 DB 마이그레이션 적용
 - `npm run db:seed`: 데모 데이터 시드
 - `npm run db:reset`: 로컬 DB 초기화 후 마이그레이션/시드 재실행
 - `npm run db:studio`: Prisma Studio 실행
+
+## 라즈베리파이 배포
+
+서버는 `ssh rpi`로 접속하는 것을 기준으로 합니다. 서버에서 사용하는 실제 접속 origin이 `http://<server>:3000`이라면 서버 `.env`의 `AUTH_URL`과 Google Cloud redirect URI도 같은 origin을 써야 합니다.
+
+```bash
+ssh rpi
+cd ~/WS/jungle-12/week15-16-caesar
+git pull
+npm ci
+npx prisma generate
+npx prisma migrate deploy
+npm run build
+pm2 restart jungle-market || pm2 start npm --name jungle-market -- start
+pm2 save
+```
+
+서버용 Google redirect URI 예시는 아래 형태입니다.
+
+```text
+http://<server>:3000/api/auth/callback/google
+```
+
+배포 후 서버 내부에서 최소한 아래 엔드포인트를 확인합니다.
+
+```bash
+curl -I http://localhost:3000
+curl -I http://localhost:3000/login
+curl -I http://localhost:3000/api/auth/providers
+```
 
 ## 구현 범위
 
