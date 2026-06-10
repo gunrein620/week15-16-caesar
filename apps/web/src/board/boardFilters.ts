@@ -14,7 +14,9 @@ export const boardFilters: BoardFilter[] = ['추천', '인기', '투표', '생�
 export function selectBoardPosts(posts: Post[], state: BoardFeedState) {
   const categoryMatched = posts.filter((post) => matchesCategory(post, state.category));
   const filterMatched = categoryMatched.filter((post) => matchesFilter(post, state.filter));
-  return sortPosts(filterMatched, state.filter);
+  const fallbackMatched =
+    filterMatched.length === 0 && (state.filter === '추천' || state.filter === '인기') ? categoryMatched : filterMatched;
+  return sortPosts(fallbackMatched, state.filter);
 }
 
 export function boardFilterLabel(filter: BoardFilter) {
@@ -51,21 +53,21 @@ function matchesCategory(post: Post, category: BoardCategory) {
 }
 
 function matchesFilter(post: Post, filter: BoardFilter) {
-  if (filter === '추천' || filter === '인기') {
-    return true;
-  }
   const text = postSearchText(post);
   const tags = postTags(post);
+  if (filter === '추천') {
+    return tags.includes('추천');
+  }
+  if (filter === '인기') {
+    return tags.includes('인기');
+  }
   if (filter === '투표') {
-    return /(투표|설문|찬반|골라|선택|의견\s*모아)/.test(text);
+    return tags.includes('투표') || /(투표|설문|찬반|골라|선택|의견\s*모아)/.test(text);
   }
   if (filter === '생활정보') {
-    return (
-      tags.includes('생활정보') ||
-      /(생활정보|정보|안내|약국|병원|주차|분실|민원|공지|운영\s*시간|영업\s*시간)/.test(text)
-    );
+    return tags.includes('생활정보');
   }
-  return tags.includes('AI추천') || /(AI|RAG|날씨|플리마켓|야간\s*약국|민원|분실물)/i.test(text);
+  return tags.includes('AI추천');
 }
 
 function sortPosts(posts: Post[], filter: BoardFilter) {

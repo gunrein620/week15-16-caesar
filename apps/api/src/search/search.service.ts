@@ -18,9 +18,10 @@ export class SearchService {
       throw new BadRequestException('검색어를 입력해 주세요.');
     }
     const regionId = query.regionId ?? (await this.getDefaultRegionId());
+    const regionIds = await this.getRegionScopeIds(regionId);
     const where: Prisma.PostWhereInput = {
       status: { not: PostStatus.DELETED },
-      regionId,
+      regionId: { in: regionIds },
       categoryId: query.categoryId,
       OR: [{ title: { contains: q } }, { content: { contains: q } }]
     };
@@ -47,5 +48,15 @@ export class SearchService {
       throw new NotFoundException('기본 지역을 찾을 수 없습니다.');
     }
     return region.id;
+  }
+
+  private async getRegionScopeIds(regionId: string) {
+    const regions = await this.prisma.region.findMany({
+      where: {
+        OR: [{ id: regionId }, { parentId: regionId }]
+      },
+      select: { id: true }
+    });
+    return regions.length > 0 ? regions.map((region) => region.id) : [regionId];
   }
 }

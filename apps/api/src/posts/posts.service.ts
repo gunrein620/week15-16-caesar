@@ -24,7 +24,8 @@ export class PostsService {
   async findAll(query: ListPostsQuery) {
     const { page, limit, skip } = normalizePagination(query);
     const regionId = query.regionId ?? (await this.getDefaultRegionId());
-    const where = this.buildPostWhere({ ...query, regionId });
+    const regionIds = await this.getRegionScopeIds(regionId);
+    const where = this.buildPostWhere({ ...query, regionIds });
 
     const [items, total] = await Promise.all([
       this.prisma.post.findMany({
@@ -151,6 +152,16 @@ export class PostsService {
     return region.id;
   }
 
+  private async getRegionScopeIds(regionId: string) {
+    const regions = await this.prisma.region.findMany({
+      where: {
+        OR: [{ id: regionId }, { parentId: regionId }]
+      },
+      select: { id: true }
+    });
+    return regions.length > 0 ? regions.map((region) => region.id) : [regionId];
+  }
+
   private async safeIndexPost(postId: string) {
     if (!this.ragIngestionService) {
       return;
@@ -199,12 +210,12 @@ export class PostsService {
     return error instanceof Error ? error.message : String(error);
   }
 
-  private buildPostWhere(query: ListPostsQuery & { regionId: string }): Prisma.PostWhereInput {
+  private buildPostWhere(query: ListPostsQuery & { regionIds: string[] }): Prisma.PostWhereInput {
     const q = query.q?.trim();
     const tag = query.tag?.trim();
     return {
       status: { not: PostStatus.DELETED },
-      regionId: query.regionId,
+      regionId: { in: query.regionIds },
       categoryId: query.categoryId,
       ...(q
         ? {

@@ -33,7 +33,19 @@ const categories = [
   { name: '반려동물/육아', slug: 'family-pet' }
 ] as const;
 
-const demoPosts = [
+type DemoPostSeed = {
+  id: string;
+  title: string;
+  content: string;
+  categorySlug: string;
+  regionCode: string;
+  tagNames: string[];
+  viewCount?: number;
+  createdAt?: Date;
+  skipEmbedding?: boolean;
+};
+
+const coreDemoPosts: DemoPostSeed[] = [
   {
     id: '10000000-0000-4000-8000-000000000001',
     title: '오산 야간 약국 정보 모아봐요',
@@ -41,7 +53,7 @@ const demoPosts = [
       '밤에 아이가 열이 나거나 갑자기 약이 필요할 때 참고할 수 있도록 오산역과 원동 주변 야간 약국 정보를 댓글로 모아두면 좋겠습니다.',
     categorySlug: 'medical',
     regionCode: 'OSAN',
-    tagNames: ['야간약국', '생활정보', '오산역']
+    tagNames: ['야간약국', '약국정보', '오산역']
   },
   {
     id: '10000000-0000-4000-8000-000000000002',
@@ -79,7 +91,87 @@ const demoPosts = [
     regionCode: 'OSAN',
     tagNames: ['맛집', '가족식사', '주차']
   }
+];
+
+const dummyRegions = ['OSAN', 'OSAN_DONG', 'WON_DONG', 'GWOL_DONG', 'GEUMAM_DONG', 'SEGYO_DONG'] as const;
+const regionNameByCode = Object.fromEntries(regions.map((region) => [region.code, region.name])) as Record<
+  string,
+  string
+>;
+
+const boardDummyConfigs = [
+  {
+    idBlock: '20000000',
+    filterName: '추천',
+    categorySlugs: ['life', 'food', 'event'],
+    viewBase: 1800,
+    title: (index: number, regionName: string) => `${regionName} 주민 추천 생활정보 ${index}`,
+    content: (index: number, regionName: string) =>
+      `${regionName}에서 이번 주에 참고할 만한 추천 글입니다. 맛집, 산책, 주차, 행사 정보를 묶어 공유합니다. 추천 더미 게시글 ${index}번입니다.`
+  },
+  {
+    idBlock: '21000000',
+    filterName: '인기',
+    categorySlugs: ['life', 'food', 'market'],
+    viewBase: 9000,
+    title: (index: number, regionName: string) => `${regionName} 인기글 모음 ${index}`,
+    content: (index: number, regionName: string) =>
+      `${regionName} 주민들이 많이 본 인기 게시글입니다. 댓글로 의견을 모으기 좋은 생활 이슈와 동네 소식을 정리했습니다. 인기 더미 게시글 ${index}번입니다.`
+  },
+  {
+    idBlock: '22000000',
+    filterName: '투표',
+    categorySlugs: ['life', 'event', 'complaint'],
+    viewBase: 3200,
+    title: (index: number, regionName: string) => `${regionName} 생활 투표 ${index}: 어떤 선택이 좋을까요?`,
+    content: (index: number, regionName: string) =>
+      `${regionName} 주민 의견을 모으는 투표 게시글입니다. 주말 행사 시간, 주차 안내, 민원 우선순위 중 어떤 선택이 나을지 설문으로 확인합니다. 투표 더미 게시글 ${index}번입니다.`
+  },
+  {
+    idBlock: '23000000',
+    filterName: '생활정보',
+    categorySlugs: ['medical', 'complaint', 'lost-found'],
+    viewBase: 2600,
+    title: (index: number, regionName: string) => `${regionName} 생활정보 안내 ${index}`,
+    content: (index: number, regionName: string) =>
+      `${regionName}에서 알아두면 좋은 생활정보입니다. 병원, 약국, 주차장, 분실물, 민원 접수 같은 실용 정보를 확인할 수 있습니다. 생활정보 더미 게시글 ${index}번입니다.`
+  },
+  {
+    idBlock: '24000000',
+    filterName: 'AI추천',
+    categorySlugs: ['event', 'medical', 'complaint'],
+    viewBase: 4200,
+    title: (index: number, regionName: string) => `${regionName} AI추천 동네 이슈 ${index}`,
+    content: (index: number, regionName: string) =>
+      `${regionName} 게시판의 RAG 검색과 MCP 도구 호출 데모에 활용할 AI추천 게시글입니다. 날씨, 약국, 행사, 민원 데이터를 함께 살펴볼 수 있습니다. AI추천 더미 게시글 ${index}번입니다.`
+  }
 ] as const;
+
+function createBoardDummyPosts(): DemoPostSeed[] {
+  const baseCreatedAt = new Date('2026-06-10T09:00:00.000Z').getTime();
+  const hour = 60 * 60 * 1000;
+
+  return boardDummyConfigs.flatMap((config, configIndex) =>
+    Array.from({ length: 100 }, (_, offset) => {
+      const index = offset + 1;
+      const regionCode = dummyRegions[offset % dummyRegions.length];
+      const regionName = regionNameByCode[regionCode] ?? '오산';
+      return {
+        id: `${config.idBlock}-0000-4000-8000-${String(index).padStart(12, '0')}`,
+        title: config.title(index, regionName),
+        content: config.content(index, regionName),
+        categorySlug: config.categorySlugs[offset % config.categorySlugs.length],
+        regionCode,
+        tagNames: [config.filterName, '오산', regionName],
+        viewCount: config.viewBase + (100 - offset) * 13,
+        createdAt: new Date(baseCreatedAt - (configIndex * 100 + offset) * hour),
+        skipEmbedding: true
+      };
+    })
+  );
+}
+
+const demoPosts: DemoPostSeed[] = [...coreDemoPosts, ...createBoardDummyPosts()];
 
 async function seedRegions() {
   const regionByCode = new Map<string, { id: string }>();
@@ -190,7 +282,9 @@ async function seedDemoPosts() {
         authorId: author.id,
         categoryId: category.id,
         regionId: region.id,
-        status: 'PUBLISHED'
+        status: 'PUBLISHED',
+        viewCount: demoPost.viewCount ?? 0,
+        createdAt: demoPost.createdAt
       },
       create: {
         id: demoPost.id,
@@ -199,7 +293,9 @@ async function seedDemoPosts() {
         authorId: author.id,
         categoryId: category.id,
         regionId: region.id,
-        status: 'PUBLISHED'
+        status: 'PUBLISHED',
+        viewCount: demoPost.viewCount ?? 0,
+        createdAt: demoPost.createdAt
       }
     });
 
@@ -233,7 +329,7 @@ async function seedDemoEmbeddings() {
   const posts = await prisma.post.findMany({
     where: {
       id: {
-        in: demoPosts.map((post) => post.id)
+        in: demoPosts.filter((post) => !post.skipEmbedding).map((post) => post.id)
       }
     },
     include: {

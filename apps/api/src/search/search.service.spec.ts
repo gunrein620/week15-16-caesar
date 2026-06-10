@@ -6,7 +6,8 @@ describe('SearchService', () => {
   it('searches title and content using default OSAN region when regionId is missing', async () => {
     const prisma = {
       region: {
-        findUnique: vi.fn().mockResolvedValue({ id: 'osan-id', code: 'OSAN' })
+        findUnique: vi.fn().mockResolvedValue({ id: 'osan-id', code: 'OSAN' }),
+        findMany: vi.fn().mockResolvedValue([{ id: 'osan-id' }, { id: 'osan-dong-id' }])
       },
       post: {
         count: vi.fn().mockResolvedValue(1),
@@ -30,7 +31,7 @@ describe('SearchService', () => {
           tags: expect.any(Object)
         }),
         where: expect.objectContaining({
-          regionId: 'osan-id',
+          regionId: { in: ['osan-id', 'osan-dong-id'] },
           status: { not: 'DELETED' },
           OR: [{ title: { contains: '야간 약국' } }, { content: { contains: '야간 약국' } }]
         })
@@ -48,7 +49,8 @@ describe('SearchService', () => {
   it('rejects blank search text before running a broad query', async () => {
     const prisma = {
       region: {
-        findUnique: vi.fn()
+        findUnique: vi.fn(),
+        findMany: vi.fn()
       },
       post: {
         count: vi.fn(),

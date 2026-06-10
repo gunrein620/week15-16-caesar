@@ -6,7 +6,8 @@ describe('PostsService', () => {
   const prisma = {
     $transaction: vi.fn((callback) => callback(prisma)),
     region: {
-      findUnique: vi.fn()
+      findUnique: vi.fn(),
+      findMany: vi.fn()
     },
     post: {
       count: vi.fn(),
@@ -27,6 +28,7 @@ describe('PostsService', () => {
 
   it('uses OSAN as default region when listing posts without regionId', async () => {
     prisma.region.findUnique.mockResolvedValue({ id: 'osan-id', code: 'OSAN' });
+    prisma.region.findMany.mockResolvedValue([{ id: 'osan-id' }, { id: 'osan-dong-id' }]);
     prisma.post.findMany.mockResolvedValue([
       {
         id: 'post-1',
@@ -43,7 +45,7 @@ describe('PostsService', () => {
     expect(prisma.post.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          regionId: 'osan-id',
+          regionId: { in: ['osan-id', 'osan-dong-id'] },
           status: { not: 'DELETED' }
         })
       })

@@ -112,7 +112,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export const api = {
   async posts() {
-    return request<{ items: Post[] }>('/posts?page=1&limit=20');
+    return request<{ items: Post[] }>('/posts?page=1&limit=600');
   },
   async categories() {
     return request<Category[]>('/categories');
