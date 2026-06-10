@@ -23,17 +23,15 @@ export default async function HomePage({
   return (
     <>
       {/* Hero */}
-      <Glass style={{ padding: "24px 30px", display: "flex", alignItems: "center", gap: 24 }}>
+      <Glass className="jm-hero">
         <div style={{ flex: 1 }}>
           <Eyebrow>JUNGLE MARKET</Eyebrow>
-          <h1 className="jm-title" style={{ fontSize: 30, marginTop: 12 }}>
-            우리 동네에서 바로 거래하는 중고 마켓
-          </h1>
+          <h1 className="jm-title jm-hero-title">우리 동네에서 바로 거래하는 중고 마켓</h1>
           <div style={{ color: "var(--text-secondary)", fontSize: 15, marginTop: 8 }}>
             가입은 소셜 로그인으로 한 번. 근처 물건을 보고 채팅으로 바로 약속해요.
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div className="jm-hero-side">
           <Glass variant={2} style={{ padding: "10px 16px", display: "flex", alignItems: "center", gap: 9 }}>
             <Icon name="pin" size={16} color="var(--accent)" />
             <div>
@@ -41,13 +39,13 @@ export default async function HomePage({
               <div style={{ fontWeight: 700, fontSize: 14 }}>{user?.town ?? "역삼동"}</div>
             </div>
           </Glass>
-          <Cta lg href="/products/new">
+          <Cta lg href="/products/new" className="jm-hide-mobile">
             <Icon name="plus" size={16} color="var(--on-accent)" /> 판매하기
           </Cta>
         </div>
       </Glass>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 18, flex: 1, minHeight: 0 }}>
+      <div className="jm-grid-home">
         {/* Market board */}
         <Glass style={{ padding: 22, display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>

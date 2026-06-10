@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- 브랜드 마크 — Spark 글리프(src/components/ds/Spark.tsx)를 채움형으로 확대 -->
+  <rect width="512" height="512" rx="115" fill="#090b0c"/>
+  <path d="M256 109.7L294 215l108.3 38.1L294 294l-38 108.3L218 294 109.7 253.1 218 215z" fill="#76f8b7"/>
+</svg>

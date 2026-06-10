@@ -29,7 +29,7 @@ export default async function BoardPage({
   ]);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1.5fr 0.6fr", gap: 18, flex: 1, minHeight: 0 }}>
+    <div className="jm-grid-board">
       {/* 글 목록 */}
       <Glass style={{ padding: 22, display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -103,7 +103,7 @@ export default async function BoardPage({
             ))}
           </div>
         </Glass>
-        <Glass style={{ padding: 22, display: "flex", flexDirection: "column", gap: 12 }}>
+        <Glass className="jm-board-info" style={{ padding: 22 }}>
           <Eyebrow dim icon={false}>
             BOARD INFO
           </Eyebrow>

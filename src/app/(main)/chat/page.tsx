@@ -1,6 +1,6 @@
 // ④ 채팅 / 거래 — A안 3분할 (대화 목록 | 스레드 | DEAL INFO)
 import { redirect } from "next/navigation";
-import { Avatar, Chip, Divider, Eyebrow, Glass } from "@/components/ds";
+import { Avatar, Chip, Divider, Eyebrow, Glass, Pill } from "@/components/ds";
 import { Bubble } from "@/components/chat/Bubble";
 import { Composer } from "@/components/chat/Composer";
 import { ProductHead } from "@/components/chat/ProductHead";
@@ -33,17 +33,10 @@ export default async function ChatPage({
   const otherName = other?.nickname ?? other?.name ?? "이웃";
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "320px 1fr 320px",
-        gap: 18,
-        flex: 1,
-        minHeight: 0,
-      }}
-    >
+    // 모바일: ?room= 없으면 목록 뷰, 있으면 스레드 뷰 (responsive.css .jm-grid-chat)
+    <div className={"jm-grid-chat" + (roomParam ? " has-room" : "")}>
       {/* 대화 목록 */}
-      <Glass style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+      <Glass className="jm-chat-list">
         <div style={{ padding: "4px 6px 8px" }}>
           <Eyebrow>CHATS</Eyebrow>
           <h2 className="jm-title" style={{ fontSize: 19, marginTop: 8 }}>
@@ -60,10 +53,13 @@ export default async function ChatPage({
       </Glass>
 
       {/* 스레드 */}
-      <Glass style={{ padding: 22, display: "flex", flexDirection: "column", gap: 14, minHeight: 560 }}>
+      <Glass className="jm-chat-thread">
         {active && other ? (
           <>
             <div style={{ display: "flex", alignItems: "center", gap: 12, paddingBottom: 4 }}>
+              <Pill ghost href="/chat" className="jm-show-mobile" style={{ padding: "8px 12px" }}>
+                ←
+              </Pill>
               <Avatar size={40} label={otherName[0]} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700, fontSize: 16 }}>{otherName}</div>
@@ -114,7 +110,7 @@ export default async function ChatPage({
       </Glass>
 
       {/* DEAL INFO */}
-      <Glass style={{ padding: 18, display: "flex", flexDirection: "column", gap: 16 }}>
+      <Glass className="jm-chat-info">
         <Eyebrow>DEAL INFO</Eyebrow>
         {active ? (
           <>

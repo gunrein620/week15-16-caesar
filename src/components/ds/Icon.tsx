@@ -5,6 +5,8 @@ import type { ReactNode } from "react";
 export type IconName =
   | "search"
   | "plus"
+  | "home"
+  | "board"
   | "chat"
   | "heart"
   | "pin"
@@ -26,6 +28,18 @@ const PATHS: Record<IconName, ReactNode> = {
     </>
   ),
   plus: <path d="M9 3.5v11M3.5 9h11" />,
+  home: (
+    <>
+      <path d="M2.5 8.5L9 3l6.5 5.5" />
+      <path d="M4.5 7.5v6A1.5 1.5 0 006 15h6a1.5 1.5 0 001.5-1.5v-6" />
+    </>
+  ),
+  board: (
+    <>
+      <rect x="3" y="3.5" width="12" height="11" rx="1.5" />
+      <path d="M6 7h6M6 10.5h4" />
+    </>
+  ),
   chat: (
     <path d="M3 5.5A1.5 1.5 0 014.5 4h9A1.5 1.5 0 0115 5.5v6A1.5 1.5 0 0113.5 13H7l-3 2.5V13H4.5A1.5 1.5 0 013 11.5z" />
   ),

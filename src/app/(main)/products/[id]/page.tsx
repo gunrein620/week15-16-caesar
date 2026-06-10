@@ -33,10 +33,10 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
 
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: 18, flex: 1, minHeight: 0 }}>
+      <div className="jm-grid-detail">
         {/* 사진 */}
         <Glass style={{ padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
-          <Photo label="대표 사진 1280×960" radius={18} style={{ flex: 1, minHeight: 380 }} />
+          <Photo label="대표 사진 1280×960" radius={18} className="jm-photo-main" />
           <div style={{ display: "flex", gap: 10 }}>
             {[1, 2, 3, 4].map((i) => (
               <Photo key={i} label="" radius={12} style={{ width: 70, height: 70 }} />
@@ -78,7 +78,7 @@ export default async function ProductDetailPage({ params }: { params: Promise<{ 
         <Glass style={{ padding: 18 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <Eyebrow icon={false}>{sellerName}님의 다른 물건</Eyebrow>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
+            <div className="jm-grid-others">
               {others.map((p) => (
                 <Link key={p.id} href={`/products/${p.id}`}>
                   <div className="jm-glass-2" style={{ padding: 9 }}>

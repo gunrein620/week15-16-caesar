@@ -1,0 +1,154 @@
+/* ── Jungle Market · Responsive layout ──────────────────────────
+   레이아웃 클래스 + 단일 768px 브레이크포인트.
+   데스크톱 값은 기존 인라인 스타일을 그대로 옮긴 것 — 픽셀 동일을 유지한다.
+   규칙: 반응형 컨테이너의 레이아웃 속성은 인라인이 아니라 여기서 소유한다. */
+
+/* 모바일 전용/숨김 유틸 — 적용 대상 요소에 인라인 display가 없어야 한다 */
+.jm-show-mobile { display: none; }
+
+/* 메인 셸 */
+.jm-shell {
+  max-width: 1560px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  padding: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* 인증 셸 */
+.jm-auth-shell {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 30px;
+}
+
+/* 탑바 */
+.jm-topbar { display: flex; align-items: center; gap: 18px; padding: 0 4px; }
+.jm-topbar-brand { font-size: 14px; letter-spacing: 3px; }
+.jm-topbar-nav { display: flex; gap: 4px; margin-left: 14px; }
+.jm-topbar-search-input { width: 160px; }
+
+/* 하단 탭바 — 데스크톱에선 숨김 */
+.jm-bottomnav { display: none; }
+
+/* 홈 */
+.jm-hero { padding: 24px 30px; display: flex; align-items: center; gap: 24px; }
+.jm-hero-title { font-size: 30px; margin-top: 12px; }
+.jm-hero-side { display: flex; align-items: center; gap: 12px; }
+.jm-grid-home { display: grid; grid-template-columns: 1fr 1.4fr; gap: 18px; flex: 1; min-height: 0; }
+
+/* 게시판 */
+.jm-grid-board { display: grid; grid-template-columns: 1.5fr 0.6fr; gap: 18px; flex: 1; min-height: 0; }
+.jm-board-info { display: flex; flex-direction: column; gap: 12px; }
+
+/* 상품 상세 */
+.jm-grid-detail { display: grid; grid-template-columns: 1.1fr 1fr; gap: 18px; flex: 1; min-height: 0; }
+.jm-photo-main { flex: 1; min-height: 380px; }
+.jm-grid-others { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+
+/* 상품 등록 폼 */
+.jm-grid-register { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 18px; flex: 1; min-height: 0; }
+.jm-photo-well { flex: 1; min-height: 280px; }
+.jm-register-form { padding: 30px; display: flex; flex-direction: column; gap: 20px; }
+
+/* 채팅 3분할 — 패널 display는 모바일 전환을 위해 클래스가 소유 */
+.jm-grid-chat { display: grid; grid-template-columns: 320px 1fr 320px; gap: 18px; flex: 1; min-height: 0; }
+.jm-chat-list { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.jm-chat-thread { padding: 22px; display: flex; flex-direction: column; gap: 14px; min-height: 560px; }
+.jm-chat-info { padding: 18px; display: flex; flex-direction: column; gap: 16px; }
+
+/* ── 모바일 (≤768px) ─────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .jm-hide-mobile { display: none; }
+  .jm-show-mobile { display: inline-flex; }
+
+  .jm-shell {
+    padding: 14px 12px;
+    gap: 12px;
+    /* 하단 탭바 + iOS 홈 인디케이터에 콘텐츠가 가리지 않도록 */
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+  .jm-auth-shell { padding: 16px; }
+
+  .jm-topbar { gap: 8px; }
+  .jm-topbar-brand { font-size: 11px; letter-spacing: 1.2px; }
+  .jm-topbar-nav { display: none; }
+  .jm-topbar .jm-pill { padding: 8px 12px; }
+  .jm-topbar-search { flex: 1; }
+  .jm-topbar-search-input { width: 0; flex: 1; min-width: 60px; }
+
+  /* 하단 탭바 */
+  .jm-bottomnav {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    justify-content: space-around;
+    align-items: center;
+    height: calc(60px + env(safe-area-inset-bottom));
+    padding: 0 6px env(safe-area-inset-bottom);
+    background: rgba(12, 16, 15, 0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid var(--border-card);
+  }
+  .jm-bottomnav-item {
+    flex: 1;
+    min-height: var(--tap-min);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    font-family: var(--font-body);
+    font-weight: var(--weight-bold);
+    font-size: 11px;
+    color: var(--text-tertiary);
+  }
+  .jm-bottomnav-item.is-active { color: var(--accent); }
+  .jm-bottomnav-sell {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 auto;
+    border-radius: var(--radius-pill);
+    background: var(--accent);
+    color: var(--on-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--glow-accent);
+  }
+
+  /* 홈 */
+  .jm-hero { flex-direction: column; align-items: stretch; padding: 18px; gap: 14px; }
+  .jm-hero-title { font-size: 22px; }
+  .jm-hero-side { justify-content: space-between; }
+  .jm-grid-home { grid-template-columns: 1fr; gap: 12px; }
+
+  /* 게시판 — 장식성 BOARD INFO는 숨김 */
+  .jm-grid-board { grid-template-columns: 1fr; gap: 12px; }
+  .jm-board-info { display: none; }
+
+  /* 상품 상세 */
+  .jm-grid-detail { grid-template-columns: 1fr; gap: 12px; }
+  .jm-photo-main { min-height: 240px; }
+  .jm-grid-others { grid-template-columns: repeat(2, 1fr); }
+
+  /* 상품 등록 폼 */
+  .jm-grid-register { grid-template-columns: 1fr; gap: 12px; }
+  .jm-photo-well { min-height: 160px; }
+  .jm-register-form { padding: 20px 16px; }
+
+  /* 채팅 — ?room= 유무로 목록 뷰 / 스레드 뷰 전환 */
+  .jm-grid-chat { grid-template-columns: 1fr; gap: 12px; }
+  .jm-grid-chat:not(.has-room) .jm-chat-thread,
+  .jm-grid-chat:not(.has-room) .jm-chat-info { display: none; }
+  .jm-grid-chat.has-room .jm-chat-list { display: none; }
+  .jm-chat-thread { min-height: calc(100dvh - 220px); }
+}

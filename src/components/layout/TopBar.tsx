@@ -6,13 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useRef, useState } from "react";
 import { Cta, Icon, Spark } from "@/components/ds";
-
-const NAV = [
-  { label: "홈", href: "/" },
-  { label: "게시판", href: "/board" },
-  { label: "채팅", href: "/chat" },
-  { label: "내 거래", href: "/deals" },
-];
+import { NAV, isNavActive } from "./nav";
 
 type Viewer = {
   id: string;
@@ -29,9 +23,6 @@ export function TopBar({ viewer }: { viewer: Viewer }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const displayName = viewer?.nickname ?? viewer?.name ?? viewer?.email ?? "이웃";
 
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" || pathname.startsWith("/products") : pathname.startsWith(href);
-
   const submitSearch = () => {
     const query = q.trim();
     setSearching(false);
@@ -40,11 +31,11 @@ export function TopBar({ viewer }: { viewer: Viewer }) {
   };
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 18, padding: "0 4px" }}>
-      <Link href="/" className="jm-eyebrow" style={{ fontSize: 14, letterSpacing: 3 }}>
+    <div className="jm-topbar">
+      <Link href="/" className="jm-eyebrow jm-topbar-brand">
         <Spark /> JUNGLE MARKET
       </Link>
-      <nav style={{ display: "flex", gap: 4, marginLeft: 14 }}>
+      <nav className="jm-topbar-nav">
         {NAV.map((n) => (
           <Link
             key={n.href}
@@ -55,8 +46,8 @@ export function TopBar({ viewer }: { viewer: Viewer }) {
               fontSize: 14,
               padding: "8px 14px",
               borderRadius: 999,
-              color: isActive(n.href) ? "var(--text-body)" : "var(--text-secondary)",
-              background: isActive(n.href) ? "rgba(255,255,255,0.05)" : "transparent",
+              color: isNavActive(n.href, pathname) ? "var(--text-body)" : "var(--text-secondary)",
+              background: isNavActive(n.href, pathname) ? "rgba(255,255,255,0.05)" : "transparent",
             }}
           >
             {n.label}
@@ -70,7 +61,7 @@ export function TopBar({ viewer }: { viewer: Viewer }) {
             e.preventDefault();
             submitSearch();
           }}
-          className="jm-pill is-ghost"
+          className="jm-pill is-ghost jm-topbar-search"
           style={{ gap: 8, padding: "6px 8px 6px 16px" }}
         >
           <Icon name="search" size={16} color="var(--text-secondary)" />
@@ -81,6 +72,7 @@ export function TopBar({ viewer }: { viewer: Viewer }) {
             onChange={(e) => setQ(e.target.value)}
             onBlur={() => !q && setSearching(false)}
             placeholder="물건 검색"
+            className="jm-topbar-search-input"
             style={{
               background: "transparent",
               border: "none",
@@ -88,13 +80,13 @@ export function TopBar({ viewer }: { viewer: Viewer }) {
               color: "var(--text-body)",
               fontFamily: "var(--font-body)",
               fontSize: 14,
-              width: 160,
             }}
           />
         </form>
       ) : (
         <button type="button" className="jm-pill is-ghost" style={{ gap: 8 }} onClick={() => setSearching(true)}>
-          <Icon name="search" size={16} color="var(--text-secondary)" /> 검색
+          <Icon name="search" size={16} color="var(--text-secondary)" />
+          <span className="jm-hide-mobile">검색</span>
         </button>
       )}
       <button type="button" className="jm-pill is-ghost" aria-label="알림">
@@ -103,6 +95,7 @@ export function TopBar({ viewer }: { viewer: Viewer }) {
       {viewer ? (
         <div className="jm-pill is-ghost" style={{ gap: 10, padding: "6px 8px 6px 14px" }}>
           <span
+            className="jm-hide-mobile"
             style={{
               maxWidth: 120,
               overflow: "hidden",
@@ -137,7 +130,7 @@ export function TopBar({ viewer }: { viewer: Viewer }) {
           <Icon name="user" size={16} color="var(--text-secondary)" /> 로그인
         </Link>
       )}
-      <Cta href="/products/new">
+      <Cta href="/products/new" className="jm-hide-mobile">
         <Icon name="plus" size={16} color="var(--on-accent)" /> 판매하기
       </Cta>
     </div>

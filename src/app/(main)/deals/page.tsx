@@ -7,6 +7,7 @@ export default function DealsPage() {
       <Glass
         style={{
           width: 480,
+          maxWidth: "100%",
           padding: 44,
           display: "flex",
           flexDirection: "column",

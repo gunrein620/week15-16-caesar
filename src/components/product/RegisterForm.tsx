@@ -38,15 +38,13 @@ export function RegisterForm({ categories }: { categories: Category[] }) {
   };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "0.9fr 1.1fr", gap: 18, flex: 1, minHeight: 0 }}>
+    <div className="jm-grid-register">
       {/* 사진 보드 */}
       <Glass style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
         <Eyebrow>PHOTOS</Eyebrow>
         <div
-          className="jm-glass-2"
+          className="jm-glass-2 jm-photo-well"
           style={{
-            flex: 1,
-            minHeight: 280,
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
@@ -68,7 +66,7 @@ export function RegisterForm({ categories }: { categories: Category[] }) {
       </Glass>
 
       {/* 폼 */}
-      <Glass style={{ padding: 30, display: "flex", flexDirection: "column", gap: 20 }}>
+      <Glass className="jm-register-form">
         <div>
           <Eyebrow>NEW LISTING</Eyebrow>
           <h1 className="jm-title" style={{ fontSize: 24, marginTop: 8 }}>

@@ -49,6 +49,7 @@ export function Pill({
   href,
   onClick,
   type,
+  className,
   style,
 }: {
   children: ReactNode;
@@ -57,9 +58,11 @@ export function Pill({
   href?: string;
   onClick?: () => void;
   type?: "button" | "submit";
+  className?: string;
   style?: CSSProperties;
 }) {
-  const cls = "jm-pill" + (on ? " is-on" : "") + (ghost ? " is-ghost" : "");
+  const cls =
+    "jm-pill" + (on ? " is-on" : "") + (ghost ? " is-ghost" : "") + (className ? ` ${className}` : "");
   if (href) {
     return (
       <Link href={href} className={cls} style={style}>
@@ -108,6 +111,7 @@ export function Cta({
   onClick,
   type,
   disabled,
+  className,
   style,
 }: {
   children: ReactNode;
@@ -118,10 +122,15 @@ export function Cta({
   onClick?: () => void;
   type?: "button" | "submit";
   disabled?: boolean;
+  className?: string;
   style?: CSSProperties;
 }) {
   const cls =
-    "jm-cta" + (lg ? " is-lg" : "") + (block ? " is-block" : "") + (secondary ? " is-secondary" : "");
+    "jm-cta" +
+    (lg ? " is-lg" : "") +
+    (block ? " is-block" : "") +
+    (secondary ? " is-secondary" : "") +
+    (className ? ` ${className}` : "");
   if (href) {
     return (
       <Link href={href} className={cls} style={style}>
@@ -156,14 +165,16 @@ export function Avatar({
 export function Photo({
   label = "PHOTO",
   radius = 14,
+  className,
   style,
 }: {
   label?: string;
   radius?: number;
+  className?: string;
   style?: CSSProperties;
 }) {
   return (
-    <div className="jm-photo" style={{ borderRadius: radius, ...style }}>
+    <div className={`jm-photo ${className ?? ""}`.trim()} style={{ borderRadius: radius, ...style }}>
       <span>{label}</span>
     </div>
   );
