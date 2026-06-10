@@ -13,6 +13,7 @@ export class LocalEventService {
     if (apiKey) {
       try {
         const date = toCompactDate(input.date ?? MOCK_DATE);
+        const regionParams = tourApiRegionParams(input.region);
         const response = await fetch(
           buildPublicDataUrl('https://apis.data.go.kr/B551011/KorService2/searchFestival2', apiKey, {
             MobileOS: 'ETC',
@@ -21,7 +22,7 @@ export class LocalEventService {
             pageNo: '1',
             numOfRows: '10',
             arrange: 'A',
-            areaCode: '31',
+            ...regionParams,
             eventStartDate: date
           })
         );
@@ -30,6 +31,9 @@ export class LocalEventService {
         }
         const data = (await response.json()) as TourApiResponse;
         const events = parseTourApiEvents(data, input.region);
+        if (events.length === 0) {
+          throw new Error(`TourAPI returned no events matching ${input.region}.`);
+        }
         return {
           summary: `${input.region}의 ${formatCompactDate(date)} 지역 행사 정보입니다.`,
           events,
@@ -88,12 +92,21 @@ function parseTourApiEvents(data: TourApiResponse, region: string) {
   const rawItems = data.response?.body?.items?.item;
   const items = Array.isArray(rawItems) ? rawItems : rawItems ? [rawItems] : [];
   const regionItems = items.filter((item) => [item.title, item.addr1].filter(Boolean).join(' ').includes(region));
-  const selected = regionItems.length > 0 ? regionItems : items;
-  return selected.map((item) => ({
+  return regionItems.map((item) => ({
     title: item.title ?? '지역 행사',
     date: formatCompactDate(item.eventstartdate ?? MOCK_DATE.replaceAll('-', '')),
     location: item.addr1 ?? region
   }));
+}
+
+function tourApiRegionParams(region: string): Record<string, string> {
+  if (region.includes('오산')) {
+    return {
+      areaCode: '31',
+      sigunguCode: '22'
+    };
+  }
+  return {};
 }
 
 function toCompactDate(date: string) {
