@@ -5,11 +5,11 @@ import { cwd, loadEnvFile } from 'node:process';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { AppModule } from './app.module.js';
 
 loadNearestEnvFile();
 
 async function bootstrap() {
+  const { AppModule } = await import('./app.module.js');
   const app = await NestFactory.create(AppModule);
   const corsOrigin = process.env.CORS_ORIGIN ?? 'http://localhost:5173';
   const port = Number(process.env.API_PORT ?? 3000);
