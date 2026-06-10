@@ -76,6 +76,7 @@ npm run dev
 - `npm run typecheck`: TypeScript 타입체크
 - `npm run lint`: 현재는 TypeScript 타입체크와 동일한 비대화형 정적 검증
 - `npm run verify:auth`: OAuth 후처리 라우트, 로그인 callback URL, 환경 예시 검증
+- `npm run deploy:rpi`: rpi에 소스 동기화, DB 마이그레이션, standalone 빌드, 서버 재시작
 - `npm run db:generate`: Prisma Client 생성
 - `npm run db:migrate`: 로컬 DB 마이그레이션 적용
 - `npm run db:seed`: 데모 데이터 시드
@@ -87,6 +88,14 @@ npm run dev
 서버는 `ssh rpi`로 접속하는 것을 기준으로 합니다. 현재 rpi 배포본은 `/home/user/apps/week15-16-caesar`에서 Next.js standalone 서버로 실행하며, 공개 origin은 Cloudflare Tunnel의 `https://titles-night-unix-record.trycloudflare.com`입니다. 서버 `.env`의 `AUTH_URL`, `NEXTAUTH_URL`, Google Cloud redirect URI는 모두 이 origin과 맞아야 합니다.
 
 rpi의 기본 `node`가 18.x이면 Next.js 런타임에서 `Headers.prototype.getSetCookie`가 없어 500이 날 수 있습니다. 배포와 실행은 rpi에 설치된 Node 22 런타임을 사용합니다.
+
+로컬 작업 디렉터리에서 아래 명령으로 배포합니다.
+
+```bash
+npm run deploy:rpi
+```
+
+스크립트가 수행하는 서버 쪽 절차는 아래와 같습니다.
 
 ```bash
 ssh rpi
