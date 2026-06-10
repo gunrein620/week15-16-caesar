@@ -43,6 +43,7 @@ Google OAuth를 사용할 때는 Google Cloud Console에서 Web application OAut
 
 ```bash
 AUTH_URL="http://localhost:3000"
+NEXTAUTH_URL="http://localhost:3000"
 AUTH_GOOGLE_ID="..."
 AUTH_GOOGLE_SECRET="..."
 ```
@@ -83,7 +84,7 @@ npm run dev
 
 ## 라즈베리파이 배포
 
-서버는 `ssh rpi`로 접속하는 것을 기준으로 합니다. 서버에서 사용하는 실제 접속 origin이 `http://<server>:3000`이라면 서버 `.env`의 `AUTH_URL`과 Google Cloud redirect URI도 같은 origin을 써야 합니다.
+서버는 `ssh rpi`로 접속하는 것을 기준으로 합니다. 서버에서 사용하는 실제 접속 origin이 `http://<server>:3000`이라면 서버 `.env`의 `AUTH_URL`, `NEXTAUTH_URL`, Google Cloud redirect URI도 같은 origin을 써야 합니다.
 
 ```bash
 ssh rpi

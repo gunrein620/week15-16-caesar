@@ -31,12 +31,12 @@ assertContains("src/app/(auth)/auth/complete/page.tsx", 'redirect(user.nickname 
 
 assertMatches(
   "src/components/auth/LoginButtons.tsx",
-  /signIn\(s\.id,\s*\{\s*callbackUrl:\s*"\/auth\/complete"\s*\}\)/s,
+  /signIn\(s\.id,\s*\{\s*redirectTo:\s*"\/auth\/complete"\s*\}\)/s,
   "send social OAuth callbacks through /auth/complete",
 );
 assertMatches(
   "src/components/auth/LoginButtons.tsx",
-  /signIn\("guest",\s*\{\s*callbackUrl:\s*"\/auth\/complete"\s*\}\)/s,
+  /signIn\("guest",\s*\{\s*redirectTo:\s*"\/auth\/complete"\s*\}\)/s,
   "send guest login callbacks through /auth/complete",
 );
 
@@ -44,9 +44,14 @@ assertContains("src/app/(main)/layout.tsx", "currentUser()");
 assertContains("src/app/(main)/layout.tsx", "viewer=");
 assertContains("src/components/layout/TopBar.tsx", "viewer");
 assertContains("src/components/layout/TopBar.tsx", 'href="/login"');
-assertContains("src/components/layout/TopBar.tsx", "signOut");
+assertMatches(
+  "src/components/layout/TopBar.tsx",
+  /signOut\(\{\s*redirectTo:\s*"\/"\s*\}\)/s,
+  "send signout through redirectTo",
+);
 
 assertContains(".env.example", 'AUTH_URL="http://localhost:3000"');
+assertContains(".env.example", 'NEXTAUTH_URL="http://localhost:3000"');
 assertContains(".env.example", 'AUTH_GOOGLE_ID=""');
 assertContains(".env.example", 'AUTH_GOOGLE_SECRET=""');
 

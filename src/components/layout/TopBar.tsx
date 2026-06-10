@@ -116,7 +116,7 @@ export function TopBar({ viewer }: { viewer: Viewer }) {
           </span>
           <button
             type="button"
-            onClick={() => signOut({ callbackUrl: "/" })}
+            onClick={() => signOut({ redirectTo: "/" })}
             style={{
               border: "1px solid var(--border-card)",
               borderRadius: 999,

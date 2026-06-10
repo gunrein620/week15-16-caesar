@@ -33,7 +33,7 @@ export function LoginButtons({
             type="button"
             disabled={!s.enabled}
             title={s.enabled ? undefined : "OAuth 키 설정 후 사용할 수 있어요 (.env 참고)"}
-            onClick={() => signIn(s.id, { callbackUrl: "/auth/complete" })}
+            onClick={() => signIn(s.id, { redirectTo: "/auth/complete" })}
             style={{
               display: "flex",
               alignItems: "center",
@@ -77,7 +77,7 @@ export function LoginButtons({
           type="button"
           className="jm-pill is-ghost"
           style={{ justifyContent: "center", marginTop: 4 }}
-          onClick={() => signIn("guest", { callbackUrl: "/auth/complete" })}
+          onClick={() => signIn("guest", { redirectTo: "/auth/complete" })}
         >
           게스트로 둘러보기 (개발용)
         </button>
