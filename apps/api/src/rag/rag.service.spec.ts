@@ -80,6 +80,68 @@ describe('RagService', () => {
     ]);
   });
 
+  it('similar-posts falls back to keyword candidates when vector threshold removes all rows', async () => {
+    vectorSearchService.search.mockResolvedValue([]);
+    prisma.post.findMany.mockResolvedValue([
+      {
+        id: 'post-1',
+        title: '오산 야간 약국 정보 모아봐요',
+        content: '오산역과 원동 주변 야간 약국 정보를 댓글로 모아두면 좋겠습니다.',
+        regionId: 'osan-id',
+        category: { name: '병원/약국' },
+        region: { name: '오산시' },
+        tags: [{ tag: { name: '야간약국' } }]
+      }
+    ]);
+    const service = new RagService(
+      prisma as never,
+      embeddingService as never,
+      vectorSearchService as never,
+      llmService as never
+    );
+
+    const result = await service.findSimilarPosts({
+      title: '오산 야간 약국 어디인지 공유',
+      content: '오산역 근처 밤에 여는 약국을 찾습니다.'
+    });
+
+    expect(result.candidates).toEqual([
+      expect.objectContaining({
+        sourceId: 'post-1',
+        content: expect.stringContaining('오산 야간 약국 정보 모아봐요')
+      })
+    ]);
+  });
+
+  it('duplicate-check falls back to keyword candidates when vector threshold removes all rows', async () => {
+    vectorSearchService.search.mockResolvedValue([]);
+    prisma.post.findMany.mockResolvedValue([
+      {
+        id: 'post-1',
+        title: '오산 야간 약국 정보 모아봐요',
+        content: '오산역과 원동 주변 야간 약국 정보를 댓글로 모아두면 좋겠습니다.',
+        regionId: 'osan-id',
+        category: { name: '병원/약국' },
+        region: { name: '오산시' },
+        tags: [{ tag: { name: '야간약국' } }]
+      }
+    ]);
+    const service = new RagService(
+      prisma as never,
+      embeddingService as never,
+      vectorSearchService as never,
+      llmService as never
+    );
+
+    const result = await service.checkDuplicate({
+      title: '오산 야간 약국 정보 모아봐요',
+      content: '오산역 주변 약국'
+    });
+
+    expect(result.isDuplicate).toBe(true);
+    expect(result.candidates[0]).toEqual(expect.objectContaining({ sourceId: 'post-1' }));
+  });
+
   it('ask returns an answer with RAG sources', async () => {
     vectorSearchService.search.mockResolvedValue([
       { sourceType: 'POST', sourceId: 'post-1', content: '오산역 근처 야간 약국 정보', similarity: 0.88 }

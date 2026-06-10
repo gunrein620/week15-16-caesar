@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import type { ToolDefinition } from '../ai/llm.service.js';
 import { McpClientService } from '../mcp-client/mcp-client.service.js';
 import { RagService } from '../rag/rag.service.js';
+import type { AgentPurpose } from './agent.types.js';
 
 @Injectable()
 export class AgentToolRegistryService {
@@ -10,16 +11,80 @@ export class AgentToolRegistryService {
     @Inject(McpClientService) private readonly mcpClientService: McpClientService
   ) {}
 
-  definitions(): ToolDefinition[] {
-    return [
-      this.tool('vector_search_posts', '유사 게시글을 검색합니다.'),
-      this.tool('check_duplicate_post', '중복 게시글 후보를 확인합니다.'),
-      this.tool('suggest_tags', '게시글 태그를 추천합니다.'),
-      this.tool('call_mcp_tool', '날씨/공공시설/행사 같은 MCP 외부 도구를 호출합니다.'),
-      this.tool('draft_local_post', '지역 생활 게시글 초안을 작성합니다.'),
-      this.tool('draft_complaint_post', '생활 민원 게시글 초안을 작성합니다.'),
-      this.tool('summarize_context', '수집된 맥락을 요약합니다.')
+  definitions(purpose?: AgentPurpose): ToolDefinition[] {
+    const tools = [
+      this.tool('vector_search_posts', '유사 게시글을 검색합니다.', {
+        title: { type: 'string' },
+        content: { type: 'string' },
+        text: { type: 'string' },
+        topK: { type: 'number' }
+      }),
+      this.tool('check_duplicate_post', '중복 게시글 후보를 확인합니다.', {
+        title: { type: 'string' },
+        content: { type: 'string' },
+        text: { type: 'string' },
+        topK: { type: 'number' }
+      }),
+      this.tool(
+        'suggest_tags',
+        '게시글 태그를 추천합니다.',
+        {
+          text: { type: 'string', description: '태그를 추천할 게시글 또는 사용자 요청 원문' }
+        },
+        ['text']
+      ),
+      this.tool(
+        'call_mcp_tool',
+        '날씨/공공시설/행사 같은 MCP 외부 도구를 호출합니다.',
+        {
+          toolName: {
+            type: 'string',
+            enum: ['get_weather_by_region', 'search_public_facility', 'get_local_event_info']
+          },
+          input: {
+            type: 'object',
+            additionalProperties: true,
+            properties: {
+              region: { type: 'string' },
+              date: { type: 'string' },
+              keyword: { type: 'string' }
+            }
+          }
+        },
+        ['toolName', 'input']
+      ),
+      this.tool('draft_local_post', '지역 생활 게시글 초안을 작성합니다.', {
+        topic: { type: 'string' },
+        text: { type: 'string' }
+      }),
+      this.tool('draft_complaint_post', '생활 민원 게시글 초안을 작성합니다.', {
+        issue: { type: 'string' },
+        text: { type: 'string' }
+      }),
+      this.tool('summarize_context', '수집된 맥락을 요약합니다.', {
+        context: { type: 'string' },
+        text: { type: 'string' }
+      })
     ];
+    const allowed = this.allowedToolNames(purpose);
+    return allowed ? tools.filter((tool) => allowed.has(tool.function.name)) : tools;
+  }
+
+  private allowedToolNames(purpose?: AgentPurpose) {
+    const names: Record<AgentPurpose, string[]> = {
+      post_helper: [
+        'vector_search_posts',
+        'check_duplicate_post',
+        'suggest_tags',
+        'call_mcp_tool',
+        'draft_local_post',
+        'summarize_context'
+      ],
+      complaint_helper: ['suggest_tags', 'call_mcp_tool', 'draft_complaint_post', 'summarize_context'],
+      tag_suggestion: ['suggest_tags'],
+      duplicate_check: ['check_duplicate_post', 'vector_search_posts', 'summarize_context']
+    };
+    return purpose ? new Set(names[purpose]) : null;
   }
 
   async execute(name: string, input: Record<string, unknown>) {
@@ -43,7 +108,7 @@ export class AgentToolRegistryService {
     }
   }
 
-  private tool(name: string, description: string): ToolDefinition {
+  private tool(name: string, description: string, properties: Record<string, unknown> = {}, required: string[] = []): ToolDefinition {
     return {
       type: 'function',
       function: {
@@ -51,6 +116,8 @@ export class AgentToolRegistryService {
         description,
         parameters: {
           type: 'object',
+          properties,
+          required,
           additionalProperties: true
         }
       }

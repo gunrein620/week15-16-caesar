@@ -42,9 +42,14 @@ export class RagService {
       limit: dto.topK ?? 5,
       sourceTypes: [EmbeddingSourceType.POST]
     });
-    const candidates = rows
+    let candidates = rows
       .filter((row) => row.sourceId !== dto.excludePostId && row.similarity >= 0.86)
       .map((row) => this.toSource(row));
+    if (candidates.length === 0) {
+      candidates = (await this.keywordPostSources(this.postText(dto), regionId, dto.topK ?? 5)).filter(
+        (source) => source.sourceId !== dto.excludePostId
+      );
+    }
 
     return {
       isDuplicate: candidates.length > 0,
@@ -56,7 +61,7 @@ export class RagService {
   async findSimilarPosts(dto: RagPostTextDto) {
     const regionId = await this.resolveRegionId(dto.regionId);
     const embedding = await this.embeddingService.createEmbedding(this.postText(dto));
-    const candidates = (
+    let candidates = (
       await this.vectorSearchService.search({
         embedding,
         regionId,
@@ -66,6 +71,11 @@ export class RagService {
     )
       .filter((row) => row.sourceId !== dto.excludePostId && row.similarity >= 0.7)
       .map((row) => this.toSource(row));
+    if (candidates.length === 0) {
+      candidates = (await this.keywordPostSources(this.postText(dto), regionId, dto.topK ?? 5)).filter(
+        (source) => source.sourceId !== dto.excludePostId
+      );
+    }
 
     return { candidates };
   }
@@ -218,11 +228,37 @@ export class RagService {
       }
     });
 
-    return posts.map((post) => this.keywordPostToSource(post));
+    const minimumMatches = terms.length >= 2 ? 2 : 1;
+    return posts
+      .map((post) => ({
+        post,
+        matchCount: this.keywordMatchCount(this.keywordPostSearchText(post), terms)
+      }))
+      .filter((item) => item.matchCount >= minimumMatches)
+      .sort((left, right) => right.matchCount - left.matchCount)
+      .map((item) => this.keywordPostToSource(item.post));
   }
 
   private keywordTerms(question: string) {
-    const stopWords = new Set(['근처', '어디', '있어', '있나요', '알려줘', '추천', '해줘', '혹시']);
+    const stopWords = new Set([
+      '근처',
+      '어디',
+      '있어',
+      '있나요',
+      '알려줘',
+      '알려주세요',
+      '추천',
+      '해줘',
+      '혹시',
+      '공유',
+      '정보',
+      '확인',
+      '찾습니다',
+      '모아봐요',
+      '주변',
+      '오산',
+      '오산시'
+    ]);
     return [
       ...new Set(
         question
@@ -254,5 +290,19 @@ export class RagService {
         .filter(Boolean)
         .join('\n')
     };
+  }
+
+  private keywordPostSearchText(post: KeywordPost) {
+    return [
+      post.title,
+      post.content,
+      post.category.name,
+      post.region.name,
+      ...post.tags.map((postTag) => postTag.tag.name)
+    ].join(' ');
+  }
+
+  private keywordMatchCount(text: string, terms: string[]) {
+    return terms.filter((term) => text.includes(term)).length;
   }
 }

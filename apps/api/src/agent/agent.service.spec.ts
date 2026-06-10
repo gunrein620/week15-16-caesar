@@ -182,4 +182,53 @@ describe('AgentService', () => {
     expect(result.status).toBe('COMPLETED');
     expect(result.tags).toEqual(['오산', '야간약국', '생활정보']);
   });
+
+  it('fills missing suggest_tags text from the user input', async () => {
+    llm.chatWithTools.mockResolvedValueOnce({
+      type: 'tool_call',
+      toolName: 'suggest_tags',
+      arguments: {}
+    });
+    toolRegistry.execute.mockResolvedValue({ tags: ['야간약국', '생활정보'] });
+    const service = new AgentService(prisma as never, llm as never, toolRegistry as never);
+
+    const result = await service.run({
+      purpose: 'tag_suggestion',
+      input: '오산역 근처 야간 약국 정보'
+    });
+
+    expect(result.status).toBe('COMPLETED');
+    expect(toolRegistry.execute).toHaveBeenCalledWith('suggest_tags', {
+      text: '오산역 근처 야간 약국 정보'
+    });
+  });
+
+  it('normalizes loose MCP weather tool arguments from the LLM', async () => {
+    llm.chatWithTools
+      .mockResolvedValueOnce({
+        type: 'tool_call',
+        toolName: 'call_mcp_tool',
+        arguments: { type: 'weather', location: '오산 세교동', date: '이번 주말' }
+      })
+      .mockResolvedValueOnce({
+        type: 'message',
+        content: '이번 주말 날씨를 확인한 글 초안입니다.'
+      });
+    toolRegistry.execute.mockResolvedValue({ summary: '오산 날씨 맑음' });
+    const service = new AgentService(prisma as never, llm as never, toolRegistry as never);
+
+    const result = await service.run({
+      purpose: 'post_helper',
+      input: '이번 주말 오산 세교동 플리마켓 열어도 될까? 날씨도 확인해서 글 초안 써줘'
+    });
+
+    expect(result.status).toBe('COMPLETED');
+    expect(toolRegistry.execute).toHaveBeenCalledWith('call_mcp_tool', {
+      toolName: 'get_weather_by_region',
+      input: {
+        region: '오산 세교동',
+        date: '이번 주말'
+      }
+    });
+  });
 });

@@ -49,7 +49,7 @@ export class AgentService {
     const seen = new Set<string>();
 
     while (state.iteration < state.maxIterations) {
-      const decision = await this.llmService.chatWithTools(state.messages, this.toolRegistry.definitions(), {
+      const decision = await this.llmService.chatWithTools(state.messages, this.toolRegistry.definitions(state.purpose), {
         temperature: 0.2
       });
 
@@ -57,10 +57,11 @@ export class AgentService {
         return this.completedResult(state, decision.content);
       }
 
-      const signature = this.toolSignature(decision.toolName, decision.arguments);
+      const normalizedArguments = this.normalizeToolArguments(state, decision.toolName, decision.arguments);
+      const signature = this.toolSignature(decision.toolName, normalizedArguments);
       if (seen.has(signature)) {
         const error = '반복 도구 호출이 감지되어 Agent 실행을 중단했습니다.';
-        await this.logTool(state, decision.toolName, decision.arguments, undefined, error);
+        await this.logTool(state, decision.toolName, normalizedArguments, undefined, error);
         state.messages.push({ role: 'assistant', content: error });
         return this.failedResult(state, error);
       }
@@ -70,7 +71,8 @@ export class AgentService {
       const toolCall = {
         ...decision,
         toolCallId: decision.toolCallId ?? `tool-${state.iteration}`,
-        rawArguments: decision.rawArguments ?? JSON.stringify(decision.arguments)
+        arguments: normalizedArguments,
+        rawArguments: JSON.stringify(normalizedArguments)
       };
       state.messages.push(this.assistantToolCallMessage(toolCall));
       try {
@@ -186,6 +188,92 @@ export class AgentService {
 
   private toolSignature(name: string, input: unknown) {
     return `${name}:${this.stableStringify(input)}`;
+  }
+
+  private normalizeToolArguments(state: AgentState, name: string, input: Record<string, unknown>) {
+    switch (name) {
+      case 'suggest_tags':
+        return this.withDefaultText(input, 'text', state.input);
+      case 'vector_search_posts':
+      case 'check_duplicate_post':
+        return this.withPostText(input, state.input);
+      case 'draft_local_post':
+        return this.withDefaultText(input, 'topic', state.input);
+      case 'draft_complaint_post':
+        return this.withDefaultText(input, 'issue', state.input);
+      case 'call_mcp_tool':
+        return this.normalizeMcpToolArguments(state, input);
+      default:
+        return input;
+    }
+  }
+
+  private withDefaultText(input: Record<string, unknown>, key: string, text: string) {
+    if (typeof input[key] === 'string' || typeof input.text === 'string' || typeof input.content === 'string') {
+      return input;
+    }
+    return { ...input, [key]: text };
+  }
+
+  private withPostText(input: Record<string, unknown>, text: string) {
+    if (typeof input.title === 'string' || typeof input.text === 'string' || typeof input.content === 'string') {
+      return input;
+    }
+    return {
+      ...input,
+      title: text,
+      content: text
+    };
+  }
+
+  private normalizeMcpToolArguments(state: AgentState, input: Record<string, unknown>) {
+    const existingInput =
+      input.input && typeof input.input === 'object' && !Array.isArray(input.input)
+        ? { ...(input.input as Record<string, unknown>) }
+        : {};
+    const text = [state.input, JSON.stringify(input)].join(' ');
+    const toolName = typeof input.toolName === 'string' ? input.toolName : this.inferMcpToolName(text);
+    const region = this.firstString(existingInput.region, input.region, input.location) ?? state.regionName;
+    const normalizedInput: Record<string, unknown> = {
+      ...existingInput,
+      region
+    };
+
+    const date = this.firstString(existingInput.date, input.date);
+    if (date) {
+      normalizedInput.date = date;
+    }
+
+    if (toolName === 'search_public_facility' && typeof normalizedInput.keyword !== 'string') {
+      normalizedInput.keyword = this.inferFacilityKeyword(text);
+    }
+
+    return {
+      toolName,
+      input: normalizedInput
+    };
+  }
+
+  private inferMcpToolName(text: string) {
+    if (/(날씨|비|기온|weather)/i.test(text)) {
+      return 'get_weather_by_region';
+    }
+    if (/(약국|병원|주차장|시설|장소|카페|식당|지도|pharmacy|hospital|parking|place)/i.test(text)) {
+      return 'search_public_facility';
+    }
+    if (/(행사|축제|플리마켓|공연|이벤트|event|market)/i.test(text)) {
+      return 'get_local_event_info';
+    }
+    return 'search_public_facility';
+  }
+
+  private inferFacilityKeyword(text: string) {
+    const keywords = ['야간 약국', '약국', '병원', '주차장', '도서관', '카페', '식당'];
+    return keywords.find((keyword) => text.includes(keyword)) ?? '공공시설';
+  }
+
+  private firstString(...values: unknown[]) {
+    return values.find((value): value is string => typeof value === 'string' && value.trim().length > 0)?.trim();
   }
 
   private stableStringify(input: unknown): string {
