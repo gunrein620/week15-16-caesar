@@ -1,9 +1,27 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 
-export type ChatMessage = {
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string;
-};
+export type ChatMessage =
+  | {
+      role: 'system' | 'user';
+      content: string;
+    }
+  | {
+      role: 'assistant';
+      content: string | null;
+      tool_calls?: Array<{
+        id: string;
+        type: 'function';
+        function: {
+          name: string;
+          arguments: string;
+        };
+      }>;
+    }
+  | {
+      role: 'tool';
+      content: string;
+      tool_call_id: string;
+    };
 
 export type ChatOptions = {
   model?: string;
@@ -21,7 +39,13 @@ export type ToolDefinition = {
 
 export type ToolCallResult =
   | { type: 'message'; content: string }
-  | { type: 'tool_call'; toolName: string; arguments: Record<string, unknown> };
+  | {
+      type: 'tool_call';
+      toolCallId: string;
+      toolName: string;
+      arguments: Record<string, unknown>;
+      rawArguments: string;
+    };
 
 @Injectable()
 export class LlmService {
@@ -99,6 +123,8 @@ export class LlmService {
         message?: {
           content?: string;
           tool_calls?: Array<{
+            id?: string;
+            type?: 'function';
             function?: {
               name?: string;
               arguments?: string;
@@ -108,12 +134,16 @@ export class LlmService {
       }>;
     };
     const message = payload.choices?.[0]?.message;
-    const toolCall = message?.tool_calls?.[0]?.function;
-    if (toolCall?.name) {
+    const toolCall = message?.tool_calls?.[0];
+    const functionCall = toolCall?.function;
+    if (functionCall?.name) {
+      const rawArguments = functionCall.arguments ?? '{}';
       return {
         type: 'tool_call',
-        toolName: toolCall.name,
-        arguments: this.parseToolArguments(toolCall.arguments)
+        toolCallId: toolCall?.id ?? `tool-${Date.now()}`,
+        toolName: functionCall.name,
+        arguments: this.parseToolArguments(rawArguments),
+        rawArguments
       };
     }
     return {

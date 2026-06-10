@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AgentModule } from './agent/agent.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { CategoriesModule } from './categories/categories.module.js';
 import { CommentsModule } from './comments/comments.module.js';
@@ -23,7 +24,8 @@ import { UsersModule } from './users/users.module.js';
     TagsModule,
     LikesModule,
     SearchModule,
-    RagModule
+    RagModule,
+    AgentModule
   ]
 })
 export class AppModule {}
