@@ -35,6 +35,16 @@ export type RagSource = {
   url?: string | null;
 };
 
+export type ExternalSource = {
+  name: string;
+  category?: string | null;
+  address?: string | null;
+  url?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  source?: string | null;
+};
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000/api';
 const TOKEN_KEY = 'localmind.accessToken';
 
@@ -104,7 +114,7 @@ export const api = {
     });
   },
   async ragAsk(question: string) {
-    return request<{ answer: string; sources?: RagSource[] }>(
+    return request<{ answer: string; sources?: RagSource[]; externalSources?: ExternalSource[] }>(
       '/rag/ask',
       {
         method: 'POST',

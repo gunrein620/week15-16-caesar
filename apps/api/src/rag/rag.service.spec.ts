@@ -19,6 +19,9 @@ describe('RagService', () => {
   const llmService = {
     chat: vi.fn()
   };
+  const mcpClientService = {
+    callTool: vi.fn()
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -174,6 +177,73 @@ describe('RagService', () => {
         })
       ]
     });
+  });
+
+  it('ask uses external place search as primary context for pharmacy questions', async () => {
+    vectorSearchService.search.mockResolvedValue([
+      { sourceType: 'POST', sourceId: 'post-1', content: '게시판 후기: 오산역 근처 약국은 전화 확인이 필요합니다.', similarity: 0.81 }
+    ]);
+    mcpClientService.callTool.mockResolvedValue({
+      summary: '오산역 장소 검색 결과입니다.',
+      facilities: [
+        {
+          name: '오산역온누리약국',
+          category: '약국',
+          address: '경기 오산시 오산로 123',
+          url: 'https://place.map.kakao.com/123',
+          latitude: 37.145,
+          longitude: 127.066
+        }
+      ],
+      source: 'kakao-local'
+    });
+    llmService.chat.mockResolvedValue('오산역온누리약국을 먼저 확인하고, 게시판 후기는 참고하세요.');
+    const service = new RagService(
+      prisma as never,
+      embeddingService as never,
+      vectorSearchService as never,
+      llmService as never,
+      mcpClientService as never
+    );
+
+    const result = await service.ask({
+      question: '오산역 근처 약국 어디 있어?'
+    });
+
+    expect(mcpClientService.callTool).toHaveBeenCalledWith('search_public_facility', {
+      region: '오산역',
+      keyword: '약국'
+    });
+    const userMessage = llmService.chat.mock.calls[0][0][1].content;
+    expect(userMessage.indexOf('외부 장소 검색 결과')).toBeLessThan(userMessage.indexOf('게시판 보조 근거'));
+    expect(userMessage).toContain('오산역온누리약국');
+    expect(result.externalSources).toEqual([
+      expect.objectContaining({
+        name: '오산역온누리약국',
+        source: 'kakao-local'
+      })
+    ]);
+    expect(result.sources).toEqual([expect.objectContaining({ sourceId: 'post-1' })]);
+  });
+
+  it('ask does not call external place search for non-place questions', async () => {
+    vectorSearchService.search.mockResolvedValue([
+      { sourceType: 'POST', sourceId: 'post-1', content: '이번 주말 플리마켓은 우천 시 실내로 변경됩니다.', similarity: 0.84 }
+    ]);
+    llmService.chat.mockResolvedValue('플리마켓 게시글을 참고하세요.');
+    const service = new RagService(
+      prisma as never,
+      embeddingService as never,
+      vectorSearchService as never,
+      llmService as never,
+      mcpClientService as never
+    );
+
+    await service.ask({
+      question: '이번 주말 플리마켓 열려?'
+    });
+
+    expect(mcpClientService.callTool).not.toHaveBeenCalled();
   });
 
   it('ask keeps directly matched vector sources before unrelated nearest rows', async () => {

@@ -1,8 +1,9 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { EmbeddingSourceType, PostStatus } from '@prisma/client';
 import type { ChatMessage } from '../ai/llm.service.js';
 import { LlmService } from '../ai/llm.service.js';
-import { DEFAULT_REGION_CODE } from '../common/default-region.js';
+import { DEFAULT_REGION_CODE, DEFAULT_REGION_NAME } from '../common/default-region.js';
+import { McpClientService } from '../mcp-client/mcp-client.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { EmbeddingService } from './embedding.service.js';
 import type { RagAskDto } from './dto/rag-ask.dto.js';
@@ -12,6 +13,21 @@ import { VectorSearchService, type VectorSearchResult } from './vector-search.se
 
 type RagSource = VectorSearchResult & {
   url: string | null;
+};
+
+type ExternalPlaceSource = {
+  name: string;
+  category?: string;
+  address?: string;
+  url?: string;
+  latitude?: number;
+  longitude?: number;
+  source: string;
+};
+
+type PlaceSearchIntent = {
+  region: string;
+  keyword: string;
 };
 
 type KeywordPost = {
@@ -30,7 +46,8 @@ export class RagService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(EmbeddingService) private readonly embeddingService: EmbeddingService,
     @Inject(VectorSearchService) private readonly vectorSearchService: VectorSearchService,
-    @Inject(LlmService) private readonly llmService: LlmService
+    @Inject(LlmService) private readonly llmService: LlmService,
+    @Optional() @Inject(McpClientService) private readonly mcpClientService?: McpClientService
   ) {}
 
   async checkDuplicate(dto: RagPostTextDto) {
@@ -82,6 +99,8 @@ export class RagService {
 
   async ask(dto: RagAskDto) {
     const regionId = await this.resolveRegionId(dto.regionId);
+    const placeIntent = this.detectPlaceSearchIntent(dto.question);
+    const externalSources = placeIntent ? await this.searchExternalPlaces(placeIntent) : [];
     const embedding = await this.embeddingService.createEmbedding(dto.question);
     const questionTerms = this.keywordTerms(dto.question);
     let sources = (
@@ -104,23 +123,32 @@ export class RagService {
     const messages: ChatMessage[] = [
       {
         role: 'system',
-        content:
-          '너는 오산 지역 생활 커뮤니티 LocalMind Board의 Q&A 봇이다. 제공된 게시글/댓글/공지 근거만 사용한다. 근거에 관련 게시글이 있으면 반드시 제목이나 내용을 언급하고, 정확한 위치나 운영시간이 근거에 없으면 추가 확인이 필요하다고 말한다.'
+        content: placeIntent
+          ? '너는 오산 지역 생활 커뮤니티 LocalMind Board의 Q&A 봇이다. 약국, 마트, 병원, 주차장 같은 장소 질문은 외부 장소 검색 결과를 1차 근거로 사용한다. 게시글/댓글/공지 근거는 주민 후기나 보조 설명으로만 덧붙인다. 외부 검색 결과에 운영시간, 야간 운영 여부, 전화번호가 없으면 확인 필요하다고 말하고, 없는 정보를 지어내지 않는다.'
+          : '너는 오산 지역 생활 커뮤니티 LocalMind Board의 Q&A 봇이다. 제공된 게시글/댓글/공지 근거만 사용한다. 근거에 관련 게시글이 있으면 반드시 제목이나 내용을 언급하고, 정확한 위치나 운영시간이 근거에 없으면 추가 확인이 필요하다고 말한다.'
       },
       {
         role: 'user',
         content: [
           `질문: ${dto.question}`,
-          '검색된 근거:',
+          placeIntent ? '외부 장소 검색 결과:' : null,
+          placeIntent
+            ? externalSources.length > 0
+              ? this.formatExternalPlaceSources(externalSources)
+              : '외부 장소 검색 결과 없음. 게시판 근거만으로 답하되, 실제 위치 확인이 필요하다고 안내한다.'
+            : null,
+          placeIntent ? '게시판 보조 근거:' : '검색된 근거:',
           sources.length > 0
             ? sources.map((source, index) => `${index + 1}. [${source.sourceType}] ${source.content}`).join('\n')
             : '관련 근거 없음'
-        ].join('\n\n')
+        ]
+          .filter(Boolean)
+          .join('\n\n')
       }
     ];
 
     const answer = await this.llmService.chat(messages, { temperature: 0.2 });
-    return { answer, sources };
+    return externalSources.length > 0 ? { answer, sources, externalSources } : { answer, sources };
   }
 
   async summarizeRegionalIssues(query: RegionalIssuesQuery) {
@@ -304,5 +332,140 @@ export class RagService {
 
   private keywordMatchCount(text: string, terms: string[]) {
     return terms.filter((term) => text.includes(term)).length;
+  }
+
+  private detectPlaceSearchIntent(question: string): PlaceSearchIntent | null {
+    const normalizedQuestion = question.replace(/\s+/g, ' ').trim();
+    const keyword = this.placeKeyword(normalizedQuestion);
+    if (!keyword) {
+      return null;
+    }
+
+    return {
+      region: this.placeRegion(normalizedQuestion),
+      keyword
+    };
+  }
+
+  private placeKeyword(question: string) {
+    const keywordRules: Array<{ keyword: string; terms: string[] }> = [
+      { keyword: '약국', terms: ['야간 약국', '야간약국', '약국'] },
+      { keyword: '마트', terms: ['대형마트', '마트', '슈퍼마켓', '슈퍼'] },
+      { keyword: '편의점', terms: ['편의점'] },
+      { keyword: '동물병원', terms: ['동물병원'] },
+      { keyword: '병원', terms: ['응급실', '병원'] },
+      { keyword: '주차장', terms: ['공영주차장', '주차장', '주차'] },
+      { keyword: '카페', terms: ['카페'] },
+      { keyword: '식당', terms: ['맛집', '식당', '음식점'] },
+      { keyword: '도서관', terms: ['도서관'] }
+    ];
+
+    return keywordRules.find((rule) => rule.terms.some((term) => question.includes(term)))?.keyword ?? null;
+  }
+
+  private placeRegion(question: string) {
+    const regionHints = [
+      '오산역',
+      '세교동',
+      '원동',
+      '궐동',
+      '금암동',
+      '수청동',
+      '부산동',
+      '은계동',
+      '내삼미동',
+      '외삼미동',
+      '갈곶동',
+      '고현동',
+      '가수동',
+      '청학동',
+      '양산동',
+      '누읍동',
+      '탑동',
+      '서동',
+      '오산동',
+      '대원동',
+      '남촌동',
+      '신장동',
+      '중앙동'
+    ];
+    const matchedHint = regionHints.find((hint) => question.includes(hint));
+    if (!matchedHint) {
+      return DEFAULT_REGION_NAME;
+    }
+    return matchedHint.endsWith('동') ? `${DEFAULT_REGION_NAME} ${matchedHint}` : matchedHint;
+  }
+
+  private async searchExternalPlaces(intent: PlaceSearchIntent): Promise<ExternalPlaceSource[]> {
+    if (!this.mcpClientService) {
+      return [];
+    }
+
+    try {
+      const result = await this.mcpClientService.callTool('search_public_facility', intent);
+      return this.toExternalPlaceSources(result);
+    } catch {
+      return [];
+    }
+  }
+
+  private toExternalPlaceSources(result: unknown): ExternalPlaceSource[] {
+    if (!result || typeof result !== 'object') {
+      return [];
+    }
+
+    const payload = result as { source?: unknown; facilities?: unknown };
+    if (!Array.isArray(payload.facilities)) {
+      return [];
+    }
+
+    const source = this.stringValue(payload.source) ?? 'external-place';
+    return payload.facilities
+      .flatMap((facility) => {
+        if (!facility || typeof facility !== 'object') {
+          return [];
+        }
+        const candidate = facility as Record<string, unknown>;
+        const name = this.stringValue(candidate.name);
+        if (!name) {
+          return [];
+        }
+        return [
+          {
+            name,
+            category: this.stringValue(candidate.category),
+            address: this.stringValue(candidate.address),
+            url: this.stringValue(candidate.url),
+            latitude: this.numberValue(candidate.latitude),
+            longitude: this.numberValue(candidate.longitude),
+            source
+          }
+        ];
+      })
+      .slice(0, 5);
+  }
+
+  private formatExternalPlaceSources(sources: ExternalPlaceSource[]) {
+    return sources
+      .map((source, index) =>
+        [
+          `${index + 1}. ${source.name}`,
+          source.category ? `분류: ${source.category}` : null,
+          source.address ? `주소: ${source.address}` : null,
+          source.url ? `링크: ${source.url}` : null,
+          `출처: ${source.source}`
+        ]
+          .filter(Boolean)
+          .join('\n')
+      )
+      .join('\n\n');
+  }
+
+  private stringValue(value: unknown) {
+    return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+  }
+
+  private numberValue(value: unknown) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
   }
 }
