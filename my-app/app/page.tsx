@@ -7,12 +7,26 @@ export default function Home() {
   const [posts, setPosts] = useState([]);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [query, setQuery] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
 
   useEffect(() => {
     fetch("/api/posts")
       .then((res) => res.json())
       .then((data) => setPosts(data));
   }, []);
+
+  async function handleSearch() {
+    if (!query.trim()) {
+      const data = await fetch("/api/posts").then((res) => res.json());
+      setPosts(data);
+      setIsSearching(false);
+      return;
+    }
+    const data = await fetch(`/api/posts/search?q=${encodeURIComponent(query)}`).then((res) => res.json());
+    setPosts(data);
+    setIsSearching(true);
+  }
 
   async function handleSubmit() {
     await fetch("/api/posts", {
@@ -85,6 +99,29 @@ export default function Home() {
             </li>
           ))}
       </ul>
+
+
+            <div className="mt-6 mb-6 flex gap-2">
+        <input
+          className="border p-2 rounded flex-1"
+          placeholder="검색어 입력"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+        />
+        <button className="bg-gray-700 text-white px-4 rounded" onClick={handleSearch}>
+          검색
+        </button>
+        {isSearching && (
+          <button
+            className="text-sm text-gray-500 underline"
+            onClick={() => { setQuery(""); setIsSearching(false); fetch("/api/posts").then((r) => r.json()).then(setPosts); }}
+          >
+            전체보기
+          </button>
+        )}
+      </div>
+
     </main>
   );
 }
