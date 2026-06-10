@@ -611,7 +611,15 @@ export default function App() {
               onOpenPost={openPost}
             />
           )}
-          {panel === 'youtube' && <YoutubePanel token={token} user={me.data} theme={theme} />}
+          {panel === 'youtube' && (
+            <YoutubePanel
+              token={token}
+              user={me.data}
+              theme={theme}
+              onRequireAuth={requireAuth}
+              onRequireVerified={requireVerified}
+            />
+          )}
           {panel === 'briefing' && <BriefingPanel token={token} user={me.data} />}
           {panel === 'saved' && (
             <ProfilePanel
@@ -2591,13 +2599,66 @@ function SourceCard({
   )
 }
 
-function YoutubePanel({ token, user, theme }: { token: string | null; user?: User; theme: Theme }) {
+function youtubeSavedPayload(video: YoutubeVideo) {
+  return {
+    item_type: 'youtube',
+    item_id: video.id,
+    url: video.url,
+    title: video.title,
+    thumbnail_url: video.thumbnail_url,
+    source_label: video.channel_title,
+  }
+}
+
+function findSavedYoutubeVideoItem(savedItems: SavedItem[] | undefined, video: YoutubeVideo): SavedItem | null {
+  return savedItems?.find((item) => item.item_type === 'youtube' && item.item_key === video.id) ?? null
+}
+
+function optimisticSavedItemFromYoutubeVideo(
+  video: YoutubeVideo,
+  id = -Date.now(),
+  savedAt = new Date().toISOString(),
+): SavedItem {
+  return {
+    id,
+    item_type: 'youtube',
+    item_key: video.id,
+    title: video.title,
+    url: video.url,
+    thumbnail_url: video.thumbnail_url,
+    source_label: video.channel_title,
+    saved_at: savedAt,
+  }
+}
+
+function YoutubePanel({
+  token,
+  user,
+  theme,
+  onRequireAuth,
+  onRequireVerified,
+}: {
+  token: string | null
+  user?: User
+  theme: Theme
+  onRequireAuth: () => void
+  onRequireVerified: () => boolean
+}) {
   const queryClient = useQueryClient()
   const [videoSort, setVideoSort] = useState<VideoSort>('latest')
   const [visibleCount, setVisibleCount] = useState(VIDEO_RENDER_STEP)
+  const [pendingSavedKeys, setPendingSavedKeys] = useState<Set<string>>(() => new Set())
+  const [saveError, setSaveError] = useState('')
+  const savedItemsQueryKey = ['saved-items', token] as const
   const videos = useQuery({
     queryKey: ['videos', 1],
     queryFn: () => api<YoutubeVideo[]>('/artists/1/videos'),
+  })
+  const savedItems = useQuery({
+    queryKey: savedItemsQueryKey,
+    queryFn: () => api<SavedItem[]>('/saved-items', {}, token),
+    enabled: Boolean(token && user),
+    retry: false,
   })
   const sources = useQuery({
     queryKey: ['sources', 1],
@@ -2660,6 +2721,72 @@ function YoutubePanel({ token, user, theme }: { token: string | null; user?: Use
       void queryClient.invalidateQueries({ queryKey: ['sources', 1] })
     },
   })
+  const saveVideo = useMutation({
+    mutationFn: (video: YoutubeVideo) =>
+      api<SavedItem>(
+        '/saved-items',
+        {
+          method: 'POST',
+          body: JSON.stringify(youtubeSavedPayload(video)),
+        },
+        token,
+      ),
+    onMutate: async (video) => {
+      setSaveError('')
+      const optimisticItem = optimisticSavedItemFromYoutubeVideo(video)
+      setPendingSavedKeys((current) => new Set(current).add(optimisticItem.item_key))
+      await queryClient.cancelQueries({ queryKey: savedItemsQueryKey })
+      const previousItems = queryClient.getQueryData<SavedItem[]>(savedItemsQueryKey)
+      queryClient.setQueryData<SavedItem[]>(savedItemsQueryKey, (current) => mergeSavedItem(current, optimisticItem))
+      return { previousItems, optimisticItem }
+    },
+    onError: (_error, _video, context) => {
+      queryClient.setQueryData(savedItemsQueryKey, context?.previousItems)
+      setSaveError('저장 처리에 실패했습니다. 다시 시도해 주세요.')
+    },
+    onSuccess: (data, video) => {
+      queryClient.setQueryData<SavedItem[]>(savedItemsQueryKey, (current) => mergeSavedItem(current, data))
+      trackAnalyticsEvent({
+        eventName: 'saved_item_add',
+        panel: 'youtube',
+        token,
+        metadata: { item_type: 'youtube', item_key: video.id, title: video.title },
+      })
+    },
+    onSettled: (_data, _error, video, context) => {
+      const itemKey = context?.optimisticItem.item_key ?? video?.id
+      if (!itemKey) return
+      setPendingSavedKeys((current) => {
+        const next = new Set(current)
+        next.delete(itemKey)
+        return next
+      })
+    },
+  })
+  const removeSavedVideo = useMutation({
+    mutationFn: (savedItem: SavedItem) => api<void>(`/saved-items/${savedItem.id}`, { method: 'DELETE' }, token),
+    onMutate: async (savedItem) => {
+      setSaveError('')
+      setPendingSavedKeys((current) => new Set(current).add(savedItem.item_key))
+      await queryClient.cancelQueries({ queryKey: savedItemsQueryKey })
+      const previousItems = queryClient.getQueryData<SavedItem[]>(savedItemsQueryKey)
+      queryClient.setQueryData<SavedItem[]>(savedItemsQueryKey, (current) => removeSavedItemFromList(current, savedItem))
+      return { previousItems, savedItem }
+    },
+    onError: (_error, _savedItem, context) => {
+      queryClient.setQueryData(savedItemsQueryKey, context?.previousItems)
+      setSaveError('저장 해제에 실패했습니다. 다시 시도해 주세요.')
+    },
+    onSettled: (_data, _error, savedItem, context) => {
+      const itemKey = context?.savedItem.item_key ?? savedItem?.item_key
+      if (!itemKey) return
+      setPendingSavedKeys((current) => {
+        const next = new Set(current)
+        next.delete(itemKey)
+        return next
+      })
+    },
+  })
   const sortedVideos = useMemo(() => {
     return sortYoutubeVideos(videos.data ?? [], videoSort)
   }, [videos.data, videoSort])
@@ -2696,9 +2823,12 @@ function YoutubePanel({ token, user, theme }: { token: string | null; user?: Use
         <p className="muted">영상을 불러오는 중...</p>
       ) : (
         <>
+          {saveError && <p className="error">{saveError}</p>}
           <div className="videoGrid">
             {visibleVideos.map((video) => {
               const members = memberNamesFromText(video.title, video.channel_title, video.description)
+              const savedItem = findSavedYoutubeVideoItem(savedItems.data, video)
+              const savePending = pendingSavedKeys.has(savedItem?.item_key ?? video.id)
               const cardStyle = {
                 '--mcol': members[0] ? memberColor(members[0], theme) : 'var(--border)',
               } as CSSProperties
@@ -2736,6 +2866,27 @@ function YoutubePanel({ token, user, theme }: { token: string | null; user?: Use
                   </a>
                   <div className="cardActions actionRail">
                     <YoutubeAppLink url={video.url} />
+                    <button
+                      className={savedItem ? 'saveButton saved' : 'saveButton'}
+                      type="button"
+                      disabled={savePending}
+                      onClick={() => {
+                        if (!token) {
+                          onRequireAuth()
+                          return
+                        }
+                        if (!onRequireVerified()) return
+                        if (savedItem) {
+                          removeSavedVideo.mutate(savedItem)
+                          return
+                        }
+                        saveVideo.mutate(video)
+                      }}
+                      title={savedItem ? '저장됨 - 다시 누르면 해제' : '저장'}
+                      aria-pressed={Boolean(savedItem)}
+                    >
+                      <Bookmark size={18} fill={savedItem ? 'currentColor' : 'none'} />
+                    </button>
                   </div>
                 </article>
               )
@@ -2995,6 +3146,10 @@ function ProfilePanel({
             <button className="secondary profileEditButton" type="button" onClick={() => setEditOpen(true)}>
               프로필 편집
             </button>
+            <button className="secondary profileLogoutButton" type="button" onClick={onLogout}>
+              <LogOut size={17} />
+              로그아웃
+            </button>
           </div>
         </div>
       </section>
@@ -3055,7 +3210,6 @@ function ProfilePanel({
           user={user}
           theme={theme}
           onThemeToggle={onThemeToggle}
-          onLogout={onLogout}
           onUserChanged={onUserChanged}
           onAccountDeleted={onAccountDeleted}
           onClose={() => setEditOpen(false)}
@@ -3101,7 +3255,6 @@ function ProfileEditModal({
   user,
   theme,
   onThemeToggle,
-  onLogout,
   onUserChanged,
   onAccountDeleted,
   onClose,
@@ -3110,7 +3263,6 @@ function ProfileEditModal({
   user: User
   theme: Theme
   onThemeToggle: () => void
-  onLogout: () => void
   onUserChanged: (user: User) => void
   onAccountDeleted: () => void
   onClose: () => void
@@ -3173,15 +3325,6 @@ function ProfileEditModal({
             <button className="secondary themeSettingButton" type="button" onClick={onThemeToggle}>
               {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
               {theme === 'dark' ? '라이트 모드로 변경' : '다크 모드로 변경'}
-            </button>
-          </span>
-        </div>
-        <div className="profileEditRow">
-          <strong>로그아웃</strong>
-          <span>
-            <button className="secondary themeSettingButton" type="button" onClick={onLogout}>
-              <LogOut size={17} />
-              로그아웃
             </button>
           </span>
         </div>
