@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LocalMind Board Mobile Prototype</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="phone-shell" aria-label="LocalMind Board mobile prototype">
+      <header class="top-bar">
+        <div>
+          <p class="eyebrow">LocalMind Board</p>
+          <button class="region-button" type="button" aria-label="현재 지역">
+            오산
+            <span aria-hidden="true">⌄</span>
+          </button>
+        </div>
+        <nav class="top-actions" aria-label="상단 도구">
+          <button type="button" aria-label="검색">⌕</button>
+          <button class="alert-dot" type="button" aria-label="알림">⌾</button>
+          <button type="button" aria-label="메뉴">☰</button>
+        </nav>
+      </header>
+
+      <section class="hero-summary" aria-label="오산 지역 요약">
+        <div>
+          <p class="section-kicker">오늘의 동네 흐름</p>
+          <h1>오산 생활정보가 모이는 커뮤니티</h1>
+        </div>
+        <div class="ai-badge">
+          <span>AI</span>
+          <strong>이슈 4건</strong>
+        </div>
+      </section>
+
+      <nav class="category-tabs" aria-label="게시판 카테고리">
+        <button class="active" type="button">동네생활</button>
+        <button type="button">맛집</button>
+        <button type="button">분실물</button>
+        <button type="button">중고거래</button>
+        <button type="button">행사</button>
+        <button type="button">민원</button>
+        <button type="button">약국</button>
+      </nav>
+
+      <nav class="filter-chips" aria-label="게시글 필터">
+        <button class="selected" type="button">추천</button>
+        <button type="button">인기</button>
+        <button type="button">긴급</button>
+        <button type="button">생활정보</button>
+        <button type="button">AI추천</button>
+      </nav>
+
+      <section class="ai-card" aria-label="AI 도움 카드">
+        <div>
+          <p>AI 동네 도우미</p>
+          <strong>“이번 주말 플리마켓 열어도 될까?”</strong>
+          <span>오산 날씨와 최근 행사 글을 함께 확인합니다.</span>
+        </div>
+        <button type="button">질문</button>
+      </section>
+
+      <section class="feed" aria-label="게시글 목록">
+        <article class="post-card">
+          <div class="post-main">
+            <div class="badges">
+              <span>병원/약국</span>
+              <span>생활정보</span>
+            </div>
+            <h2>오산역 근처 야간 약국 공유해요</h2>
+            <p>어제 밤에 급하게 찾았던 약국 정보입니다. 운영 시간과 위치 같이 남겨둘게요...</p>
+            <footer>
+              <span>오산동 · 12분 전 · 조회 142</span>
+              <span>좋아요 18 · 댓글 6</span>
+            </footer>
+          </div>
+        </article>
+
+        <article class="post-card has-thumb">
+          <div class="post-main">
+            <div class="badges">
+              <span>생활민원</span>
+            </div>
+            <h2>궐동 골목 불법 주차 너무 심해요</h2>
+            <p>아침마다 보행로를 막고 있어서 민원 넣으려고 합니다. 비슷한 경험 있으신가요?</p>
+            <footer>
+              <span>궐동 · 1시간 전 · 조회 386</span>
+              <span>좋아요 31 · 댓글 14</span>
+            </footer>
+          </div>
+          <div class="thumb parking" aria-label="주차 민원 사진 미리보기"></div>
+        </article>
+
+        <article class="post-card has-thumb">
+          <div class="post-main">
+            <div class="badges">
+              <span>동네행사</span>
+              <span>AI추천</span>
+            </div>
+            <h2>세교동 플리마켓 이번 주말 열릴까요?</h2>
+            <p>날씨가 애매해서 실내 대안이 필요할지 궁금합니다. 참여하실 분들도 댓글 남겨주세요.</p>
+            <footer>
+              <span>세교동 · 3시간 전 · 조회 721</span>
+              <span>좋아요 44 · 댓글 22</span>
+            </footer>
+          </div>
+          <div class="thumb market" aria-label="동네 행사 사진 미리보기"></div>
+        </article>
+
+        <article class="post-card">
+          <div class="post-main">
+            <div class="badges">
+              <span>분실물</span>
+            </div>
+            <h2>오산천 산책로에서 카드지갑 보신 분</h2>
+            <p>검정색 카드지갑이고 안쪽에 학생증이 있습니다. 발견하시면 댓글 부탁드립니다.</p>
+            <footer>
+              <span>부산동 · 어제 · 조회 204</span>
+              <span>좋아요 7 · 댓글 3</span>
+            </footer>
+          </div>
+        </article>
+      </section>
+
+      <button class="write-button" type="button" aria-label="글쓰기">
+        <span>＋</span>
+        글쓰기
+      </button>
+
+      <nav class="bottom-nav" aria-label="하단 내비게이션">
+        <button class="active" type="button">
+          <span class="nav-icon home"></span>
+          홈
+        </button>
+        <button type="button">
+          <span class="nav-icon community"></span>
+          커뮤니티
+        </button>
+        <button type="button">
+          <span class="nav-icon map"></span>
+          동네지도
+        </button>
+        <button type="button">
+          <span class="nav-icon ai"></span>
+          AI도우미
+        </button>
+        <button type="button">
+          <span class="nav-icon my"></span>
+          마이
+        </button>
+      </nav>
+    </main>
+  </body>
+</html>
