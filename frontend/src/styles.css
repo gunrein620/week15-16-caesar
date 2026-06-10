@@ -5919,3 +5919,19 @@ a.embedCard {
 .boardTable.compact .boardHeader {
   background: transparent;
 }
+
+.boardListTools .searchbar {
+  background: var(--surface-2);
+  border: 0;
+  border-radius: 0;
+  box-sizing: border-box;
+  gap: 14px;
+  height: 44px;
+  padding: 0 18px;
+}
+
+.boardListTools .searchbar input {
+  background: transparent;
+  font-size: 16px;
+  min-width: 0;
+}
