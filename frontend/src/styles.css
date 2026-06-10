@@ -224,6 +224,9 @@ button {
 }
 
 .searchMode {
+  --search-content-left: 72px;
+  --search-rail-left: 14px;
+  --search-rail-width: 56px;
   width: 360px;
 }
 
@@ -233,8 +236,8 @@ button {
 
 .searchMode .searchModeHead {
   display: flex;
-  margin-left: 66px;
-  min-height: 38px;
+  margin-left: var(--search-content-left);
+  min-height: 48px;
 }
 
 .searchMode .searchModeHead strong {
@@ -252,53 +255,62 @@ button {
 }
 
 .searchMode .sidebarSearch {
-  margin-left: 66px;
-  width: calc(100% - 66px);
+  margin-left: var(--search-content-left);
+  width: calc(100% - var(--search-content-left));
 }
 
 .searchMode .searchSuggestions {
-  color: var(--text-soft);
-  display: grid;
-  gap: 16px;
-  margin-left: 86px;
-  padding-top: 6px;
+  color: var(--text-faint);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: var(--search-content-left);
+  padding-top: 4px;
 }
 
 .searchSuggestions span {
-  color: var(--text-soft);
-  font-size: 14px;
+  color: var(--text-faint);
+  flex: 0 0 100%;
+  font-size: 12px;
   font-weight: 800;
 }
 
 .searchSuggestions button {
   background: transparent;
-  border: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
   color: var(--text);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 800;
-  padding: 0;
+  min-height: 34px;
+  padding: 8px 14px;
   text-align: left;
 }
 
+.searchSuggestions button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .searchSuggestions button::before {
-  color: var(--text-faint);
-  content: "•";
-  margin-right: 14px;
+  content: none;
 }
 
 .searchMode .topFeedTabs {
   gap: 18px;
-  left: 14px;
+  left: var(--search-rail-left);
   position: absolute;
-  top: 122px;
-  width: 44px;
+  top: 98px;
+  width: var(--search-rail-width);
 }
 
 .searchMode .topFeedTabs button {
   gap: 0;
+  height: var(--search-rail-width);
   justify-content: center;
-  min-height: 44px;
+  min-height: var(--search-rail-width);
   padding: 0;
+  width: var(--search-rail-width);
 }
 
 .searchMode .topFeedTabs button span {
@@ -306,8 +318,8 @@ button {
 }
 
 .searchMode .sidebarLoginButton {
-  margin-left: 66px;
-  width: calc(100% - 66px);
+  margin-left: var(--search-content-left);
+  width: calc(100% - var(--search-content-left));
 }
 
 .updateBody p {
@@ -405,19 +417,22 @@ button {
 
   .searchMode {
     align-items: stretch;
+    --search-content-left: 72px;
+    --search-rail-left: 22px;
+    --search-rail-width: 56px;
     padding: 24px 16px 18px 22px;
     width: 360px;
   }
 
   .searchMode .searchModeHead {
-    margin-left: 66px;
+    margin-left: var(--search-content-left);
   }
 
   .searchMode .sidebarSearch {
     justify-content: flex-start;
-    margin-left: 66px;
+    margin-left: var(--search-content-left);
     padding: 0 18px;
-    width: calc(100% - 66px);
+    width: calc(100% - var(--search-content-left));
   }
 
   .searchMode .sidebarSearch input {
@@ -425,10 +440,10 @@ button {
   }
 
   .searchMode .topFeedTabs {
-    left: 10px;
+    left: var(--search-rail-left);
     position: absolute;
-    top: 96px;
-    width: 54px;
+    top: 90px;
+    width: var(--search-rail-width);
   }
 
   .searchMode .topFeedTabs button span {
@@ -696,6 +711,22 @@ h2 {
   padding: 16px;
 }
 
+.mainPane:has(> .emptyState) {
+  align-content: center;
+  display: grid;
+  justify-items: center;
+}
+
+.emptyState {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  max-width: 420px;
+  padding: 44px 32px;
+  text-align: center;
+  width: 100%;
+}
+
 .homeLayout .mainPane {
   background: transparent;
   border: 0;
@@ -908,6 +939,11 @@ h2 {
   padding: 24px;
 }
 
+.emptyState {
+  gap: 12px;
+  padding: 44px 32px;
+}
+
 .boardListPanel {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1012,121 +1048,6 @@ h2 {
 .boardListTools .filterSelect {
   max-width: none;
   padding: 0 16px;
-}
-
-.boardTable {
-  display: grid;
-  gap: 18px;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  margin-top: 0;
-  overflow: visible;
-}
-
-.boardHeader {
-  display: none;
-}
-
-.boardRow,
-.boardTable.compact .boardRow {
-  align-items: stretch;
-  background: #000;
-  border: 0;
-  border-radius: 8px;
-  box-shadow: none;
-  color: #fff;
-  display: grid;
-  gap: 0;
-  grid-template-columns: 1fr;
-  margin-bottom: 0;
-  min-height: 318px;
-  overflow: hidden;
-  padding: 0;
-  position: relative;
-}
-
-.boardRow:hover,
-.boardRow.selected {
-  background: #000;
-  border-color: transparent;
-  box-shadow: 0 18px 34px rgb(0 0 0 / 28%);
-  transform: translateY(-2px);
-}
-
-.boardRow.selected {
-  box-shadow: 0 18px 34px rgb(0 0 0 / 28%);
-}
-
-.boardPostThumb {
-  align-items: center;
-  background: #111318;
-  color: rgb(255 255 255 / 84%);
-  display: flex;
-  justify-content: center;
-  min-height: 212px;
-  overflow: hidden;
-  position: relative;
-}
-
-.boardPostThumb::after {
-  background: linear-gradient(180deg, transparent 42%, rgb(0 0 0 / 82%) 100%);
-  content: "";
-  inset: 0;
-  pointer-events: none;
-  position: absolute;
-}
-
-.boardPostThumb img {
-  height: 100%;
-  object-fit: cover;
-  width: 100%;
-}
-
-.boardRow > span:not(.boardTitleCell):not(.boardPostThumb) {
-  display: none;
-}
-
-.boardTitleCell {
-  background: #000;
-  color: #fff;
-  display: grid;
-  gap: 8px;
-  min-height: 106px;
-  padding: 12px;
-}
-
-.boardTitleCell strong {
-  color: #fff;
-  display: -webkit-box;
-  font-size: 15px;
-  font-weight: 850;
-  line-height: 1.28;
-  overflow: hidden;
-  white-space: normal;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.boardMobileMeta {
-  color: rgb(255 255 255 / 66%);
-  display: flex;
-  flex-wrap: wrap;
-  font-size: 12px;
-  gap: 6px;
-}
-
-.thumbMark {
-  display: none;
-}
-
-.miniTags {
-  display: none;
-  gap: 5px;
-  margin-top: 0;
-}
-
-.miniTags em {
-  background: transparent;
-  color: rgb(255 255 255 / 72%);
 }
 
 .boardEditor {
@@ -1274,11 +1195,11 @@ h2 {
 }
 
 .ragSourceGrid .sourceCard {
-  background: #000;
-  border: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: none;
-  color: #fff;
+  color: var(--text);
   min-height: 258px;
   overflow: hidden;
 }
@@ -1314,7 +1235,7 @@ h2 {
 }
 
 .ragSourceGrid .sourceBody {
-  background: #000;
+  background: var(--surface);
   gap: 6px;
   min-height: 74px;
   padding: 10px;
@@ -1330,7 +1251,7 @@ h2 {
 }
 
 .ragSourceGrid .sourceBody strong {
-  color: #fff;
+  color: var(--text);
   display: -webkit-box;
   font-size: 13px;
   line-height: 1.25;
@@ -1340,7 +1261,7 @@ h2 {
 }
 
 .ragSourceGrid .sourceBody small {
-  color: rgb(255 255 255 / 62%);
+  color: var(--text-faint);
   display: -webkit-box;
   font-size: 11px;
   line-height: 1.3;
@@ -1928,6 +1849,7 @@ h2 {
 
 .typeBadge.briefing {
   background: var(--badge-briefing);
+  color: #06343b;
 }
 
 .typeBadge.post {
@@ -2317,11 +2239,17 @@ h2 {
 }
 
 .feedSourceTabs {
+  backdrop-filter: blur(10px);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  border-radius: 999px;
   display: flex;
   gap: 2px;
   justify-content: center;
+  justify-self: center;
+  max-width: 100%;
   min-width: 0;
   overflow-x: auto;
+  padding: 0 10px;
   pointer-events: auto;
   scrollbar-width: none;
 }
@@ -2334,24 +2262,23 @@ h2 {
   background: transparent;
   border: 0;
   border-bottom: 3px solid transparent;
-  color: var(--text-soft);
+  color: var(--text-faint);
   flex: 0 0 auto;
   font-size: 16px;
   font-weight: 800;
   min-height: 38px;
   padding: 0 10px;
-  text-shadow: 0 8px 24px rgb(0 0 0 / 80%);
 }
 
 .feedSourceTabs button.active {
   border-color: var(--accent);
-  color: #fff;
+  color: var(--text);
 }
 
 .overlayIconButton {
   align-items: center;
-  background: color-mix(in srgb, var(--surface-2) 82%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  background: rgb(0 0 0 / 45%);
+  border: 1px solid rgb(255 255 255 / 25%);
   border-radius: 999px;
   color: #fff;
   display: inline-flex;
@@ -2379,7 +2306,7 @@ h2 {
 }
 
 .feedSlide .updateMainLink {
-  background: #000;
+  background: var(--bg);
   border: 0;
   color: inherit;
   display: block;
@@ -2402,7 +2329,7 @@ h2 {
   box-shadow: 0 18px 48px rgb(0 0 0 / 18%);
   left: 0;
   right: 92px;
-  top: 150px;
+  top: 84px;
   justify-content: center;
   overflow: hidden;
   position: absolute;
@@ -2427,8 +2354,8 @@ h2 {
 }
 
 .mediaStage .typeBadge {
-  background: color-mix(in srgb, var(--surface-2) 86%, transparent);
-  border: 1px solid color-mix(in srgb, #fff 16%, transparent);
+  background: rgb(0 0 0 / 55%);
+  border: 1px solid rgb(255 255 255 / 22%);
   border-radius: 999px;
   color: #fff;
   font-size: 12px;
@@ -2457,7 +2384,7 @@ h2 {
 }
 
 .noteInner span {
-  color: var(--text-soft);
+  color: rgb(255 255 255 / 75%);
   font-size: 12px;
   font-weight: 800;
 }
@@ -2512,10 +2439,29 @@ h2 {
 }
 
 .captionStack .cardMembers,
-.captionStack .updateFoot,
-.videoBody .cardMembers,
-.videoStats {
+.captionStack .updateFoot {
+  color: rgb(255 255 255 / 80%);
+}
+
+.captionStack .cardMembers small {
+  color: rgb(255 255 255 / 80%);
+}
+
+.captionStack .updateFoot em {
+  background: rgb(0 0 0 / 45%);
+  color: rgb(255 255 255 / 85%);
+}
+
+.videoBody .cardMembers {
   color: var(--text-soft);
+}
+
+.videoBody .cardMembers small {
+  color: var(--text-soft);
+}
+
+.videoStats {
+  color: var(--text-faint);
 }
 
 .captionStack .memAva,
@@ -3775,11 +3721,11 @@ textarea {
 }
 
 .videoPoster {
-  background: #000;
-  border: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: none;
-  color: #fff;
+  color: var(--text);
   display: flex;
   flex-direction: column;
   min-height: 318px;
@@ -3794,9 +3740,9 @@ textarea {
 }
 
 .videoMainLink {
-  background: #000;
+  background: var(--surface);
   border: 0;
-  color: #fff;
+  color: var(--text);
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -3844,9 +3790,9 @@ textarea {
 }
 
 .videoBody {
-  background: #000;
+  background: var(--surface);
   bottom: auto;
-  color: #fff;
+  color: var(--text);
   display: grid;
   flex: 1;
   gap: 7px;
@@ -3860,13 +3806,19 @@ textarea {
   z-index: 1;
 }
 
+.videoBody .creatorHandle {
+  color: var(--text);
+  text-shadow: none;
+}
+
 .videoBody strong {
-  color: #fff;
+  color: var(--text);
   display: -webkit-box;
   font-size: 15px;
   font-weight: 850;
   line-height: 1.28;
   overflow: hidden;
+  text-shadow: none;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
@@ -3883,7 +3835,7 @@ textarea {
 
 .videoStats {
   align-items: center;
-  color: rgb(255 255 255 / 68%);
+  color: var(--text-faint);
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
@@ -5663,8 +5615,9 @@ button:disabled {
   }
 
   .videoPoster {
-    background: #000;
-    color: #fff;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
     height: clamp(480px, calc(100svh - 190px), 680px);
     min-height: 480px !important;
     overflow: hidden;
@@ -5673,8 +5626,8 @@ button:disabled {
   }
 
   .videoPoster .videoMainLink {
-    background: #000;
-    color: #fff;
+    background: var(--surface);
+    color: var(--text);
     display: block;
     height: 100%;
     position: relative;
@@ -5721,8 +5674,21 @@ button:disabled {
   }
 
   .videoBody strong {
+    color: #fff;
     font-size: 17px;
     line-height: 1.34;
+    text-shadow: 0 8px 26px rgb(0 0 0 / 85%);
+  }
+
+  .videoPoster .videoBody .creatorHandle {
+    color: #fff;
+    text-shadow: 0 8px 26px rgb(0 0 0 / 85%);
+  }
+
+  .videoPoster .videoBody .cardMembers,
+  .videoPoster .videoBody .cardMembers small,
+  .videoPoster .videoStats {
+    color: rgb(255 255 255 / 80%);
   }
 
   .videoPoster .cardActions,
@@ -5817,7 +5783,8 @@ button:disabled {
     display: flex;
     gap: 0;
     left: 0;
-    padding: calc(env(safe-area-inset-top) + 18px) 12px 0 74px;
+    justify-content: center;
+    padding: calc(env(safe-area-inset-top) + 14px) 12px 0;
     pointer-events: none;
     position: absolute;
     right: 0;
@@ -5826,11 +5793,12 @@ button:disabled {
   }
 
   .feedSourceTabs {
-    background: rgb(0 0 0 / 20%);
+    background: rgb(0 0 0 / 35%);
     border-radius: 999px;
     gap: 0;
     justify-content: flex-start;
-    max-width: min(178px, calc(100vw - 118px));
+    margin-inline: auto;
+    max-width: calc(100vw - 24px);
     overflow-x: auto;
     padding: 0 1px;
     pointer-events: auto;
@@ -5840,10 +5808,10 @@ button:disabled {
   .feedSourceTabs button {
     border-bottom-width: 2px;
     color: rgb(255 255 255 / 76%);
-    font-size: 9.5px;
+    font-size: 12.5px;
     font-weight: 850;
-    min-height: 22px;
-    padding: 0 4px;
+    min-height: 30px;
+    padding: 0 9px;
     text-shadow: 0 4px 14px rgb(0 0 0 / 84%);
   }
 

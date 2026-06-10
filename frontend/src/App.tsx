@@ -955,7 +955,7 @@ function HomePanel({
             </div>
           </div>
         {naverAvailable === false && (
-          <p className="feedNotice">Naver 키 또는 호출이 잠시 unavailable입니다.</p>
+          <p className="feedNotice">Naver 소식을 잠시 불러올 수 없습니다. 잠시 후 다시 확인해 주세요.</p>
         )}
           {updates.isLoading && <div className="feedEmpty">업데이트를 불러오는 중...</div>}
           {updates.error && <div className="feedEmpty error">{updates.error.message}</div>}
@@ -2323,15 +2323,15 @@ function RagPanel({
       {!question && !qaResult && !qa.isPending && (
         <div className="ragSearchEmpty">
           <Search size={34} />
-          <h2>왼쪽 검색창에서 자료를 검색하세요.</h2>
-          <p>Enter를 누르면 저장된 게시글과 YouTube 자료를 바로 검색합니다.</p>
+          <h2>검색창에 검색어를 입력해 보세요.</h2>
+          <p>저장된 게시글과 YouTube 자료를 한 번에 검색합니다.</p>
         </div>
       )}
       {question && !qaResult && !qa.isPending && !qa.error && (
         <div className="ragSearchEmpty compact">
           <Search size={28} />
           <h2>{question}</h2>
-          <p>검색어를 입력하고 Enter를 누르면 결과가 여기에 표시됩니다.</p>
+          <p>검색어를 입력하면 결과가 여기에 표시됩니다.</p>
         </div>
       )}
       {qa.isPending && (
