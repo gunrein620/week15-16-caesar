@@ -1,8 +1,9 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { PostStatus, Prisma } from '@prisma/client';
 import { DEFAULT_REGION_CODE } from '../common/default-region.js';
 import { normalizePagination } from '../common/pagination.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { RagIngestionService } from '../rag/rag-ingestion.service.js';
 import type { CreatePostDto } from './dto/create-post.dto.js';
 import type { ListPostsQuery } from './dto/list-posts.query.js';
 import type { UpdatePostDto } from './dto/update-post.dto.js';
@@ -13,7 +14,12 @@ type PostWriteClient = Pick<PrismaService, 'post' | 'tag'>;
 
 @Injectable()
 export class PostsService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(PostsService.name);
+
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Optional() @Inject(RagIngestionService) private readonly ragIngestionService?: RagIngestionService
+  ) {}
 
   async findAll(query: ListPostsQuery) {
     const { page, limit, skip } = normalizePagination(query);
@@ -53,6 +59,7 @@ export class PostsService {
         include: postInclude()
       });
     });
+    await this.safeIndexPost(post.id);
     return mapPostWithCounts(post);
   }
 
@@ -91,15 +98,20 @@ export class PostsService {
         include: postInclude()
       });
     });
+    await this.safeIndexPost(updated.id);
+    await this.safeReindexPostComments(updated.id);
     return mapPostWithCounts(updated);
   }
 
   async remove(id: string, userId: string) {
     const post = await this.assertAuthor(id, userId);
-    return this.prisma.post.update({
+    const deleted = await this.prisma.post.update({
       where: { id: post.id },
       data: { status: PostStatus.DELETED }
     });
+    await this.safeDeletePostEmbedding(post.id);
+    await this.safeDeletePostCommentEmbeddings(post.id);
+    return deleted;
   }
 
   private async assertAuthor(id: string, userId: string) {
@@ -137,6 +149,54 @@ export class PostsService {
       throw new NotFoundException('기본 지역을 찾을 수 없습니다.');
     }
     return region.id;
+  }
+
+  private async safeIndexPost(postId: string) {
+    if (!this.ragIngestionService) {
+      return;
+    }
+    try {
+      await this.ragIngestionService.indexPost(postId);
+    } catch (error) {
+      this.logger.warn(`Post RAG indexing skipped for ${postId}: ${this.errorMessage(error)}`);
+    }
+  }
+
+  private async safeDeletePostEmbedding(postId: string) {
+    if (!this.ragIngestionService) {
+      return;
+    }
+    try {
+      await this.ragIngestionService.deleteSource('POST', postId);
+    } catch (error) {
+      this.logger.warn(`Post RAG embedding cleanup skipped for ${postId}: ${this.errorMessage(error)}`);
+    }
+  }
+
+  private async safeReindexPostComments(postId: string) {
+    if (!this.ragIngestionService) {
+      return;
+    }
+    try {
+      await this.ragIngestionService.reindexCommentsForPost(postId);
+    } catch (error) {
+      this.logger.warn(`Post comment RAG reindexing skipped for ${postId}: ${this.errorMessage(error)}`);
+    }
+  }
+
+  private async safeDeletePostCommentEmbeddings(postId: string) {
+    if (!this.ragIngestionService) {
+      return;
+    }
+    try {
+      await this.ragIngestionService.deleteCommentEmbeddingsForPost(postId);
+    } catch (error) {
+      this.logger.warn(`Post comment RAG cleanup skipped for ${postId}: ${this.errorMessage(error)}`);
+    }
+  }
+
+  private errorMessage(error: unknown) {
+    return error instanceof Error ? error.message : String(error);
   }
 
   private buildPostWhere(query: ListPostsQuery & { regionId: string }): Prisma.PostWhereInput {

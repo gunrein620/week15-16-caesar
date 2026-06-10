@@ -1,12 +1,18 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { PostStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { RagIngestionService } from '../rag/rag-ingestion.service.js';
 import type { CreateCommentDto } from './dto/create-comment.dto.js';
 import type { UpdateCommentDto } from './dto/update-comment.dto.js';
 
 @Injectable()
 export class CommentsService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(CommentsService.name);
+
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Optional() @Inject(RagIngestionService) private readonly ragIngestionService?: RagIngestionService
+  ) {}
 
   findByPost(postId: string) {
     return this.prisma.comment.findMany({
@@ -30,28 +36,34 @@ export class CommentsService {
 
   async create(postId: string, authorId: string, dto: CreateCommentDto) {
     await this.assertPostCanReceiveComments(postId);
-    return this.prisma.comment.create({
+    const comment = await this.prisma.comment.create({
       data: {
         postId,
         authorId,
         content: dto.content
       }
     });
+    await this.safeIndexComment(comment.id);
+    return comment;
   }
 
   async update(id: string, userId: string, dto: UpdateCommentDto) {
     await this.assertAuthor(id, userId);
-    return this.prisma.comment.update({
+    const comment = await this.prisma.comment.update({
       where: { id },
       data: { content: dto.content }
     });
+    await this.safeIndexComment(comment.id);
+    return comment;
   }
 
   async remove(id: string, userId: string) {
     await this.assertAuthor(id, userId);
-    return this.prisma.comment.delete({
+    const comment = await this.prisma.comment.delete({
       where: { id }
     });
+    await this.safeDeleteCommentEmbedding(id);
+    return comment;
   }
 
   private async assertAuthor(id: string, userId: string) {
@@ -85,5 +97,31 @@ export class CommentsService {
       throw new NotFoundException('게시글을 찾을 수 없습니다.');
     }
     return post;
+  }
+
+  private async safeIndexComment(commentId: string) {
+    if (!this.ragIngestionService) {
+      return;
+    }
+    try {
+      await this.ragIngestionService.indexComment(commentId);
+    } catch (error) {
+      this.logger.warn(`Comment RAG indexing skipped for ${commentId}: ${this.errorMessage(error)}`);
+    }
+  }
+
+  private async safeDeleteCommentEmbedding(commentId: string) {
+    if (!this.ragIngestionService) {
+      return;
+    }
+    try {
+      await this.ragIngestionService.deleteSource('COMMENT', commentId);
+    } catch (error) {
+      this.logger.warn(`Comment RAG embedding cleanup skipped for ${commentId}: ${this.errorMessage(error)}`);
+    }
+  }
+
+  private errorMessage(error: unknown) {
+    return error instanceof Error ? error.message : String(error);
   }
 }
