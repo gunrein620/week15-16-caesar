@@ -10,7 +10,6 @@ import {
   Eye,
   FileText,
   Gauge,
-  Grid2X2,
   Home,
   LogIn,
   LogOut,
@@ -24,8 +23,6 @@ import {
   Search,
   Send,
   ShieldCheck,
-  Settings,
-  Share2,
   Sun,
   Trash2,
   Upload,
@@ -96,7 +93,6 @@ import {
 import {
   appendReferenceText,
   buildWritingAssistQuery,
-  canSummarizeSavedItems,
   shouldRequestWritingAssist,
 } from './ragContext'
 import { adminActivityEventsPath, adminActivitySummaryPath } from './adminAnalytics'
@@ -149,16 +145,6 @@ const desktopShellNavMeta: Partial<
   briefing: { label: '요약', icon: Upload },
   saved: { label: '프로필', icon: UserCircle },
   admin: { label: '관리', icon: Gauge },
-}
-
-const CATEGORY_COLORS: Record<string, { color: string; lightText: string; darkText: string }> = {
-  자유: { color: '#64748B', lightText: '#334155', darkText: '#CBD5E1' },
-  질문: { color: '#2563EB', lightText: '#1D4ED8', darkText: '#93C5FD' },
-  뉴스: { color: '#16A34A', lightText: '#166534', darkText: '#86EFAC' },
-  영상: { color: '#DC2626', lightText: '#B91C1C', darkText: '#FCA5A5' },
-  후기: { color: '#D97706', lightText: '#92400E', darkText: '#FCD34D' },
-  정보: { color: '#7C3AED', lightText: '#6D28D9', darkText: '#C4B5FD' },
-  브리핑: { color: 'var(--accent)', lightText: 'var(--accent)', darkText: 'var(--accent)' },
 }
 
 const youtubeSourceOptions: { value: YoutubeSourceType; label: string; placeholder: string }[] = [
@@ -265,30 +251,6 @@ function memberNamesFromText(...parts: Array<string | null | undefined>) {
     const member = MEMBER_COLORS[name]
     return haystack.includes(name.toLowerCase()) || haystack.includes(member.ko)
   })
-}
-
-function categoryBadgeStyle(category: string, theme: Theme) {
-  const palette = CATEGORY_COLORS[category] ?? CATEGORY_COLORS.자유
-  return {
-    '--cat-color': palette.color,
-    '--cat-text': theme === 'dark' ? palette.darkText : palette.lightText,
-  } as CSSProperties
-}
-
-function CategoryBadge({
-  category,
-  theme,
-  className = 'categoryBadge',
-}: {
-  category: string
-  theme: Theme
-  className?: string
-}) {
-  return (
-    <span className={className} style={categoryBadgeStyle(category, theme)}>
-      {category}
-    </span>
-  )
 }
 
 function archiveTermTypeLabel(type: ArtistArchiveTerm['term_type']) {
@@ -498,7 +460,7 @@ export default function App() {
   }
   const showSideBoard =
     shouldShowDesktopBoardSidebar(panel) &&
-    !(panel === 'board' && ['list', 'write', 'edit'].includes(boardMode))
+    !(panel === 'board' && ['list', 'write', 'edit', 'detail'].includes(boardMode))
   const layoutClassName = [
     'layout',
     panel === 'home' ? 'homeLayout' : '',
@@ -657,6 +619,7 @@ export default function App() {
               user={me.data}
               theme={theme}
               onThemeToggle={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+              onLogout={logout}
               onUserChanged={(user) => queryClient.setQueryData(['me', token], user)}
               onAccountDeleted={() => {
                 setToken(null)
@@ -844,34 +807,20 @@ function HomePanel({
 }) {
   const queryClient = useQueryClient()
   const [source, setSource] = useState<FeedSource>('all')
-  const [member, setMember] = useState('')
-  const [keyword, setKeyword] = useState('')
-  const [feedQuery, setFeedQuery] = useState('')
   const [pendingSavedKeys, setPendingSavedKeys] = useState<Set<string>>(() => new Set())
   const [saveError, setSaveError] = useState('')
   const savedItemsQueryKey = ['saved-items', token] as const
   const updates = useInfiniteQuery({
-    queryKey: ['updates', source, member, keyword, feedQuery],
+    queryKey: ['updates', source],
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) => {
       const params = new URLSearchParams({ limit: '30' })
       if (pageParam) params.set('cursor', pageParam)
       if (source !== 'all') params.set('source', source)
-      if (member) params.set('member', member)
-      if (keyword) params.set('keyword', keyword)
-      if (feedQuery) params.set('q', feedQuery)
       return api<UpdateFeedResponse>(`/artists/1/updates?${params.toString()}`)
     },
     getNextPageParam: (lastPage) =>
       lastPage.has_more && lastPage.next_cursor ? lastPage.next_cursor : undefined,
-  })
-  const members = useQuery({
-    queryKey: ['members', 1],
-    queryFn: () => api<Member[]>('/artists/1/members'),
-  })
-  const artistKeywords = useQuery({
-    queryKey: ['artist-keywords', 1],
-    queryFn: () => api<ArtistKeyword[]>('/artists/1/keywords'),
   })
   const savedItems = useQuery({
     queryKey: savedItemsQueryKey,
@@ -954,11 +903,6 @@ function HomePanel({
       })
     },
   })
-  const keywordOptions = useMemo(() => {
-    const fixed = ['컴백', '무대', '직캠', '라디오', 'Love Attack']
-    const fromArtist = artistKeywords.data?.map((item) => item.keyword) ?? []
-    return [...new Set([...fixed, ...fromArtist])].slice(0, 14)
-  }, [artistKeywords.data])
   const sourceOptions: { value: FeedSource; label: string }[] = [
     { value: 'all', label: '전체' },
     { value: 'youtube', label: 'YouTube' },
@@ -968,21 +912,16 @@ function HomePanel({
   ]
   const feedItems = updates.data?.pages.flatMap((pageData) => pageData.items) ?? []
   const naverAvailable = updates.data?.pages.every((pageData) => pageData.naver_available) ?? true
-  const showHero = source === 'all' && !member && !keyword && !feedQuery.trim()
+  const showHero = source === 'all'
   const highlight = useQuery({
     queryKey: ['updates-highlight', 1],
     queryFn: () => api<UpdateFeedItem | null>('/artists/1/updates/highlight'),
     enabled: showHero,
   })
   const heroItem = showHero ? highlight.data ?? selectHomeHeroItem(feedItems) : null
-  const [filtersOpen, setFiltersOpen] = useState(false)
   const feedSlides = heroItem ? [heroItem, ...feedItems.filter((item) => item.id !== heroItem.id)] : feedItems
-  const homeStyle = {
-    '--accent': member ? memberColor(member, theme) : '',
-    '--accent-on': member ? memberOn(member, theme) : '',
-  } as CSSProperties
   return (
-    <div className="feedScreen" style={homeStyle}>
+    <div className="feedScreen">
       <section className="feedPanel">
         <div className="feedViewport">
           <div className="feedTopOverlay">
@@ -1006,9 +945,6 @@ function HomePanel({
                 </button>
               ))}
             </div>
-            <button className="overlayIconButton" type="button" onClick={() => setFiltersOpen(true)} title="필터">
-              <Search size={18} />
-            </button>
           </div>
         {naverAvailable === false && (
           <p className="feedNotice">Naver 키 또는 호출이 잠시 unavailable입니다.</p>
@@ -1062,155 +998,6 @@ function HomePanel({
           )}
         </div>
         {saveItem.error && <p className="error">{saveItem.error.message}</p>}
-      </section>
-      {filtersOpen && (
-        <FilterSheet
-          feedQuery={feedQuery}
-          source={source}
-          member={member}
-          keyword={keyword}
-          sourceOptions={sourceOptions}
-          keywordOptions={keywordOptions}
-          members={members.data ?? []}
-          theme={theme}
-          onClose={() => setFiltersOpen(false)}
-          onFeedQueryChange={setFeedQuery}
-          onSourceChange={(next) => {
-            setSource(next)
-            trackAnalyticsEvent({
-              eventName: 'feed_filter_change',
-              panel: 'home',
-              token,
-              metadata: { filter: 'source', source: next },
-            })
-          }}
-          onMemberChange={(next) => {
-            setMember(next)
-            trackAnalyticsEvent({
-              eventName: 'feed_filter_change',
-              panel: 'home',
-              token,
-              metadata: { filter: 'member', member: next || 'all' },
-            })
-          }}
-          onKeywordChange={(next) => {
-            setKeyword(next)
-            trackAnalyticsEvent({
-              eventName: 'feed_filter_change',
-              panel: 'home',
-              token,
-              metadata: { filter: 'keyword', keyword: next || 'all' },
-            })
-          }}
-        />
-      )}
-    </div>
-  )
-}
-
-function FilterSheet({
-  feedQuery,
-  source,
-  member,
-  keyword,
-  sourceOptions,
-  keywordOptions,
-  members,
-  theme,
-  onClose,
-  onFeedQueryChange,
-  onSourceChange,
-  onMemberChange,
-  onKeywordChange,
-}: {
-  feedQuery: string
-  source: FeedSource
-  member: string
-  keyword: string
-  sourceOptions: { value: FeedSource; label: string }[]
-  keywordOptions: string[]
-  members: Member[]
-  theme: Theme
-  onClose: () => void
-  onFeedQueryChange: (value: string) => void
-  onSourceChange: (value: FeedSource) => void
-  onMemberChange: (value: string) => void
-  onKeywordChange: (value: string) => void
-}) {
-  return (
-    <div className="filterSheetBackdrop" role="presentation" onMouseDown={onClose}>
-      <section className="filterSheet" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="sheetHandle" />
-        <div className="filterSheetHead">
-          <strong>검색 및 필터</strong>
-          <button className="iconButton" type="button" onClick={onClose} title="닫기">
-            <X size={18} />
-          </button>
-        </div>
-        <label className="searchbar sheetSearch">
-          <Search size={17} />
-          <input
-            value={feedQuery}
-            onChange={(event) => onFeedQueryChange(event.target.value)}
-            placeholder="제목, 출처, 키워드 검색"
-          />
-        </label>
-        <div className="filterLine" aria-label="source filter">
-          {sourceOptions.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={source === option.value ? 'active' : ''}
-              onClick={() => onSourceChange(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-        <div className="memberPick" aria-label="member filter">
-          <div className="memberPickHead">
-            <span className="memberPickTitle">멤버</span>
-            <button type="button" className={!member ? 'memberAll active' : 'memberAll'} onClick={() => onMemberChange('')}>
-              전체
-            </button>
-          </div>
-          <div className="memberTiles">
-            {members.map((item) => {
-              const selected = member === item.name
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={['memberTile', selected ? 'active' : ''].filter(Boolean).join(' ')}
-                  style={
-                    {
-                      '--mcol': memberColor(item.name, theme),
-                      '--mon': memberOn(item.name, theme),
-                    } as CSSProperties
-                  }
-                  onClick={() => onMemberChange(selected ? '' : item.name)}
-                >
-                  <span className="memberTileName">{memberLabel(item.name)}</span>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-        <div className="chipLine" aria-label="keyword filter">
-          <button type="button" className={!keyword ? 'active' : ''} onClick={() => onKeywordChange('')}>
-            키워드 전체
-          </button>
-          {keywordOptions.map((item) => (
-            <button
-              key={item}
-              type="button"
-              className={['tagChip', keyword === item ? 'active' : ''].filter(Boolean).join(' ')}
-              onClick={() => onKeywordChange(item)}
-            >
-              {item}
-            </button>
-          ))}
-        </div>
       </section>
     </div>
   )
@@ -1622,41 +1409,29 @@ function PostListView({
   return (
     <>
       <div className={compact ? 'boardTable compact' : 'boardTable'}>
-        <div className="boardHeader">
-          {!compact && <span>번호</span>}
-          <span>분류</span>
+        <div className="boardHeader" aria-hidden="true">
           <span>제목</span>
-          {!compact && <span>작성자</span>}
+          <span>작성자</span>
           <span>댓글</span>
           <span>날짜</span>
         </div>
-        {posts.map((post, index) => (
+        {posts.map((post) => (
           <button
             key={post.id}
             type="button"
             className={post.id === selectedId ? 'boardRow selected' : 'boardRow'}
             onClick={() => onSelect(post.id)}
           >
-            {!compact && <span className="boardNumber">{Math.max(total - ((page - 1) * pageSize + index), 1)}</span>}
-            <CategoryBadge category={post.category} theme={theme} className="boardCategory" />
             <span className="boardTitleCell">
               <strong>{post.title}</strong>
               <span className="boardMobileMeta">
-                <CategoryBadge category={post.category} theme={theme} className="boardCategory mobileCategory" />
                 <span>{post.author.display_name}</span>
                 <span>댓글 {post.comment_count}</span>
                 <span>{formatDate(post.created_at)}</span>
               </span>
               {post.thumbnail_url && <small className="thumbMark">이미지/링크</small>}
-              {post.tags.length > 0 && (
-                <span className="miniTags">
-                  {post.tags.slice(0, 2).map((tag) => (
-                    <em key={tag}>{tag}</em>
-                  ))}
-                </span>
-              )}
             </span>
-            {!compact && <span className="boardAuthor">{post.author.display_name}</span>}
+            <span className="boardAuthor">{post.author.display_name}</span>
             <span className="boardComments">{post.comment_count}</span>
             <span className="boardDate">{formatDate(post.created_at)}</span>
           </button>
@@ -2041,89 +1816,113 @@ function BoardPanel({
   }
 
   return (
-    <article className="postDetail boardDetailPage">
-      <div className="boardPageHead">
-        <button className="secondary" onClick={onBackToList}>
-          목록으로
-        </button>
-        {(user?.id === post.author.id || user?.role === 'admin') && (
-          <div className="toolbar">
-            <button className="secondary" onClick={onStartEdit} title="글 수정">
-              <Edit3 size={17} />
-              수정
-            </button>
-            <button
-              className="danger"
-              onClick={() => deletePost.mutate()}
-              disabled={deletePost.isPending}
-              title="글 삭제"
-            >
-              <Trash2 size={17} />
-              삭제
-            </button>
-          </div>
-        )}
-      </div>
-      <div className="postHead">
-        <div>
-          <CategoryBadge category={post.category} theme={theme} />
-          <h2>{post.title}</h2>
-          <div className="postMeta">
-            <span>{post.author.display_name}</span>
-            <span>{formatDate(post.created_at)}</span>
-            <span>댓글 {post.comment_count}</span>
-          </div>
-        </div>
-      </div>
-      {parsedBriefing ? (
-        <BriefingContent
-          text={post.content}
-          parsed={parsedBriefing}
-          embeds={post.embeds}
-          onOpenPost={onSelectPost}
-        />
-      ) : (
-        <LinkedText className="postContent" text={post.content} />
-      )}
-      {!parsedBriefing && post.embeds.length > 0 && <EmbedList embeds={post.embeds} onOpenPost={() => undefined} />}
-      <div className="tags">{post.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
-      {deletePost.error && <p className="error">{deletePost.error.message}</p>}
-      <section className="comments" aria-label="댓글">
-        <div className="commentsHead">
-          <strong>댓글</strong>
-          <span>{formatNumber(comments.data?.length ?? post.comment_count)}</span>
-        </div>
-        {comments.data?.map((item) => (
-          <article className="commentItem" key={item.id}>
-            <div>
-              <strong>{item.author.display_name}</strong>
-              <span>{formatDateTime(item.created_at)}</span>
-            </div>
-            <p>{item.content}</p>
-          </article>
-        ))}
-      </section>
-      {user ? (
-        <form
-          className="inlineForm"
-          onSubmit={(event) => {
-            event.preventDefault()
-            if (!onRequireVerified()) return
-            createComment.mutate()
-          }}
-        >
-          <input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="댓글" />
-          <button className="iconButton" title="댓글 작성">
-            <Send size={17} />
+    <div className="boardDetailStack">
+      <article className="postDetail boardDetailPage">
+        <div className="boardPageHead">
+          <button className="secondary" onClick={onBackToList}>
+            목록으로
           </button>
-        </form>
-      ) : (
-        <button className="secondary commentLogin" onClick={onRequireAuth}>
-          <LogIn size={17} />
-          로그인하고 댓글 쓰기
-        </button>
-      )}
-    </article>
+          {(user?.id === post.author.id || user?.role === 'admin') && (
+            <div className="toolbar">
+              <button className="secondary" onClick={onStartEdit} title="글 수정">
+                <Edit3 size={17} />
+                수정
+              </button>
+              <button
+                className="danger"
+                onClick={() => deletePost.mutate()}
+                disabled={deletePost.isPending}
+                title="글 삭제"
+              >
+                <Trash2 size={17} />
+                삭제
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="postHead">
+          <div>
+            <h2>{post.title}</h2>
+            <div className="postMeta">
+              <span>{post.author.display_name}</span>
+              <span>{formatDate(post.created_at)}</span>
+              <span>댓글 {post.comment_count}</span>
+            </div>
+          </div>
+        </div>
+        {parsedBriefing ? (
+          <BriefingContent
+            text={post.content}
+            parsed={parsedBriefing}
+            embeds={post.embeds}
+            onOpenPost={onSelectPost}
+          />
+        ) : (
+          <LinkedText className="postContent" text={post.content} />
+        )}
+        {!parsedBriefing && post.embeds.length > 0 && <EmbedList embeds={post.embeds} onOpenPost={() => undefined} />}
+        <div className="tags">{post.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>
+        {deletePost.error && <p className="error">{deletePost.error.message}</p>}
+        <section className="comments" aria-label="댓글">
+          <div className="commentsHead">
+            <strong>댓글</strong>
+            <span>{formatNumber(comments.data?.length ?? post.comment_count)}</span>
+          </div>
+          {comments.data?.map((item) => (
+            <article className="commentItem" key={item.id}>
+              <div>
+                <strong>{item.author.display_name}</strong>
+                <span>{formatDateTime(item.created_at)}</span>
+              </div>
+              <p>{item.content}</p>
+            </article>
+          ))}
+        </section>
+        {user ? (
+          <form
+            className="inlineForm"
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (!onRequireVerified()) return
+              createComment.mutate()
+            }}
+          >
+            <input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="댓글" />
+            <button className="iconButton" title="댓글 작성">
+              <Send size={17} />
+            </button>
+          </form>
+        ) : (
+          <button className="secondary commentLogin" onClick={onRequireAuth}>
+            <LogIn size={17} />
+            로그인하고 댓글 쓰기
+          </button>
+        )}
+      </article>
+      <BoardListPanel
+        compact
+        posts={posts}
+        loading={postsLoading}
+        selectedId={selectedPostId}
+        total={total}
+        page={page}
+        pageSize={pageSize}
+        search={search}
+        tagFilter={tagFilter}
+        tags={tagOptions}
+        user={user}
+        theme={theme}
+        onSearchChange={onSearchChange}
+        onTagChange={onTagChange}
+        onSelect={onSelectPost}
+        onPageChange={onPageChange}
+        onWrite={() => {
+          if (!onRequireVerified()) return
+          onStartWrite()
+        }}
+        onRequireAuth={onRequireAuth}
+      />
+    </div>
   )
 }
 
@@ -2367,9 +2166,81 @@ function RagPanel({
   onRequireVerified: () => boolean
   onOpenPost: (postId: number) => void
 }) {
+  const queryClient = useQueryClient()
   const [question, setQuestion] = useState('')
   const [qaResult, setQaResult] = useState<QaResponse | null>(null)
+  const [pendingSavedKeys, setPendingSavedKeys] = useState<Set<string>>(() => new Set())
+  const [saveError, setSaveError] = useState('')
   const lastAutoSearch = useRef('')
+  const savedItemsQueryKey = ['saved-items', token] as const
+  const savedItems = useQuery({
+    queryKey: savedItemsQueryKey,
+    queryFn: () => api<SavedItem[]>('/saved-items', {}, token),
+    enabled: Boolean(token),
+    retry: false,
+  })
+  const saveSource = useMutation({
+    mutationFn: (source: QaSource) =>
+      api<SavedItem>(
+        '/saved-items',
+        {
+          method: 'POST',
+          body: JSON.stringify(savedItemPayloadFromSource(source)),
+        },
+        token,
+      ),
+    onMutate: async (source) => {
+      setSaveError('')
+      const optimisticItem = optimisticSavedItemFromSource(source)
+      setPendingSavedKeys((current) => new Set(current).add(optimisticItem.item_key))
+      await queryClient.cancelQueries({ queryKey: savedItemsQueryKey })
+      const previousItems = queryClient.getQueryData<SavedItem[]>(savedItemsQueryKey)
+      queryClient.setQueryData<SavedItem[]>(savedItemsQueryKey, (current) => mergeSavedItem(current, optimisticItem))
+      return { previousItems, optimisticItem }
+    },
+    onError: (_error, _source, context) => {
+      queryClient.setQueryData(savedItemsQueryKey, context?.previousItems)
+      setSaveError('저장 처리에 실패했습니다. 다시 시도해 주세요.')
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData<SavedItem[]>(savedItemsQueryKey, (current) => mergeSavedItem(current, data))
+    },
+    onSettled: (_data, _error, source, context) => {
+      const itemKey = context?.optimisticItem.item_key ?? (source ? savedItemKeyFromSource(source) : '')
+      if (!itemKey) return
+      setPendingSavedKeys((current) => {
+        const next = new Set(current)
+        next.delete(itemKey)
+        return next
+      })
+    },
+  })
+  const removeSavedSource = useMutation({
+    mutationFn: (savedItem: SavedItem) => api<void>(`/saved-items/${savedItem.id}`, { method: 'DELETE' }, token),
+    onMutate: async (savedItem) => {
+      setSaveError('')
+      setPendingSavedKeys((current) => new Set(current).add(savedItem.item_key))
+      await queryClient.cancelQueries({ queryKey: savedItemsQueryKey })
+      const previousItems = queryClient.getQueryData<SavedItem[]>(savedItemsQueryKey)
+      queryClient.setQueryData<SavedItem[]>(savedItemsQueryKey, (current) =>
+        removeSavedItemFromList(current, savedItem),
+      )
+      return { previousItems, savedItem }
+    },
+    onError: (_error, _savedItem, context) => {
+      queryClient.setQueryData(savedItemsQueryKey, context?.previousItems)
+      setSaveError('저장 해제에 실패했습니다. 다시 시도해 주세요.')
+    },
+    onSettled: (_data, _error, savedItem, context) => {
+      const itemKey = context?.savedItem.item_key ?? savedItem?.item_key
+      if (!itemKey) return
+      setPendingSavedKeys((current) => {
+        const next = new Set(current)
+        next.delete(itemKey)
+        return next
+      })
+    },
+  })
   const qa = useMutation({
     mutationFn: (payload: { question: string; offset: number; includeAnswer: boolean }) =>
       api<QaResponse>(
@@ -2463,18 +2334,37 @@ function RagPanel({
         </div>
       )}
       {qa.error && <p className="error">{qa.error.message}</p>}
+      {saveError && <p className="error">{saveError}</p>}
       {qaResult && (
         <section className="answer archiveResults">
           <h2>{question}</h2>
           {qaResult.answer && <ArchiveAnswerBlock answer={qaResult.answer} />}
           <div className="sourceCards ragSourceGrid">
-            {qaResult.sources.map((source, index) => (
-              <SourceCard
-                key={`${source.source_type}-${source.chunk_id}-${index}`}
-                source={source}
-                onOpenPost={onOpenPost}
-              />
-            ))}
+            {qaResult.sources.map((source, index) => {
+              const savedItem = findSavedSourceItem(savedItems.data, source)
+              const itemKey = savedItem?.item_key ?? savedItemKeyFromSource(source)
+              return (
+                <SourceCard
+                  key={`${source.source_type}-${source.chunk_id}-${index}`}
+                  source={source}
+                  onOpenPost={onOpenPost}
+                  savedItem={savedItem}
+                  savePending={pendingSavedKeys.has(itemKey)}
+                  onToggleSave={() => {
+                    if (!token) {
+                      onRequireAuth()
+                      return
+                    }
+                    if (!onRequireVerified()) return
+                    if (savedItem) {
+                      removeSavedSource.mutate(savedItem)
+                      return
+                    }
+                    saveSource.mutate(source)
+                  }}
+                />
+              )
+            })}
           </div>
           {qaResult.has_more && (
             <button
@@ -2534,7 +2424,7 @@ function WritingAssistPanel({
       {error && <p className="error">{error}</p>}
       {result?.summary && <p className="hint">{result.summary}</p>}
       {result?.sources.length ? (
-        <div className="sourceCards compactSourceCards">
+        <div className="sourceCards compactSourceCards ragSourceGrid">
           {result.sources.map((source, index) => (
             <div className="assistSource" key={`${source.source_type}-${source.url}-${index}`}>
               <SourceCard source={source} onOpenPost={onOpenPost} />
@@ -2571,7 +2461,60 @@ function archiveSourceTypeLabel(source: QaSource) {
   return '게시글'
 }
 
-function SourceCard({ source, onOpenPost }: { source: QaSource; onOpenPost: (postId: number) => void }) {
+function savedItemKeyFromSource(source: QaSource) {
+  if (source.youtube_video_id) return source.youtube_video_id
+  if (source.post_id) return String(source.post_id)
+  if (source.chunk_id) return String(source.chunk_id)
+  return source.url
+}
+
+function savedItemPayloadFromSource(source: QaSource) {
+  return {
+    item_type: source.source_type,
+    item_id: savedItemKeyFromSource(source),
+    url: source.url,
+    title: source.title,
+    thumbnail_url: source.thumbnail_url,
+    source_label: source.channel_title || source.source_label || archiveSourceTypeLabel(source),
+  }
+}
+
+function optimisticSavedItemFromSource(
+  source: QaSource,
+  id = -Date.now(),
+  savedAt = new Date().toISOString(),
+): SavedItem {
+  const payload = savedItemPayloadFromSource(source)
+  return {
+    id,
+    item_type: payload.item_type,
+    item_key: payload.item_id,
+    title: payload.title,
+    url: payload.url,
+    thumbnail_url: payload.thumbnail_url,
+    source_label: payload.source_label,
+    saved_at: savedAt,
+  }
+}
+
+function findSavedSourceItem(savedItems: SavedItem[] | undefined, source: QaSource): SavedItem | null {
+  const itemKey = savedItemKeyFromSource(source)
+  return savedItems?.find((item) => item.item_type === source.source_type && item.item_key === itemKey) ?? null
+}
+
+function SourceCard({
+  source,
+  onOpenPost,
+  savedItem,
+  savePending = false,
+  onToggleSave,
+}: {
+  source: QaSource
+  onOpenPost: (postId: number) => void
+  savedItem?: SavedItem | null
+  savePending?: boolean
+  onToggleSave?: () => void
+}) {
   const isExternal = source.url.startsWith('http')
   const isYoutube = source.source_type === 'youtube'
   const display = buildArchiveSourceDisplay(source)
@@ -2607,18 +2550,44 @@ function SourceCard({ source, onOpenPost }: { source: QaSource; onOpenPost: (pos
           <ExternalLink className="sourceOpen" size={16} />
         </a>
         {isYoutube && <YoutubeAppLink url={source.url} className="youtubeAppButton sourceAppButton" />}
+        {onToggleSave && (
+          <button
+            className={['sourceSaveButton', savedItem ? 'saved' : '', isYoutube ? 'belowApp' : ''].filter(Boolean).join(' ')}
+            type="button"
+            disabled={savePending}
+            onClick={onToggleSave}
+            title={savedItem ? '저장됨 - 다시 누르면 해제' : '저장'}
+            aria-pressed={Boolean(savedItem)}
+          >
+            <Bookmark size={16} fill={savedItem ? 'currentColor' : 'none'} />
+          </button>
+        )}
       </article>
     )
   }
   return (
-    <button
-      type="button"
-      className="sourceCard"
-      onClick={() => source.post_id && onOpenPost(source.post_id)}
-      disabled={!source.post_id}
-    >
-      {body}
-    </button>
+    <article className="sourceCard sourceCardShell">
+      <button
+        type="button"
+        className="sourceMainLink"
+        onClick={() => source.post_id && onOpenPost(source.post_id)}
+        disabled={!source.post_id}
+      >
+        {body}
+      </button>
+      {onToggleSave && (
+        <button
+          className={['sourceSaveButton', savedItem ? 'saved' : ''].filter(Boolean).join(' ')}
+          type="button"
+          disabled={savePending}
+          onClick={onToggleSave}
+          title={savedItem ? '저장됨 - 다시 누르면 해제' : '저장'}
+          aria-pressed={Boolean(savedItem)}
+        >
+          <Bookmark size={16} fill={savedItem ? 'currentColor' : 'none'} />
+        </button>
+      )}
+    </article>
   )
 }
 
@@ -2949,6 +2918,7 @@ function ProfilePanel({
   user,
   theme,
   onThemeToggle,
+  onLogout,
   onUserChanged,
   onAccountDeleted,
   onRequireAuth,
@@ -2958,6 +2928,7 @@ function ProfilePanel({
   user?: User
   theme: Theme
   onThemeToggle: () => void
+  onLogout: () => void
   onUserChanged: (user: User) => void
   onAccountDeleted: () => void
   onRequireAuth: () => void
@@ -2972,17 +2943,6 @@ function ProfilePanel({
     queryKey: savedItemsQueryKey,
     queryFn: () => api<SavedItem[]>('/saved-items', {}, token),
     enabled: Boolean(token && user),
-  })
-  const savedSummary = useMutation({
-    mutationFn: () =>
-      api<RagContextResponse>(
-        '/ai/saved-summary',
-        {
-          method: 'POST',
-          body: JSON.stringify({ artist_id: 1, limit: 5 }),
-        },
-        token,
-      ),
   })
   const remove = useMutation({
     mutationFn: (item: SavedItem) => api<void>(`/saved-items/${item.id}`, { method: 'DELETE' }, token),
@@ -3023,31 +2983,19 @@ function ProfilePanel({
   return (
     <div className="profilePanel">
       <section className="profileHero">
-        <div className="profileAvatar" aria-hidden="true">
-          {user.display_name.slice(0, 1).toUpperCase()}
-        </div>
         <div className="profileInfo">
           <div className="profileTitleLine">
             <h2>{user.display_name}</h2>
             <span>{user.email.split('@')[0]}</span>
           </div>
           <div className="profileStats" aria-label="profile stats">
-            <strong>0 <span>팔로잉</span></strong>
-            <strong>0 <span>팔로워</span></strong>
             <strong>{formatNumber(savedItems.data?.length ?? 0)} <span>저장</span></strong>
           </div>
           <div className="profileActions">
             <button className="secondary profileEditButton" type="button" onClick={() => setEditOpen(true)}>
               프로필 편집
             </button>
-            <button className="iconButton profileRoundButton" type="button" onClick={() => setEditOpen(true)} title="설정">
-              <Settings size={20} />
-            </button>
-            <button className="iconButton profileRoundButton" type="button" title="공유">
-              <Share2 size={20} />
-            </button>
           </div>
-          <p className="profileBio">아직 자기소개가 없습니다.</p>
         </div>
       </section>
       {savedItems.isLoading && <p className="muted">저장 항목을 불러오는 중...</p>}
@@ -3055,64 +3003,14 @@ function ProfilePanel({
       {removeError && <p className="error">{removeError}</p>}
       <section className="profileTabs" aria-label="프로필 콘텐츠">
         <button className="active" type="button">
-          <Grid2X2 size={18} />
-          동영상
-        </button>
-        <button type="button">
           <Bookmark size={18} />
-          즐겨찾기
+          저장
         </button>
-      </section>
-      <section className="ragContextPanel savedSummaryPanel profileSummaryPanel">
-        <div className="ragContextHead">
-          <div>
-            <p className="eyebrow">Personal RAG</p>
-            <h3>저장한 자료 요약</h3>
-          </div>
-          <div className="inlineActions">
-            <button
-              type="button"
-              className="secondary"
-              disabled={!canSummarizeSavedItems(savedItems.data) || savedSummary.isPending}
-              onClick={() => savedSummary.mutate()}
-            >
-              <Send size={16} />
-              요약 생성
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={!canSummarizeSavedItems(savedItems.data) || savedSummary.isPending}
-              onClick={() => savedSummary.mutate()}
-            >
-              <Search size={16} />
-              관련 자료 더 찾기
-            </button>
-          </div>
-        </div>
-        {!canSummarizeSavedItems(savedItems.data) && (
-          <p className="hint">저장한 자료가 생기면 개인 요약과 관련 아카이브를 볼 수 있습니다.</p>
-        )}
-        {savedSummary.isPending && <p className="muted">저장한 자료를 요약하는 중...</p>}
-        {savedSummary.error && <p className="error">{savedSummary.error.message}</p>}
-        {savedSummary.data?.summary && <p className="hint">{savedSummary.data.summary}</p>}
-        {savedSummary.data?.sources.length ? (
-          <div className="sourceCards compactSourceCards">
-            {savedSummary.data.sources.map((source, index) => (
-              <SourceCard
-                key={`${source.source_type}-${source.url}-${index}`}
-                source={source}
-                onOpenPost={onOpenPost}
-              />
-            ))}
-          </div>
-        ) : null}
       </section>
       <div className="profileSavedGrid">
         {savedItems.data?.map((item) => {
           const postId = postIdFromUrl(item.url)
           const isExternal = item.url.startsWith('http')
-          const isYoutube = item.item_type === 'youtube'
           const members = memberNamesFromText(item.title, item.source_label)
           return (
             <article className="profileSavedTile" key={item.id}>
@@ -3130,12 +3028,6 @@ function ProfilePanel({
                 </button>
               )}
               <div className="profileTileActions">
-                {isYoutube && <YoutubeAppLink url={item.url} className="iconButton" label="" panel="profile" />}
-                {isExternal && (
-                  <a className="iconButton" href={item.url} target="_blank" rel="noreferrer" title="원문 열기">
-                    <ExternalLink size={15} />
-                  </a>
-                )}
                 <button
                   className="iconButton"
                   type="button"
@@ -3152,7 +3044,7 @@ function ProfilePanel({
       </div>
       {!savedItems.isLoading && savedItems.data?.length === 0 && (
         <div className="profileEmpty">
-          <Grid2X2 size={44} />
+          <Bookmark size={44} />
           <h3>첫 저장 항목 추가</h3>
           <p>저장한 영상과 자료가 여기에 표시됩니다.</p>
         </div>
@@ -3163,6 +3055,7 @@ function ProfilePanel({
           user={user}
           theme={theme}
           onThemeToggle={onThemeToggle}
+          onLogout={onLogout}
           onUserChanged={onUserChanged}
           onAccountDeleted={onAccountDeleted}
           onClose={() => setEditOpen(false)}
@@ -3208,6 +3101,7 @@ function ProfileEditModal({
   user,
   theme,
   onThemeToggle,
+  onLogout,
   onUserChanged,
   onAccountDeleted,
   onClose,
@@ -3216,6 +3110,7 @@ function ProfileEditModal({
   user: User
   theme: Theme
   onThemeToggle: () => void
+  onLogout: () => void
   onUserChanged: (user: User) => void
   onAccountDeleted: () => void
   onClose: () => void
@@ -3258,15 +3153,6 @@ function ProfileEditModal({
             <X size={24} />
           </button>
         </div>
-        <div className="profileEditRow profilePhotoRow">
-          <strong>프로필 사진</strong>
-          <div className="profileAvatar editAvatar" aria-hidden="true">
-            {displayName.slice(0, 1).toUpperCase() || user.email.slice(0, 1).toUpperCase()}
-            <span>
-              <Edit3 size={15} />
-            </span>
-          </div>
-        </div>
         <label className="profileEditRow">
           <strong>이름</strong>
           <span>
@@ -3287,6 +3173,15 @@ function ProfileEditModal({
             <button className="secondary themeSettingButton" type="button" onClick={onThemeToggle}>
               {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
               {theme === 'dark' ? '라이트 모드로 변경' : '다크 모드로 변경'}
+            </button>
+          </span>
+        </div>
+        <div className="profileEditRow">
+          <strong>로그아웃</strong>
+          <span>
+            <button className="secondary themeSettingButton" type="button" onClick={onLogout}>
+              <LogOut size={17} />
+              로그아웃
             </button>
           </span>
         </div>
