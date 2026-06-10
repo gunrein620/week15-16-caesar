@@ -1,0 +1,14 @@
+:root {
+  --color-primary: #ff6f0f;
+  --color-background: #f8f9fa;
+  --color-surface: #ffffff;
+  --color-text: #191919;
+  --color-subtext: #868b94;
+  --color-border: #eaebee;
+  --bottom-nav-height: 64px;
+  --color-primary-dark: #e8590c;
+  --color-success: #1c7c54;
+  --color-info: #2f6f9f;
+  --color-warning: #c77700;
+  --radius: 8px;
+}
