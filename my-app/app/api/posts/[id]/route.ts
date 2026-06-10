@@ -2,6 +2,16 @@ import { NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { auth } from "@/auth";
 
+export async function GET(_request: Request, ctx: RouteContext<"/api/posts/[id]">) {
+  const { id } = await ctx.params;
+
+  const result = await pool.query("SELECT * FROM posts WHERE id = $1", [id]);
+  if (result.rows.length === 0) {
+    return NextResponse.json({ error: "게시글을 찾을 수 없음" }, { status: 404 });
+  }
+  return NextResponse.json(result.rows[0]);
+}
+
 export async function PUT(request: Request, ctx: RouteContext<"/api/posts/[id]">) {
   const session = await auth();
   if (!session?.user?.email) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 
 export default function Home() {
   const [posts, setPosts] = useState([]);
@@ -53,7 +54,7 @@ export default function Home() {
       <ul className="flex flex-col gap-4">
         {posts.map((post: any) => (
             <li key={post.id} className="border p-4 rounded">
-              <h2 className="font-bold">{post.title}</h2>
+              <Link href={`/posts/${post.id}`} className="font-bold hover:underline">{post.title}</Link>
               <p>{post.content}</p>
               <div className="flex gap-2 mt-2">
                 <button
