@@ -59,6 +59,10 @@ class AuthLogin(BaseModel):
     password: str
 
 
+class UserProfileUpdate(BaseModel):
+    display_name: str = Field(min_length=1, max_length=80)
+
+
 class AuthToken(BaseModel):
     access_token: str
     token_type: str = "bearer"

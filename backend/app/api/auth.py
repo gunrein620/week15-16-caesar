@@ -4,14 +4,29 @@ from uuid import uuid4
 import httpx
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.security import create_access_token, hash_password, utc_now, verify_password
 from app.dependencies import get_current_user
-from app.models import AuthIdentity, User, UserSession
+from app.models import (
+    AgentRun,
+    AiUsageCounter,
+    AnalyticsEvent,
+    AuthIdentity,
+    Briefing,
+    Comment,
+    McpCallLog,
+    Post,
+    PostTag,
+    RagChunk,
+    RagEmbeddingJob,
+    SavedItem,
+    User,
+    UserSession,
+)
 from app.schemas import (
     AuthLogin,
     AuthSignup,
@@ -19,6 +34,7 @@ from app.schemas import (
     EmailVerificationRequest,
     SignupSettingsRead,
     UserRead,
+    UserProfileUpdate,
     UserSessionRead,
 )
 from app.services.app_settings import get_public_signup_enabled
@@ -28,6 +44,7 @@ from app.services.auth_sessions import (
     create_user_session,
     find_active_session,
     revoke_session,
+    revoke_user_sessions,
     set_refresh_cookie,
     touch_session,
 )
@@ -45,6 +62,32 @@ from app.services.oauth import exchange_oauth_code, oauth_authorize_url, oauth_r
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 OAUTH_STATE_COOKIE_PREFIX = "oauth_state_"
+
+
+def _delete_user_owned_data(db: Session, user_id: int) -> None:
+    post_ids = list(db.scalars(select(Post.id).where(Post.author_id == user_id)).all())
+    run_ids = list(db.scalars(select(AgentRun.id).where(AgentRun.user_id == user_id)).all())
+    if run_ids:
+        db.execute(delete(McpCallLog).where(McpCallLog.agent_run_id.in_(run_ids)))
+        db.execute(delete(Briefing).where(Briefing.run_id.in_(run_ids)))
+        db.execute(delete(AgentRun).where(AgentRun.id.in_(run_ids)))
+    if post_ids:
+        db.execute(delete(Briefing).where(Briefing.post_id.in_(post_ids)))
+        db.execute(delete(RagChunk).where(RagChunk.post_id.in_(post_ids)))
+        db.execute(delete(Comment).where(Comment.post_id.in_(post_ids)))
+        db.execute(delete(PostTag).where(PostTag.post_id.in_(post_ids)))
+        db.execute(delete(Post).where(Post.id.in_(post_ids)))
+    db.execute(delete(Comment).where(Comment.author_id == user_id))
+    db.execute(delete(SavedItem).where(SavedItem.user_id == user_id))
+    db.execute(delete(AuthIdentity).where(AuthIdentity.user_id == user_id))
+    db.execute(delete(AiUsageCounter).where(AiUsageCounter.scope == "user", AiUsageCounter.scope_id == str(user_id)))
+    revoke_user_sessions(db, user_id)
+    db.query(RagEmbeddingJob).filter(RagEmbeddingJob.user_id == user_id).update(
+        {RagEmbeddingJob.user_id: None}, synchronize_session=False
+    )
+    db.query(AnalyticsEvent).filter(AnalyticsEvent.user_id == user_id).update(
+        {AnalyticsEvent.user_id: None}, synchronize_session=False
+    )
 
 
 def _oauth_account_email(provider: str, provider_subject: str, raw_email: object) -> tuple[str, bool]:
@@ -207,6 +250,32 @@ def oauth_status() -> dict[str, bool]:
         "kakao": bool(settings.kakao_client_id and settings.kakao_client_secret),
         "naver": bool(settings.naver_oauth_client_id and settings.naver_oauth_client_secret),
     }
+
+
+@router.put("/me", response_model=UserRead)
+def update_me(
+    payload: UserProfileUpdate,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> User:
+    user.display_name = payload.display_name.strip()
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+def delete_me(
+    response: Response,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    if user.role == "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin account deletion is not self-service")
+    _delete_user_owned_data(db, user.id)
+    db.delete(user)
+    clear_refresh_cookie(response)
+    db.commit()
 
 
 @router.get("/oauth/{provider}/start")
