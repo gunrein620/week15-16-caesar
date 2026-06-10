@@ -9,6 +9,7 @@ export type IconName =
   | "heart"
   | "pin"
   | "bell"
+  | "user"
   | "arrow"
   | "send"
   | "camera"
@@ -41,6 +42,12 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <path d="M5 8a4 4 0 018 0c0 4 1.5 5 1.5 5h-11S5 12 5 8z" />
       <path d="M7.5 15.5a1.6 1.6 0 003 0" />
+    </>
+  ),
+  user: (
+    <>
+      <circle cx="9" cy="6.5" r="3" />
+      <path d="M4 15a5 5 0 0110 0" />
     </>
   ),
   arrow: <path d="M4 9h10M10 5l4 4-4 4" />,

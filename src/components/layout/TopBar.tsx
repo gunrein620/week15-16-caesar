@@ -3,6 +3,7 @@
 // 상단 유틸리티 바 — 브랜드 + 네비 pill + 검색/알림 + 민트 CTA (lib.jsx TopBar 이식)
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { signOut } from "next-auth/react";
 import { useRef, useState } from "react";
 import { Cta, Icon, Spark } from "@/components/ds";
 
@@ -13,12 +14,20 @@ const NAV = [
   { label: "내 거래", href: "/deals" },
 ];
 
-export function TopBar() {
+type Viewer = {
+  id: string;
+  nickname: string | null;
+  name: string | null;
+  email: string | null;
+} | null;
+
+export function TopBar({ viewer }: { viewer: Viewer }) {
   const pathname = usePathname();
   const router = useRouter();
   const [searching, setSearching] = useState(false);
   const [q, setQ] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const displayName = viewer?.nickname ?? viewer?.name ?? viewer?.email ?? "이웃";
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" || pathname.startsWith("/products") : pathname.startsWith(href);
@@ -91,6 +100,43 @@ export function TopBar() {
       <button type="button" className="jm-pill is-ghost" aria-label="알림">
         <Icon name="bell" size={16} color="var(--text-secondary)" />
       </button>
+      {viewer ? (
+        <div className="jm-pill is-ghost" style={{ gap: 10, padding: "6px 8px 6px 14px" }}>
+          <span
+            style={{
+              maxWidth: 120,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              fontWeight: 700,
+              fontSize: 13.5,
+            }}
+          >
+            {displayName}
+          </span>
+          <button
+            type="button"
+            onClick={() => signOut({ callbackUrl: "/" })}
+            style={{
+              border: "1px solid var(--border-card)",
+              borderRadius: 999,
+              background: "rgba(255,255,255,0.04)",
+              color: "var(--text-secondary)",
+              cursor: "pointer",
+              fontFamily: "var(--font-body)",
+              fontSize: 12.5,
+              fontWeight: 700,
+              padding: "5px 9px",
+            }}
+          >
+            로그아웃
+          </button>
+        </div>
+      ) : (
+        <Link href="/login" className="jm-pill is-ghost" style={{ gap: 8 }}>
+          <Icon name="user" size={16} color="var(--text-secondary)" /> 로그인
+        </Link>
+      )}
       <Cta href="/products/new">
         <Icon name="plus" size={16} color="var(--on-accent)" /> 판매하기
       </Cta>
