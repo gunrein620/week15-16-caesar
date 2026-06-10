@@ -39,10 +39,14 @@ export type ExternalSource = {
   name: string;
   category?: string | null;
   address?: string | null;
+  phone?: string | null;
   url?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   source?: string | null;
+  openingHours?: string | null;
+  hoursSourceUrl?: string | null;
+  hoursSourceTitle?: string | null;
 };
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000/api';

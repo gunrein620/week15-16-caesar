@@ -1,4 +1,4 @@
-import { Bot, ExternalLink, FileText, MapPin, Megaphone, Send } from 'lucide-react';
+import { Bot, Clock3, ExternalLink, FileText, MapPin, Megaphone, Phone, Send } from 'lucide-react';
 import { useState } from 'react';
 import { api, isAuthError, type ExternalSource, type RagSource } from '../api/client.js';
 
@@ -105,9 +105,25 @@ export function AiAssistantPage({ isAuthed, onLogin }: AiAssistantPageProps) {
                   <span>{source.name}</span>
                 </div>
                 {source.address && <small>{source.address}</small>}
+                {source.openingHours && (
+                  <div className="external-source-hours">
+                    <Clock3 size={13} aria-hidden="true" />
+                    <span>{source.openingHours}</span>
+                  </div>
+                )}
                 <div className="external-source-meta">
                   {source.category && <span>{source.category}</span>}
                   {source.source && <span>{source.source}</span>}
+                  {source.phone && (
+                    <a href={`tel:${source.phone.replace(/[^\d+]/g, '')}`}>
+                      전화 <Phone size={12} aria-hidden="true" />
+                    </a>
+                  )}
+                  {source.hoursSourceUrl && (
+                    <a href={source.hoursSourceUrl} target="_blank" rel="noreferrer">
+                      시간 출처 <ExternalLink size={12} aria-hidden="true" />
+                    </a>
+                  )}
                   {source.url && (
                     <a href={source.url} target="_blank" rel="noreferrer">
                       링크 <ExternalLink size={12} aria-hidden="true" />

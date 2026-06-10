@@ -31,6 +31,7 @@ export class PublicFacilityService {
             name: place.place_name,
             category: place.category_group_name || place.category_name || '장소',
             address: place.road_address_name || place.address_name,
+            phone: place.phone,
             url: place.place_url,
             longitude: Number(place.x),
             latitude: Number(place.y)
@@ -75,6 +76,7 @@ type KakaoKeywordResponse = {
     category_name?: string;
     road_address_name?: string;
     address_name: string;
+    phone?: string;
     place_url?: string;
     x: string;
     y: string;

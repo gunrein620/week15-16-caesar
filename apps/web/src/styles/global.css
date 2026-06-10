@@ -648,6 +648,22 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.external-source-hours {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 5px;
+  color: #2f6f4e;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.external-source-hours svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
 .external-source-meta {
   display: flex;
   flex-wrap: wrap;

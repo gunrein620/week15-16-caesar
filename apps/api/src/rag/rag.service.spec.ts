@@ -17,7 +17,8 @@ describe('RagService', () => {
     search: vi.fn()
   };
   const llmService = {
-    chat: vi.fn()
+    chat: vi.fn(),
+    searchWeb: vi.fn()
   };
   const mcpClientService = {
     callTool: vi.fn()
@@ -27,6 +28,7 @@ describe('RagService', () => {
     vi.clearAllMocks();
     prisma.region.findUnique.mockResolvedValue({ id: 'osan-id', code: 'OSAN', name: '오산시' });
     embeddingService.createEmbedding.mockResolvedValue([0.1, 0.2, 0.3]);
+    llmService.searchWeb.mockResolvedValue({ text: '{}', citations: [] });
   });
 
   it('duplicate-check returns POST candidates over 0.86 using default OSAN region', async () => {
@@ -224,6 +226,77 @@ describe('RagService', () => {
       })
     ]);
     expect(result.sources).toEqual([expect.objectContaining({ sourceId: 'post-1' })]);
+  });
+
+  it('ask enriches place results with operating hours from web search', async () => {
+    vectorSearchService.search.mockResolvedValue([
+      { sourceType: 'POST', sourceId: 'post-1', content: '게시판 후기: 마트 주말 주차가 혼잡합니다.', similarity: 0.81 }
+    ]);
+    mcpClientService.callTool.mockResolvedValue({
+      summary: '오산 장소 검색 결과입니다.',
+      facilities: [
+        {
+          name: '이마트 오산점',
+          category: '대형마트',
+          address: '경기 오산시 경기대로 181',
+          url: 'https://place.map.kakao.com/8041485'
+        },
+        {
+          name: '홈플러스 오산점',
+          category: '대형마트',
+          address: '경기 오산시 청학로 238',
+          url: 'https://place.map.kakao.com/21312240'
+        }
+      ],
+      source: 'kakao-local'
+    });
+    llmService.searchWeb.mockResolvedValueOnce({
+      text: JSON.stringify({
+        openingHours: '매일 10:00-22:00',
+        sourceUrl: 'https://place.map.kakao.com/8041485',
+        sourceTitle: '이마트 오산점'
+      }),
+      citations: [{ url: 'https://place.map.kakao.com/8041485', title: '이마트 오산점' }]
+    });
+    llmService.searchWeb.mockResolvedValueOnce({
+      text: JSON.stringify({
+        openingHours: '매일 10:00-24:00',
+        sourceUrl: 'https://place.map.kakao.com/21312240',
+        sourceTitle: '홈플러스 오산점'
+      }),
+      citations: [{ url: 'https://place.map.kakao.com/21312240', title: '홈플러스 오산점' }]
+    });
+    llmService.chat.mockResolvedValue('이마트 오산점은 매일 10:00-22:00로 확인됩니다.');
+    const service = new RagService(
+      prisma as never,
+      embeddingService as never,
+      vectorSearchService as never,
+      llmService as never,
+      mcpClientService as never
+    );
+
+    const result = await service.ask({
+      question: '오산 근처 마트 어디 있어? 운영시간도 알려줘'
+    });
+
+    expect(llmService.searchWeb).toHaveBeenCalledWith(
+      expect.stringContaining('이마트 오산점 경기 오산시 경기대로 181 영업시간')
+    );
+    const userMessage = llmService.chat.mock.calls[0][0][1].content;
+    expect(userMessage).toContain('운영시간: 매일 10:00-22:00');
+    expect(userMessage).toContain('운영시간 출처: https://place.map.kakao.com/8041485');
+    expect(result.externalSources).toEqual([
+      expect.objectContaining({
+        name: '이마트 오산점',
+        openingHours: '매일 10:00-22:00',
+        hoursSourceUrl: 'https://place.map.kakao.com/8041485'
+      }),
+      expect.objectContaining({
+        name: '홈플러스 오산점',
+        openingHours: '매일 10:00-24:00',
+        hoursSourceUrl: 'https://place.map.kakao.com/21312240'
+      })
+    ]);
   });
 
   it('ask does not call external place search for non-place questions', async () => {

@@ -28,6 +28,16 @@ export type ChatOptions = {
   temperature?: number;
 };
 
+export type WebSearchCitation = {
+  url: string;
+  title?: string;
+};
+
+export type WebSearchResult = {
+  text: string;
+  citations: WebSearchCitation[];
+};
+
 export type ToolDefinition = {
   type: 'function';
   function: {
@@ -152,6 +162,33 @@ export class LlmService {
     };
   }
 
+  async searchWeb(input: string, options: { model?: string } = {}): Promise<WebSearchResult> {
+    const apiKey = this.getApiKey();
+    const response = await fetch(`${this.getBaseUrl()}/responses`, {
+      method: 'POST',
+      headers: this.headers(apiKey),
+      body: JSON.stringify({
+        model: options.model ?? process.env.OPENAI_WEB_SEARCH_MODEL ?? 'gpt-5.5',
+        tools: [{ type: 'web_search' }],
+        input
+      })
+    });
+
+    if (!response.ok) {
+      throw new ServiceUnavailableException(`Web search API failed with ${response.status}`);
+    }
+
+    const payload = (await response.json()) as ResponsesApiPayload;
+    const content = this.firstOutputText(payload);
+    return {
+      text: content?.text?.trim() ?? '',
+      citations: (content?.annotations ?? []).flatMap((annotation) => {
+        const citation = this.toWebSearchCitation(annotation);
+        return citation ? [citation] : [];
+      })
+    };
+  }
+
   private getApiKey() {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
@@ -181,4 +218,58 @@ export class LlmService {
       return {};
     }
   }
+
+  private firstOutputText(payload: ResponsesApiPayload) {
+    if (typeof payload.output_text === 'string') {
+      return { text: payload.output_text, annotations: [] };
+    }
+
+    for (const item of payload.output ?? []) {
+      if (item?.type !== 'message' || !Array.isArray(item.content)) {
+        continue;
+      }
+      const textContent = item.content.find((content) => content?.type === 'output_text' && typeof content.text === 'string');
+      if (textContent) {
+        return textContent;
+      }
+    }
+    return null;
+  }
+
+  private toWebSearchCitation(annotation: unknown): WebSearchCitation | null {
+    if (!annotation || typeof annotation !== 'object') {
+      return null;
+    }
+    const candidate = annotation as {
+      type?: unknown;
+      url?: unknown;
+      title?: unknown;
+      url_citation?: {
+        url?: unknown;
+        title?: unknown;
+      };
+    };
+    if (candidate.type !== 'url_citation') {
+      return null;
+    }
+    const nested = candidate.url_citation;
+    const url = typeof candidate.url === 'string' ? candidate.url : typeof nested?.url === 'string' ? nested.url : undefined;
+    if (!url) {
+      return null;
+    }
+    const title = typeof candidate.title === 'string' ? candidate.title : typeof nested?.title === 'string' ? nested.title : undefined;
+    return { url, title };
+  }
 }
+
+type ResponsesApiPayload = {
+  output_text?: string;
+  output?: Array<{
+    type?: string;
+    content?: Array<{
+      type?: string;
+      text?: string;
+      annotations?: unknown[];
+    }>;
+  }>;
+};

@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { EmbeddingSourceType, PostStatus } from '@prisma/client';
-import type { ChatMessage } from '../ai/llm.service.js';
+import type { ChatMessage, WebSearchResult } from '../ai/llm.service.js';
 import { LlmService } from '../ai/llm.service.js';
 import { DEFAULT_REGION_CODE, DEFAULT_REGION_NAME } from '../common/default-region.js';
 import { McpClientService } from '../mcp-client/mcp-client.service.js';
@@ -19,10 +19,14 @@ type ExternalPlaceSource = {
   name: string;
   category?: string;
   address?: string;
+  phone?: string;
   url?: string;
   latitude?: number;
   longitude?: number;
   source: string;
+  openingHours?: string;
+  hoursSourceUrl?: string;
+  hoursSourceTitle?: string;
 };
 
 type PlaceSearchIntent = {
@@ -100,7 +104,9 @@ export class RagService {
   async ask(dto: RagAskDto) {
     const regionId = await this.resolveRegionId(dto.regionId);
     const placeIntent = this.detectPlaceSearchIntent(dto.question);
-    const externalSources = placeIntent ? await this.searchExternalPlaces(placeIntent) : [];
+    const externalSources = placeIntent
+      ? await this.enrichPlacesWithOperatingHours(await this.searchExternalPlaces(placeIntent), dto.question)
+      : [];
     const embedding = await this.embeddingService.createEmbedding(dto.question);
     const questionTerms = this.keywordTerms(dto.question);
     let sources = (
@@ -124,7 +130,7 @@ export class RagService {
       {
         role: 'system',
         content: placeIntent
-          ? '너는 오산 지역 생활 커뮤니티 LocalMind Board의 Q&A 봇이다. 약국, 마트, 병원, 주차장 같은 장소 질문은 외부 장소 검색 결과를 1차 근거로 사용한다. 게시글/댓글/공지 근거는 주민 후기나 보조 설명으로만 덧붙인다. 외부 검색 결과에 운영시간, 야간 운영 여부, 전화번호가 없으면 확인 필요하다고 말하고, 없는 정보를 지어내지 않는다.'
+          ? '너는 오산 지역 생활 커뮤니티 LocalMind Board의 Q&A 봇이다. 약국, 마트, 병원, 주차장 같은 장소 질문은 외부 장소 검색 결과를 1차 근거로 사용한다. 운영시간이 제공된 장소는 운영시간과 출처 링크를 함께 안내한다. 게시글/댓글/공지 근거는 주민 후기나 보조 설명으로만 덧붙인다. 운영시간, 야간 운영 여부, 전화번호가 근거에 없으면 확인 필요하다고 말하고, 없는 정보를 지어내지 않는다.'
           : '너는 오산 지역 생활 커뮤니티 LocalMind Board의 Q&A 봇이다. 제공된 게시글/댓글/공지 근거만 사용한다. 근거에 관련 게시글이 있으면 반드시 제목이나 내용을 언급하고, 정확한 위치나 운영시간이 근거에 없으면 추가 확인이 필요하다고 말한다.'
       },
       {
@@ -436,6 +442,7 @@ export class RagService {
             category: this.stringValue(candidate.category),
             address: this.stringValue(candidate.address),
             url: this.stringValue(candidate.url),
+            phone: this.stringValue(candidate.phone),
             latitude: this.numberValue(candidate.latitude),
             longitude: this.numberValue(candidate.longitude),
             source
@@ -445,6 +452,74 @@ export class RagService {
       .slice(0, 5);
   }
 
+  private async enrichPlacesWithOperatingHours(
+    places: ExternalPlaceSource[],
+    question: string
+  ): Promise<ExternalPlaceSource[]> {
+    if (places.length === 0) {
+      return places;
+    }
+
+    const enrichedPlaces = await Promise.all(
+      places.map(async (place, index) => {
+        if (index >= 3) {
+          return place;
+        }
+
+        try {
+          const result = await this.llmService.searchWeb(this.operatingHoursSearchPrompt(place, question));
+          return {
+            ...place,
+            ...this.toOperatingHours(result)
+          };
+        } catch {
+          return place;
+        }
+      })
+    );
+    return enrichedPlaces;
+  }
+
+  private operatingHoursSearchPrompt(place: ExternalPlaceSource, question: string) {
+    return [
+      `${place.name} ${place.address ?? DEFAULT_REGION_NAME} 영업시간 운영시간 휴무`,
+      `사용자 질문: ${question}`,
+      '해당 장소의 현재 영업시간을 웹 검색으로 확인한다.',
+      '확실한 운영시간을 찾으면 JSON만 반환한다: {"openingHours":"예: 매일 10:00-22:00","sourceUrl":"출처 URL","sourceTitle":"출처 제목"}',
+      '운영시간이 확실하지 않으면 JSON만 반환한다: {"openingHours":null}'
+    ].join('\n');
+  }
+
+  private toOperatingHours(result: WebSearchResult): Partial<ExternalPlaceSource> {
+    const parsed = this.parseJsonObject(result.text);
+    const openingHours = this.stringValue(parsed?.openingHours) ?? this.stringValue(parsed?.operatingHours);
+    if (!openingHours) {
+      return {};
+    }
+
+    const firstCitation = result.citations[0];
+    return {
+      openingHours,
+      hoursSourceUrl: this.stringValue(parsed?.sourceUrl) ?? firstCitation?.url,
+      hoursSourceTitle: this.stringValue(parsed?.sourceTitle) ?? firstCitation?.title
+    };
+  }
+
+  private parseJsonObject(text: string): Record<string, unknown> | null {
+    const trimmed = text.trim();
+    const jsonText = trimmed.match(/\{[\s\S]*\}/)?.[0];
+    if (!jsonText) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(jsonText) as unknown;
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  }
+
   private formatExternalPlaceSources(sources: ExternalPlaceSource[]) {
     return sources
       .map((source, index) =>
@@ -452,6 +527,9 @@ export class RagService {
           `${index + 1}. ${source.name}`,
           source.category ? `분류: ${source.category}` : null,
           source.address ? `주소: ${source.address}` : null,
+          source.phone ? `전화: ${source.phone}` : null,
+          source.openingHours ? `운영시간: ${source.openingHours}` : null,
+          source.hoursSourceUrl ? `운영시간 출처: ${source.hoursSourceUrl}` : null,
           source.url ? `링크: ${source.url}` : null,
           `출처: ${source.source}`
         ]

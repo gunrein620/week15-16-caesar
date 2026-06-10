@@ -200,6 +200,7 @@ sequenceDiagram
 - OpenAI API Key가 없으면 ingestion은 실패로 전체 요청을 막지 않고 건너뜁니다.
 - `OPENAI_API_KEY`가 설정된 상태에서 `npm run prisma:seed`를 실행하면 데모 공지와 샘플 게시글 embedding도 함께 생성합니다.
 - 사용자가 지역을 넘기지 않으면 `DEFAULT_REGION_CODE=OSAN` 기준으로 검색합니다.
+- 약국, 마트, 병원, 주차장 같은 장소형 질문은 MCP의 Kakao Local 장소 검색 결과를 1차 근거로 사용하고, 상위 장소의 운영시간은 OpenAI Web Search로 보강합니다. 게시판 RAG 결과는 주민 후기와 보조 설명으로만 덧붙입니다.
 
 MVP RAG 기능:
 
