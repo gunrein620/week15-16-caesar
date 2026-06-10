@@ -1,6 +1,12 @@
 export const BRIEFING_INTRO = "RESCENE 오늘의 요약"
 
-export type BriefingSectionHeading = "핵심 요약" | "최근 영상" | "팬 반응" | "팬 게시글" | "Naver 소식"
+export type BriefingSectionHeading =
+  | "핵심 요약"
+  | "최근 영상"
+  | "팬 반응"
+  | "팬 게시글"
+  | "Naver 소식"
+  | "과거 맥락"
 
 export type BriefingContentItem =
   | { type: "bullet"; text: string }
@@ -18,7 +24,14 @@ export type ParsedBriefingContent = {
   sections: BriefingContentSection[]
 }
 
-const SECTION_HEADINGS: BriefingSectionHeading[] = ["핵심 요약", "최근 영상", "팬 반응", "팬 게시글", "Naver 소식"]
+const SECTION_HEADINGS: BriefingSectionHeading[] = [
+  "핵심 요약",
+  "최근 영상",
+  "팬 반응",
+  "팬 게시글",
+  "Naver 소식",
+  "과거 맥락",
+]
 const SECTION_SET = new Set<string>(SECTION_HEADINGS)
 const BULLET_RE = /^[-*]\s+(.+)$/
 const NUMBERED_RE = /^\d+\.\s*(.+)$/

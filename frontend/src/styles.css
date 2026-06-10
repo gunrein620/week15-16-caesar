@@ -802,7 +802,7 @@ h2 {
 .boardTable {
   background: transparent;
   border: 0;
-  border-radius: 8px;
+  border-radius: 0;
   margin-top: 18px;
   overflow: hidden;
 }
@@ -1835,34 +1835,35 @@ h2 {
 }
 
 .typeBadge {
-  border-radius: 999px;
-  color: var(--badge-on);
+  background: transparent;
+  border-radius: 0;
+  color: var(--text-soft);
   font-weight: 700;
-  padding: 3px 7px;
+  padding: 0;
 }
 
 .typeBadge.youtube {
-  background: var(--badge-youtube);
+  background: transparent;
 }
 
 .typeBadge.naver_news,
 .typeBadge.naver_blog {
-  background: var(--badge-naver);
+  background: transparent;
 }
 
 .typeBadge.briefing {
-  background: var(--badge-briefing);
-  color: #06343b;
+  background: transparent;
+  color: var(--text-soft);
 }
 
 .typeBadge.post {
-  background: var(--badge-post);
+  background: transparent;
 }
 
 .typeBadge.link,
 .typeBadge.image,
 .typeBadge.source_card {
-  background: var(--badge-source);
+  background: transparent;
 }
 
 .updateFoot {
@@ -1904,7 +1905,7 @@ h2 {
 
 .updateFoot em {
   background: var(--surface-2);
-  border-radius: 999px;
+  border-radius: 0;
   color: var(--text-soft);
   font-size: 11px;
   font-style: normal;
@@ -3332,7 +3333,7 @@ textarea {
 .briefingDate {
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 0;
   color: var(--text-soft);
   font-size: 13px;
   justify-self: start;
@@ -3384,17 +3385,7 @@ textarea {
 
 .briefingLinkCard:hover {
   border-color: var(--border-strong);
-  box-shadow: var(--shadow);
-}
-
-.briefingOpen {
-  align-items: center;
-  color: var(--text-soft);
-  display: inline-flex;
-  font-size: 13px;
-  font-weight: 700;
-  gap: 4px;
-  white-space: nowrap;
+  box-shadow: none;
 }
 
 .postHead span {
@@ -3433,14 +3424,14 @@ textarea {
 .commentsHead span {
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 0;
   padding: 2px 7px;
 }
 
 .commentItem {
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 0;
   display: grid;
   gap: 6px;
   padding: 10px 12px;
@@ -3482,7 +3473,7 @@ textarea {
 .embedCard {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 0;
   color: inherit;
   display: grid;
   gap: 12px;
@@ -3536,18 +3527,12 @@ textarea {
   margin-bottom: 0;
 }
 
-.embedActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
 .sourceCard {
   align-items: stretch;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-left: 5px solid var(--accent);
-  border-radius: 8px;
+  border-left: 0;
+  border-radius: 0;
   color: inherit;
   display: flex;
   flex-direction: column;
@@ -3656,13 +3641,13 @@ textarea {
 
 .sourceType {
   align-self: flex-start;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--accent);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--text-soft);
   font-size: 12px;
   font-weight: 650;
-  padding: 4px 8px;
+  padding: 0;
 }
 
 .sourceOpen {
@@ -4593,10 +4578,6 @@ button:disabled {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .briefingOpen {
-    justify-self: flex-start;
-  }
-
   .sourceCardShell {
     gap: 0;
   }
@@ -5175,7 +5156,7 @@ button:disabled {
 .boardTable.compact {
   background: transparent;
   border-bottom: 1px solid var(--border);
-  border-top: 2px solid var(--text);
+  border-top: 1px solid var(--border);
   display: grid;
   gap: 0;
   grid-template-columns: 1fr;
@@ -5829,4 +5810,105 @@ button:disabled {
     padding: 4px 7px;
     top: 18px;
   }
+}
+
+/* Neutral content pass: no pill badges, accent edge strips, or heavy forum borders. */
+.typeBadge,
+.typeBadge.youtube,
+.typeBadge.naver_news,
+.typeBadge.naver_blog,
+.typeBadge.briefing,
+.typeBadge.post,
+.typeBadge.link,
+.typeBadge.image,
+.typeBadge.source_card,
+.sourceType,
+.ragSourceGrid .sourceType,
+.briefingDate,
+.commentsHead span,
+.updateFoot em {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--text-soft);
+  padding: 0;
+}
+
+.mediaStage .typeBadge,
+.videoPoster .videoThumb .typeBadge,
+.homeStack .updateThumb .typeBadge,
+.savedGrid .updateThumb .typeBadge,
+.profileSavedThumb .typeBadge {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: currentColor;
+}
+
+.hero::after {
+  display: none;
+}
+
+.sourceCard,
+.briefingLinkCard,
+.embedCard,
+.briefingPreview,
+.ragContextPanel,
+.commentItem,
+.analyticsList,
+.budgetStats span {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.sourceCard {
+  border-left: 0;
+}
+
+.sourceCard:hover,
+.briefingLinkCard:hover {
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+.briefingLinkCard {
+  align-items: start;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.embedCard {
+  color: inherit;
+  text-align: left;
+  width: 100%;
+}
+
+a.embedCard {
+  text-decoration: none;
+}
+
+.embedCardButton {
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+.boardTable,
+.boardTable.compact {
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  border-top: 1px solid var(--border);
+  box-shadow: none;
+}
+
+.boardRow,
+.boardTable.compact .boardRow {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.boardHeader,
+.boardTable.compact .boardHeader {
+  background: transparent;
 }

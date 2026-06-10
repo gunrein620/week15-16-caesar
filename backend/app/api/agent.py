@@ -88,12 +88,32 @@ def _source_card_from_update(item: Any) -> dict[str, Any]:
     }
 
 
+def _display_description_from_rag_source(source: dict[str, Any]) -> str:
+    description = _clean_external_text(source.get("description"))
+    if description:
+        return _clip(description, 140)
+
+    raw_content = source.get("content") or ""
+    lines = [_clean_external_text(line) for line in raw_content.splitlines()]
+    for line in lines:
+        key, separator, value = line.partition(":")
+        if separator and key.strip().lower() == "description" and value.strip():
+            return _clip(value.strip(), 140)
+
+    visible_lines = [
+        line
+        for line in lines
+        if line and not re.match(r"^(title|channel|published_at|views|members|keywords|description):", line, re.I)
+    ]
+    return _clip(" ".join(visible_lines), 140)
+
+
 def _source_card_from_rag_source(source: dict[str, Any]) -> dict[str, Any]:
     return {
         "type": "source_card",
         "item_type": source.get("source_type") or "post",
         "title": source.get("title") or "",
-        "description": _clip(source.get("content") or source.get("description") or "", 140),
+        "description": _display_description_from_rag_source(source),
         "url": source.get("url") or "",
         "thumbnail_url": source.get("thumbnail_url") or "",
         "source_label": source.get("source_label") or source.get("channel_title") or "",

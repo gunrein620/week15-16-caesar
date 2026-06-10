@@ -26,6 +26,10 @@ Naver 소식
 팬 게시글
 1. 원이 후기
    링크: /posts/12
+
+과거 맥락
+1. 원이 무대 아카이브
+   링크: /posts/30
 `
 
 test("parseBriefingContent groups known sections and link cards", () => {
@@ -36,7 +40,7 @@ test("parseBriefingContent groups known sections and link cards", () => {
   assert.equal(parsed.dateLine, "기준일: 2026-06-07")
   assert.deepEqual(
     parsed.sections.map((section) => section.heading),
-    ["핵심 요약", "최근 영상", "팬 반응", "Naver 소식", "팬 게시글"],
+    ["핵심 요약", "최근 영상", "팬 반응", "Naver 소식", "팬 게시글", "과거 맥락"],
   )
   assert.deepEqual(parsed.sections[0].items, [
     { type: "bullet", text: "최근 영상 2개를 확인했습니다." },
@@ -51,6 +55,9 @@ test("parseBriefingContent groups known sections and link cards", () => {
   ])
   assert.deepEqual(parsed.sections[4].items, [
     { type: "link", title: "원이 후기", url: "/posts/12" },
+  ])
+  assert.deepEqual(parsed.sections[5].items, [
+    { type: "link", title: "원이 무대 아카이브", url: "/posts/30" },
   ])
 })
 

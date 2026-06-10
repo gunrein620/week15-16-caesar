@@ -665,6 +665,32 @@ def test_briefing_preview_adds_rag_context_section_and_deduped_cards(client):
     assert any(card["url"].startswith("/posts/") for card in body["source_cards"])
 
 
+def test_briefing_rag_source_card_hides_embedding_metadata():
+    from app.api.agent import _source_card_from_rag_source
+
+    card = _source_card_from_rag_source(
+        {
+            "source_type": "youtube",
+            "title": "항상 퀸의 마인드로 #리센느 #loveattack",
+            "url": "https://www.youtube.com/watch?v=abc",
+            "content": "\n".join(
+                [
+                    "title: 항상 퀸의 마인드로 #리센느 #loveattack",
+                    "channel: 현실웃음",
+                    "published_at: 2026-06-07T08:06:40+00:00",
+                    "views: 2698",
+                    "members: Woni",
+                    "description: 리센느 무대 영상입니다.",
+                ]
+            ),
+        }
+    )
+
+    assert card["description"] == "리센느 무대 영상입니다."
+    assert "title:" not in card["description"]
+    assert "channel:" not in card["description"]
+
+
 def test_admin_can_manage_home_keywords(client):
     user_token = signup(client)
     user_headers = {"Authorization": f"Bearer {user_token}"}

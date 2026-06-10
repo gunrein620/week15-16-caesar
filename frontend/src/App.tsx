@@ -1188,7 +1188,7 @@ function ActionRail({
     <div className={isYoutube ? 'cardActions actionRail multi' : 'cardActions actionRail'}>
       {isYoutube && <YoutubeAppLink url={url} />}
       {!isYoutube && isExternal && (
-        <a className="railButton" href={url} target="_blank" rel="noreferrer" title="원문 보기">
+        <a className="railButton" href={url} target="_blank" rel="noreferrer" title="열기">
           <ExternalLink size={16} />
         </a>
       )}
@@ -1976,10 +1976,6 @@ function BriefingLinkCard({
       <button className="sourceCard briefingLinkCard" type="button" onClick={() => onOpenPost(postId)}>
         <span className="sourceType">팬글</span>
         <strong>{item.title}</strong>
-        <span className="briefingOpen">
-          게시글 보기
-          <ExternalLink size={14} />
-        </span>
       </button>
     )
   }
@@ -1987,11 +1983,6 @@ function BriefingLinkCard({
     <a className="sourceCard briefingLinkCard" href={item.url} target="_blank" rel="noreferrer">
       <span className="sourceType">{isYoutube ? 'YouTube' : 'Source'}</span>
       <strong>{item.title}</strong>
-      <span className="briefingOpen">
-        {isYoutube && <PlayCircle size={15} />}
-        원문 보기
-        <ExternalLink size={14} />
-      </span>
     </a>
   )
 }
@@ -2100,27 +2091,27 @@ function EmbedList({ embeds, onOpenPost }: { embeds: PostEmbed[]; onOpenPost: (p
   )
 }
 
+const RAW_EMBED_META_RE = /\b(title|channel|published_at|views|members|keywords|description):\s*/i
+
+function displayEmbedDescription(value?: string | null) {
+  const normalized = (value ?? '').replace(/\s+/g, ' ').trim()
+  if (!normalized) return ''
+  const description = normalized.match(/\bdescription:\s*(.+)$/i)?.[1]?.trim()
+  if (description) return description
+  if (RAW_EMBED_META_RE.test(normalized)) return ''
+  return normalized
+}
+
 function EmbedCard({ embed, onOpenPost }: { embed: PostEmbed; onOpenPost: (postId: number) => void }) {
-  const [expanded, setExpanded] = useState(false)
   const postId = postIdFromUrl(embed.url)
   const title = embed.title || embed.url
+  const description = displayEmbedDescription(embed.description)
   const meta =
     embed.type === 'youtube'
       ? 'YouTube'
       : embed.type === 'image'
         ? 'Image'
         : embed.source_label || embed.provider || 'Link'
-  const openAction = embed.url.startsWith('http') ? (
-    <a className="secondary" href={embed.url} target="_blank" rel="noreferrer">
-      <ExternalLink size={15} />
-      원문 보기
-    </a>
-  ) : (
-    <button className="secondary" onClick={() => postId && onOpenPost(postId)} disabled={!postId}>
-      <FileText size={15} />
-      게시글 보기
-    </button>
-  )
 
   if (embed.type === 'image') {
     return (
@@ -2130,8 +2121,8 @@ function EmbedCard({ embed, onOpenPost }: { embed: PostEmbed; onOpenPost: (postI
     )
   }
 
-  return (
-    <article className="embedCard">
+  const cardContent = (
+    <>
       <div className="embedThumb">
         {embed.thumbnail_url ? (
           <img src={embed.thumbnail_url} alt="" loading="lazy" />
@@ -2147,18 +2138,26 @@ function EmbedCard({ embed, onOpenPost }: { embed: PostEmbed; onOpenPost: (postI
           {embed.published_at && <span>{formatDateTime(embed.published_at)}</span>}
         </div>
         <strong>{title}</strong>
-        {embed.description && <p>{expanded ? embed.description : excerpt(embed.description, 120)}</p>}
-        <div className="embedActions">
-          {embed.description && (
-            <button className="secondary" onClick={() => setExpanded((value) => !value)}>
-              {expanded ? '접기' : '펼쳐보기'}
-            </button>
-          )}
-          {openAction}
-        </div>
+        {description && <p>{excerpt(description, 120)}</p>}
       </div>
-    </article>
+    </>
   )
+
+  if (embed.url.startsWith('http')) {
+    return (
+      <a className="embedCard" href={embed.url} target="_blank" rel="noreferrer">
+        {cardContent}
+      </a>
+    )
+  }
+  if (postId) {
+    return (
+      <button className="embedCard embedCardButton" type="button" onClick={() => onOpenPost(postId)}>
+        {cardContent}
+      </button>
+    )
+  }
+  return <article className="embedCard">{cardContent}</article>
 }
 
 function RagPanel({
@@ -2989,7 +2988,6 @@ function YoutubePanel({
 function BriefingPanel({ token, user }: { token: string | null; user?: User }) {
   const queryClient = useQueryClient()
   const [preview, setPreview] = useState<BriefingPreview | null>(null)
-  const [showRaw, setShowRaw] = useState(false)
   const previewMutation = useMutation({
     mutationFn: (refresh: boolean) =>
       api<BriefingPreview>(`/ai/briefing/preview?refresh=${refresh}`, { method: 'POST' }, token),
@@ -3054,10 +3052,6 @@ function BriefingPanel({ token, user }: { token: string | null; user?: User }) {
               <EmbedList embeds={preview.source_cards} onOpenPost={() => undefined} />
             </>
           )}
-          <button className="secondary" onClick={() => setShowRaw((value) => !value)}>
-            {showRaw ? '원문 접기' : '원문 펼쳐보기'}
-          </button>
-          {showRaw && <pre className="preview">{preview.preview_markdown}</pre>}
         </section>
       )}
     </div>
