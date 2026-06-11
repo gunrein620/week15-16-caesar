@@ -207,7 +207,10 @@ export class AgentToolRegistryService {
         ...actions.map((action, index) => `${index + 1}. ${action}`),
         '',
         '추가로 첨부하면 좋은 정보',
-        this.inferComplaintAttachmentHint(issue)
+        this.inferComplaintAttachmentHint(issue),
+        '',
+        '민원 접수처',
+        ...this.inferComplaintFilingSites(issue)
       ].join('\n')
     };
   }
@@ -335,5 +338,33 @@ export class AgentToolRegistryService {
       return '- 파손 부위 사진, 정확한 위치, 발견 시간대, 주변 위험 상황';
     }
     return '- 현장 사진, 정확한 위치, 발생 시간대, 반복 여부';
+  }
+
+  private inferComplaintFilingSites(text: string) {
+    if (/(주정차|주차|정차)/.test(text)) {
+      return [
+        '1. 안전신문고',
+        '- 링크: https://www.safetyreport.go.kr/',
+        '- 용도: 불법 주정차, 교통 안전 위험, 현장 사진 기반 신고 접수',
+        '2. 오산시 불법주정차 주민신고제 안내',
+        '- 링크: https://www.osan.go.kr/portal/contents.do?mId=0110060000',
+        '- 용도: 오산시 주정차 주민신고 기준과 처리 절차 확인'
+      ];
+    }
+    if (/(파손|고장|위험|보도블록|보도|인도|도로|가로등|신호등|하수구|배수로)/.test(text)) {
+      return [
+        '1. 안전신문고',
+        '- 링크: https://www.safetyreport.go.kr/',
+        '- 용도: 도로, 보도, 공공시설 파손처럼 안전 위험이 있는 생활 불편 신고 접수'
+      ];
+    }
+    return [
+      '1. 오산시에 바랍니다(국민신문고)',
+      '- 링크: https://www.osan.go.kr/portal/contents.do?mId=0101060000',
+      '- 용도: 오산시 담당 부서 확인이 필요한 일반 생활 민원 접수',
+      '2. 국민신문고',
+      '- 링크: https://www.epeople.go.kr/index.jsp',
+      '- 용도: 기관을 지정하거나 이송이 필요한 일반 민원 신청'
+    ];
   }
 }

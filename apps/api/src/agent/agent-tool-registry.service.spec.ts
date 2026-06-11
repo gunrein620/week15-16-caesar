@@ -58,6 +58,11 @@ describe('AgentToolRegistryService', () => {
     expect(draft.content).toContain('주정차로 인한 교통 불편');
     expect(draft.content).toContain('주정차 위반 여부 확인');
     expect(draft.content).toContain('현장 단속 또는 계도 조치');
+    expect(draft.content).toContain('민원 접수처');
+    expect(draft.content).toContain('안전신문고');
+    expect(draft.content).toContain('https://www.safetyreport.go.kr/');
+    expect(draft.content).toContain('오산시 불법주정차 주민신고제 안내');
+    expect(draft.content).toContain('https://www.osan.go.kr/portal/contents.do?mId=0110060000');
   });
 
   it('drafts a facility repair complaint without using parking enforcement text', async () => {
@@ -73,7 +78,26 @@ describe('AgentToolRegistryService', () => {
     expect(draft.content).toContain('시설 안전 문제가 발생하고 있습니다');
     expect(draft.content).toContain('보도블록 파손 또는 위험 여부 현장 점검');
     expect(draft.content).toContain('보수 또는 안전 조치');
+    expect(draft.content).toContain('민원 접수처');
+    expect(draft.content).toContain('안전신문고');
+    expect(draft.content).toContain('https://www.safetyreport.go.kr/');
     expect(draft.content).not.toContain('주정차 위반');
     expect(draft.content).not.toContain('현장 단속 또는 계도 조치');
+    expect(draft.content).not.toContain('불법주정차 주민신고제');
+  });
+
+  it('routes general city complaints to Osan civil complaint links', async () => {
+    const service = new AgentToolRegistryService(rag as never, mcpClient as never);
+
+    const result = await service.execute('draft_complaint_post', {
+      issue: '오산시 민원 처리 결과가 지연돼 담당 부서 확인 요청'
+    });
+    const draft = result as { title: string; content: string };
+
+    expect(draft.content).toContain('민원 접수처');
+    expect(draft.content).toContain('오산시에 바랍니다(국민신문고)');
+    expect(draft.content).toContain('https://www.osan.go.kr/portal/contents.do?mId=0101060000');
+    expect(draft.content).toContain('국민신문고');
+    expect(draft.content).toContain('https://www.epeople.go.kr/index.jsp');
   });
 });
