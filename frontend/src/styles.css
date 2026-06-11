@@ -2360,9 +2360,10 @@ h2 {
 .feedVideoPoster {
   inset: 0;
   opacity: 1;
+  pointer-events: none;
   position: absolute;
   transition: opacity 180ms ease;
-  z-index: 0;
+  z-index: 2;
 }
 
 .feedVideoPoster.loaded {
@@ -2398,7 +2399,7 @@ h2 {
   background: transparent;
   inset: 0;
   position: absolute;
-  z-index: 2;
+  z-index: 3;
 }
 
 .feedVideoControls {
@@ -2486,7 +2487,7 @@ h2 {
 }
 
 .captionStack {
-  bottom: 48px;
+  bottom: 92px;
   color: #fff;
   display: grid;
   gap: 9px;
@@ -5861,7 +5862,7 @@ button:disabled {
   }
 
   .feedScreen .updateBody {
-    bottom: calc(86px + env(safe-area-inset-bottom));
+    bottom: calc(132px + env(safe-area-inset-bottom));
     grid-template-columns: minmax(0, 1fr);
     justify-content: start;
     justify-items: start;
@@ -5888,7 +5889,7 @@ button:disabled {
   }
 
   .feedVideoControls {
-    bottom: calc(14px + env(safe-area-inset-bottom));
+    bottom: calc(72px + env(safe-area-inset-bottom));
     left: 12px;
     right: 82px;
   }

@@ -1345,6 +1345,7 @@ function YoutubeFeedPlayer({
   const [ready, setReady] = useState(false)
   const [apiFailed, setApiFailed] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
+  const [hasVideoFrame, setHasVideoFrame] = useState(false)
   const [duration, setDuration] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
 
@@ -1353,6 +1354,7 @@ function YoutubeFeedPlayer({
     setReady(false)
     setApiFailed(false)
     setIsPlaying(false)
+    setHasVideoFrame(false)
     setDuration(0)
     setCurrentTime(0)
     loadYoutubeIframeApi()
@@ -1444,6 +1446,9 @@ function YoutubeFeedPlayer({
       setCurrentTime(player.getCurrentTime() || 0)
       setDuration(player.getDuration() || 0)
       setIsPlaying(player.getPlayerState() === window.YT?.PlayerState.PLAYING)
+      if (player.getPlayerState() === window.YT?.PlayerState.PLAYING && player.getCurrentTime() > 0.5) {
+        setHasVideoFrame(true)
+      }
     }, 500)
     return () => window.clearInterval(interval)
   }, [ready])
@@ -1455,7 +1460,7 @@ function YoutubeFeedPlayer({
     <>
       {thumbnailUrl && (
         <img
-          className={ready && !apiFailed ? 'feedVideoPoster loaded' : 'feedVideoPoster'}
+          className={hasVideoFrame && !apiFailed ? 'feedVideoPoster loaded' : 'feedVideoPoster'}
           src={thumbnailUrl}
           alt=""
           loading="lazy"
