@@ -80,7 +80,7 @@ export class AgentToolRegistryService {
         'draft_local_post',
         'summarize_context'
       ],
-      complaint_helper: ['suggest_tags', 'call_mcp_tool', 'draft_complaint_post', 'summarize_context'],
+      complaint_helper: ['vector_search_posts', 'suggest_tags', 'call_mcp_tool', 'draft_complaint_post', 'summarize_context'],
       tag_suggestion: ['suggest_tags'],
       duplicate_check: ['check_duplicate_post', 'vector_search_posts', 'summarize_context']
     };

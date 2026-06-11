@@ -49,6 +49,14 @@ export type ExternalSource = {
   hoursSourceTitle?: string | null;
 };
 
+export type ToolTrace = {
+  name: string;
+  label: string;
+  kind: 'rag' | 'mcp' | 'agent' | 'llm';
+  status: 'success' | 'failed';
+  summary: string;
+};
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000/api';
 const TOKEN_KEY = 'localmind.accessToken';
 
@@ -154,6 +162,7 @@ export const api = {
       tags?: string[];
       sources?: RagSource[];
       externalSources?: ExternalSource[];
+      toolTrace?: ToolTrace[];
       routedMode?: 'agent' | 'rag';
     }>(`/agent/${path}`, {
       method: 'POST',

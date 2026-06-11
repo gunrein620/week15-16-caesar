@@ -1,6 +1,6 @@
 import { Bot, Clock3, ExternalLink, FileText, MapPin, Megaphone, Phone, Send } from 'lucide-react';
 import { useState } from 'react';
-import { api, isAuthError, type ExternalSource, type RagSource } from '../api/client.js';
+import { api, isAuthError, type ExternalSource, type RagSource, type ToolTrace } from '../api/client.js';
 
 type AiAssistantPageProps = {
   isAuthed: boolean;
@@ -11,9 +11,10 @@ type AiMode = 'rag' | 'post-helper' | 'complaint-helper';
 
 export function AiAssistantPage({ isAuthed, onLogin }: AiAssistantPageProps) {
   const [input, setInput] = useState('근처 야간 약국 어디 있어?');
-  const [answer, setAnswer] = useState('오산 게시판에 쌓인 글과 외부 도구를 활용해 답변합니다.');
+  const [answer, setAnswer] = useState('');
   const [sources, setSources] = useState<RagSource[]>([]);
   const [externalSources, setExternalSources] = useState<ExternalSource[]>([]);
+  const [toolTrace, setToolTrace] = useState<ToolTrace[]>([]);
   const [lastMode, setLastMode] = useState<AiMode>('rag');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -31,23 +32,27 @@ export function AiAssistantPage({ isAuthed, onLogin }: AiAssistantPageProps) {
         setAnswer(result.answer);
         setSources(result.sources ?? []);
         setExternalSources(result.externalSources ?? []);
+        setToolTrace(ragToolTrace(result.sources ?? [], result.externalSources ?? []));
       } else {
         const result = await api.agent(mode, input);
         setAnswer(result.answer);
         setSources(result.sources ?? []);
         setExternalSources(result.externalSources ?? []);
+        setToolTrace(result.toolTrace ?? []);
       }
     } catch (error) {
       if (isAuthError(error)) {
         setAnswer('로그인이 만료되었습니다. 다시 로그인해주세요.');
         setSources([]);
         setExternalSources([]);
+        setToolTrace([]);
         onLogin();
         return;
       }
       setAnswer(error instanceof Error ? error.message : 'AI 답변을 생성하지 못했습니다.');
       setSources([]);
       setExternalSources([]);
+      setToolTrace([]);
     } finally {
       setIsLoading(false);
     }
@@ -77,7 +82,27 @@ export function AiAssistantPage({ isAuthed, onLogin }: AiAssistantPageProps) {
           {lastMode === 'complaint-helper' ? <Megaphone size={18} /> : <FileText size={18} />}
           <strong>답변</strong>
         </header>
+        {toolTrace.length > 0 && (
+          <div className="tool-trace-list" aria-label="AI 사용 도구">
+            {toolTrace.map((tool) => (
+              <span className={`tool-trace-chip ${tool.kind} ${tool.status}`} key={`${tool.name}-${tool.summary}`}>
+                {tool.label}
+              </span>
+            ))}
+          </div>
+        )}
         <p>{answer}</p>
+        {toolTrace.length > 0 && (
+          <div className="tool-detail-list" aria-label="AI 도구 실행 요약">
+            <strong>사용 도구</strong>
+            {toolTrace.map((tool) => (
+              <div className="tool-detail-item" key={`${tool.name}-${tool.status}-${tool.summary}`}>
+                <span>{tool.label}</span>
+                <small>{tool.summary}</small>
+              </div>
+            ))}
+          </div>
+        )}
         {externalSources.length > 0 && (
           <div className="external-source-list" aria-label="장소 검색 결과">
             <strong>장소 검색</strong>
@@ -167,4 +192,26 @@ function externalSourceKey(source: ExternalSource) {
     source.latitude ?? '',
     source.longitude ?? ''
   ].join('-');
+}
+
+function ragToolTrace(sources: RagSource[], externalSources: ExternalSource[]): ToolTrace[] {
+  const trace: ToolTrace[] = [
+    {
+      name: 'rag_ask',
+      label: 'RAG Q&A',
+      kind: 'rag',
+      status: 'success',
+      summary: sources.length > 0 ? `게시판 근거 ${sources.length}건 사용` : '게시판 근거 없음'
+    }
+  ];
+  if (externalSources.length > 0) {
+    trace.push({
+      name: 'external_place_search',
+      label: 'MCP 장소 검색',
+      kind: 'mcp',
+      status: 'success',
+      summary: `외부 장소 ${externalSources.length}건을 1차 근거로 사용`
+    });
+  }
+  return trace;
 }

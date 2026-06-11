@@ -11,6 +11,14 @@ export type AgentToolCall = {
   error?: string;
 };
 
+export type AgentToolTrace = {
+  name: string;
+  label: string;
+  kind: 'rag' | 'mcp' | 'agent' | 'llm';
+  status: 'success' | 'failed';
+  summary: string;
+};
+
 export type AgentState = {
   sessionId: string;
   userId?: string;
@@ -39,6 +47,7 @@ export type RunAgentResult = {
   tags?: string[];
   sources?: unknown[];
   externalSources?: unknown[];
+  toolTrace?: AgentToolTrace[];
   routedMode?: 'agent' | 'rag';
   state: AgentState;
 };

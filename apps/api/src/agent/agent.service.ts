@@ -4,7 +4,7 @@ import { LlmService } from '../ai/llm.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AgentStateService } from './agent-state.service.js';
 import { AgentToolRegistryService } from './agent-tool-registry.service.js';
-import type { AgentPurpose, AgentState, RunAgentInput, RunAgentResult } from './agent.types.js';
+import type { AgentPurpose, AgentState, AgentToolCall, AgentToolTrace, RunAgentInput, RunAgentResult } from './agent.types.js';
 
 @Injectable()
 export class AgentService {
@@ -68,11 +68,25 @@ export class AgentService {
   }
 
   private async draftComplaintFromComplaintTab(state: AgentState): Promise<RunAgentResult> {
-    const input = { issue: state.input, text: state.input };
-    const output = await this.toolRegistry.execute('draft_complaint_post', input);
-    await this.logTool(state, 'draft_complaint_post', input, output);
+    const searchInput = { title: this.complaintSearchText(state.input), content: state.input, topK: 3 };
+    let sources: unknown[] = [];
+    let searchError: string | undefined;
+
+    try {
+      const searchOutput = await this.toolRegistry.execute('vector_search_posts', searchInput);
+      await this.logTool(state, 'vector_search_posts', searchInput, searchOutput);
+      sources = this.candidateSources(searchOutput);
+    } catch (error) {
+      searchError = this.errorMessage(error);
+      await this.logTool(state, 'vector_search_posts', searchInput, undefined, searchError);
+    }
+
+    const draftInput = { issue: state.input, text: state.input };
+    const output = await this.toolRegistry.execute('draft_complaint_post', draftInput);
+    await this.logTool(state, 'draft_complaint_post', draftInput, output);
     return {
-      ...this.completedResult(state, this.complaintDraftAnswer(output)),
+      ...this.completedResult(state, this.complaintDecisionAnswer(state, output, sources, searchError)),
+      sources,
       routedMode: 'agent'
     };
   }
@@ -187,6 +201,7 @@ export class AgentService {
       sessionId: state.sessionId,
       status: 'COMPLETED',
       answer,
+      toolTrace: this.toolTrace(state),
       state
     };
   }
@@ -196,6 +211,7 @@ export class AgentService {
       sessionId: state.sessionId,
       status: 'FAILED',
       answer,
+      toolTrace: this.toolTrace(state),
       state
     };
   }
@@ -373,6 +389,172 @@ export class AgentService {
       }
     }
     return '민원 초안을 생성하지 못했습니다. 위치, 불편 내용, 요청 사항을 다시 입력해 주세요.';
+  }
+
+  private complaintDecisionAnswer(
+    state: AgentState,
+    draftOutput: unknown,
+    sources: unknown[],
+    searchError?: string
+  ) {
+    return [
+      '상황 판단',
+      this.complaintSituation(state.input),
+      '',
+      '게시판 근거',
+      ...this.complaintSourceLines(sources, searchError),
+      '',
+      '추천 행동',
+      ...this.complaintActionLines(state.input),
+      '',
+      '민원 초안',
+      this.complaintDraftAnswer(draftOutput),
+      '',
+      '사용한 도구',
+      ...this.toolTrace(state).map((trace) => `- ${trace.label}: ${trace.summary}`)
+    ].join('\n');
+  }
+
+  private complaintSituation(text: string) {
+    if (/(주정차|주차|정차)/.test(text)) {
+      return '불법 주정차 또는 통행 방해로 인한 생활 민원으로 판단했습니다. 사진, 시간대, 정확한 위치가 처리 가능성을 높입니다.';
+    }
+    if (/(파손|고장|위험|보도블록|보도|인도|도로|가로등|신호등|하수구|배수로)/.test(text)) {
+      return '공공시설 파손 또는 안전 위험 민원으로 판단했습니다. 현장 사진과 위험 지점을 함께 남기는 것이 좋습니다.';
+    }
+    if (/소음/.test(text)) {
+      return '반복 소음으로 인한 생활 불편 민원으로 판단했습니다. 발생 시간대와 반복 여부가 중요합니다.';
+    }
+    if (/(쓰레기|악취)/.test(text)) {
+      return '환경 불편 민원으로 판단했습니다. 위치, 사진, 반복 발생 여부를 함께 기록하는 것이 좋습니다.';
+    }
+    return '오산시 담당 부서 확인이 필요한 일반 생활 민원으로 판단했습니다.';
+  }
+
+  private complaintSearchText(text: string) {
+    if (/(주정차|주차|정차)/.test(text)) {
+      return ['불법 주차 주정차 교통 불편 통행 방해 생활민원 단속', text].join('\n');
+    }
+    if (/(파손|고장|위험|보도블록|보도|인도|도로|가로등|신호등|하수구|배수로)/.test(text)) {
+      return ['공공시설 파손 고장 위험 보도 도로 안전 생활민원 정비', text].join('\n');
+    }
+    if (/소음/.test(text)) {
+      return ['소음 생활 불편 반복 민원 행정지도', text].join('\n');
+    }
+    if (/(쓰레기|악취)/.test(text)) {
+      return ['쓰레기 악취 환경 불편 생활민원 청소 수거', text].join('\n');
+    }
+    return ['생활 민원 오산시 처리 요청 담당 부서 확인', text].join('\n');
+  }
+
+  private complaintSourceLines(sources: unknown[], searchError?: string) {
+    if (searchError) {
+      return [`- RAG 검색 실패: ${searchError}`, '- 입력한 민원 내용을 기준으로 초안을 먼저 생성했습니다.'];
+    }
+    if (sources.length === 0) {
+      return ['- 게시판에서 바로 참고할 만한 유사 민원은 찾지 못했습니다.', '- 입력한 민원 내용을 기준으로 초안을 생성했습니다.'];
+    }
+    return sources.slice(0, 3).map((source, index) => `${index + 1}. ${this.sourceSummary(source)}`);
+  }
+
+  private complaintActionLines(text: string) {
+    if (/(주정차|주차|정차)/.test(text)) {
+      return [
+        '현장 사진과 발생 시간대를 확보합니다.',
+        '차량 위치와 통행 방해 상황을 구체적으로 적습니다.',
+        '안전신문고 또는 오산시 불법주정차 주민신고제 안내 링크에서 접수합니다.'
+      ];
+    }
+    if (/(파손|고장|위험|보도블록|보도|인도|도로|가로등|신호등|하수구|배수로)/.test(text)) {
+      return [
+        '파손 부위 사진과 정확한 위치를 기록합니다.',
+        '보행자나 차량 안전에 어떤 위험이 있는지 적습니다.',
+        '안전신문고로 신고하고, 필요하면 오산시 일반 민원으로도 보완 접수합니다.'
+      ];
+    }
+    return [
+      '발생 위치, 시간대, 반복 여부를 정리합니다.',
+      '처리 요청 사항을 한 문장으로 명확히 적습니다.',
+      '오산시에 바랍니다 또는 국민신문고 링크에서 접수합니다.'
+    ];
+  }
+
+  private candidateSources(output: unknown) {
+    if (!output || typeof output !== 'object') {
+      return [];
+    }
+    const candidates = (output as { candidates?: unknown }).candidates;
+    return Array.isArray(candidates) ? candidates : [];
+  }
+
+  private sourceSummary(source: unknown) {
+    if (!source || typeof source !== 'object') {
+      return '게시판 근거 형식을 확인하지 못했습니다.';
+    }
+    const content = (source as { content?: unknown }).content;
+    if (typeof content !== 'string') {
+      return '게시판 근거 내용을 확인하지 못했습니다.';
+    }
+    const title = content
+      .split('\n')
+      .find((line) => line.startsWith('제목:'))
+      ?.replace('제목:', '')
+      .trim();
+    return title || content.replace(/\s+/g, ' ').slice(0, 90);
+  }
+
+  private toolTrace(state: AgentState): AgentToolTrace[] {
+    return state.toolCalls.map((call) => ({
+      name: call.name,
+      label: this.toolLabel(call.name),
+      kind: this.toolKind(call.name),
+      status: call.error ? 'failed' : 'success',
+      summary: this.toolSummary(call)
+    }));
+  }
+
+  private toolLabel(name: string) {
+    const labels: Record<string, string> = {
+      vector_search_posts: 'RAG 게시글 검색',
+      check_duplicate_post: 'RAG 중복 확인',
+      answer_local_question: 'RAG Q&A',
+      call_mcp_tool: 'MCP 외부 도구',
+      draft_complaint_post: 'Agent 민원 초안',
+      draft_local_post: 'Agent 글 초안',
+      suggest_tags: 'Agent 태그 추천',
+      summarize_context: 'Agent 맥락 요약'
+    };
+    return labels[name] ?? name;
+  }
+
+  private toolKind(name: string): AgentToolTrace['kind'] {
+    if (name === 'call_mcp_tool') {
+      return 'mcp';
+    }
+    if (name.includes('vector') || name.includes('duplicate') || name === 'answer_local_question') {
+      return 'rag';
+    }
+    return 'agent';
+  }
+
+  private toolSummary(call: AgentToolCall) {
+    if (call.error) {
+      return `실패 - ${call.error}`;
+    }
+    if (call.name === 'vector_search_posts') {
+      const count = this.candidateSources(call.output).length;
+      return count > 0 ? `유사 게시글 ${count}건을 판단 근거로 사용` : '유사 게시글 없음';
+    }
+    if (call.name === 'draft_complaint_post') {
+      return '민원 유형, 처리 요청, 접수처를 포함한 초안 생성';
+    }
+    if (call.name === 'call_mcp_tool') {
+      return `외부 데이터 조회${this.mcpMethodName(call.input) !== 'unknown' ? `: ${this.mcpMethodName(call.input)}` : ''}`;
+    }
+    if (call.name === 'answer_local_question') {
+      return '게시판 지식 기반 답변 생성';
+    }
+    return '요청 처리를 위한 내부 도구 실행';
   }
 
   private arrayValue(output: unknown, key: 'sources' | 'externalSources') {
