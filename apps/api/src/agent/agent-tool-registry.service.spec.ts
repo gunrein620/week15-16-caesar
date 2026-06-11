@@ -39,4 +39,24 @@ describe('AgentToolRegistryService', () => {
     expect(result).toEqual({ source: 'mock' });
     expect(mcpClient.callTool).toHaveBeenCalledWith('get_weather_by_region', { region: '오산' });
   });
+
+  it('drafts a concrete parking complaint with location, issue, and requested action', async () => {
+    const service = new AgentToolRegistryService(rag as never, mcpClient as never);
+
+    const result = await service.execute('draft_complaint_post', {
+      issue: '오산대 앞 카니발 주정차로 인한 교통 불편으로 문의할꺼'
+    });
+    const draft = result as { title: string; content: string };
+
+    expect(draft).toEqual(
+      expect.objectContaining({
+        title: expect.stringContaining('오산대 앞 카니발 차량 주정차 단속 요청'),
+        content: expect.stringContaining('발생 위치\n오산대 앞')
+      })
+    );
+    expect(draft.content).toContain('카니발 차량');
+    expect(draft.content).toContain('주정차로 인한 교통 불편');
+    expect(draft.content).toContain('주정차 위반 여부 확인');
+    expect(draft.content).toContain('현장 단속 또는 계도 조치');
+  });
 });

@@ -35,8 +35,13 @@ export class AgentService {
     });
 
     try {
-      if (state.purpose === 'complaint_helper' && !this.hasComplaintIntent(state.input)) {
-        const result = await this.answerLocalQuestionFromComplaintTab(state);
+      if (state.purpose === 'complaint_helper') {
+        if (!this.hasComplaintIntent(state.input)) {
+          const result = await this.answerLocalQuestionFromComplaintTab(state);
+          await this.finishSession(state, result.status, result);
+          return result;
+        }
+        const result = await this.draftComplaintFromComplaintTab(state);
         await this.finishSession(state, result.status, result);
         return result;
       }
@@ -59,6 +64,16 @@ export class AgentService {
       sources: this.arrayValue(output, 'sources'),
       externalSources: this.arrayValue(output, 'externalSources'),
       routedMode: 'rag'
+    };
+  }
+
+  private async draftComplaintFromComplaintTab(state: AgentState): Promise<RunAgentResult> {
+    const input = { issue: state.input, text: state.input };
+    const output = await this.toolRegistry.execute('draft_complaint_post', input);
+    await this.logTool(state, 'draft_complaint_post', input, output);
+    return {
+      ...this.completedResult(state, this.complaintDraftAnswer(output)),
+      routedMode: 'agent'
     };
   }
 
@@ -344,6 +359,20 @@ export class AgentService {
       return (output as { answer: string }).answer;
     }
     return '일반 생활 질문으로 판단해 Q&A 답변을 생성했습니다.';
+  }
+
+  private complaintDraftAnswer(output: unknown) {
+    if (output && typeof output === 'object') {
+      const content = (output as { content?: unknown }).content;
+      if (typeof content === 'string' && content.trim()) {
+        return content;
+      }
+      const title = (output as { title?: unknown }).title;
+      if (typeof title === 'string' && title.trim()) {
+        return ['민원 제목', title].join('\n');
+      }
+    }
+    return '민원 초안을 생성하지 못했습니다. 위치, 불편 내용, 요청 사항을 다시 입력해 주세요.';
   }
 
   private arrayValue(output: unknown, key: 'sources' | 'externalSources') {

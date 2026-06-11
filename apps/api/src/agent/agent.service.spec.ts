@@ -195,9 +195,9 @@ describe('AgentService', () => {
   });
 
   it('keeps complaint-helper flow for actual complaint requests', async () => {
-    llm.chatWithTools.mockResolvedValueOnce({
-      type: 'message',
-      content: '오산역 뒤쪽 불법 주차 민원글 초안입니다.'
+    toolRegistry.execute.mockResolvedValue({
+      title: '[생활민원] 오산역 뒤쪽 해당 차량 주정차 단속 요청',
+      content: '민원 제목\n오산역 뒤쪽 해당 차량 주정차 단속 요청\n\n처리 요청 사항\n1. 해당 차량의 주정차 위반 여부 확인'
     });
     const service = new AgentService(prisma as never, llm as never, toolRegistry as never);
 
@@ -207,9 +207,50 @@ describe('AgentService', () => {
     });
 
     expect(result.status).toBe('COMPLETED');
-    expect(result.answer).toContain('불법 주차');
-    expect(llm.chatWithTools).toHaveBeenCalledTimes(1);
+    expect(result.answer).toContain('주정차 위반 여부 확인');
+    expect(llm.chatWithTools).not.toHaveBeenCalled();
+    expect(toolRegistry.execute).toHaveBeenCalledWith('draft_complaint_post', {
+      issue: '오산역 뒤쪽 불법 주차 민원글 작성 도와줘',
+      text: '오산역 뒤쪽 불법 주차 민원글 작성 도와줘'
+    });
     expect(toolRegistry.execute).not.toHaveBeenCalledWith('answer_local_question', expect.any(Object));
+  });
+
+  it('returns a concrete complaint draft without letting the LLM answer vaguely', async () => {
+    toolRegistry.execute.mockResolvedValue({
+      title: '[생활민원] 오산대 앞 카니발 차량 주정차 단속 요청',
+      content: [
+        '민원 제목',
+        '오산대 앞 카니발 차량 주정차 단속 요청',
+        '',
+        '발생 위치',
+        '오산대 앞',
+        '',
+        '처리 요청 사항',
+        '1. 카니발 차량의 주정차 위반 여부 확인',
+        '2. 위반 시 현장 단속 또는 계도 조치'
+      ].join('\n')
+    });
+    const service = new AgentService(prisma as never, llm as never, toolRegistry as never);
+
+    const result = await service.run({
+      purpose: 'complaint_helper',
+      input: '오산대 앞 카니발 주정차로 인한 교통 불편으로 문의할꺼'
+    });
+
+    expect(result.status).toBe('COMPLETED');
+    expect(result.answer).toContain('민원 제목');
+    expect(result.answer).toContain('발생 위치');
+    expect(result.answer).toContain('오산대 앞');
+    expect(result.answer).toContain('카니발 차량');
+    expect(result.answer).toContain('처리 요청 사항');
+    expect(result.answer).toContain('주정차 위반 여부 확인');
+    expect(result.routedMode).toBe('agent');
+    expect(llm.chatWithTools).not.toHaveBeenCalled();
+    expect(toolRegistry.execute).toHaveBeenCalledWith('draft_complaint_post', {
+      issue: '오산대 앞 카니발 주정차로 인한 교통 불편으로 문의할꺼',
+      text: '오산대 앞 카니발 주정차로 인한 교통 불편으로 문의할꺼'
+    });
   });
 
   it('tag-suggestion returns tags directly from the suggest_tags tool', async () => {

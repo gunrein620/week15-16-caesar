@@ -184,15 +184,86 @@ export class AgentToolRegistryService {
 
   private draftComplaintPost(input: Record<string, unknown>) {
     const issue = String(input.issue ?? input.text ?? '생활 불편 사항');
+    const location = this.extractComplaintLocation(issue);
+    const subject = this.extractComplaintSubject(issue);
+    const problem = this.inferComplaintProblem(issue);
+    const request = this.inferComplaintRequest(issue);
+    const title = `[생활민원] ${location} ${subject} ${request}`;
     return {
-      title: `[생활민원] ${issue.slice(0, 30)}`,
+      title,
       content: [
-        '오산 지역 생활 불편 사항을 공유합니다.',
+        '민원 제목',
+        title.replace('[생활민원] ', ''),
         '',
-        `내용: ${issue}`,
+        '발생 위치',
+        location,
         '',
-        '위치와 시간대를 확인해 주시면 해결에 도움이 될 것 같습니다.'
+        '민원 내용',
+        `${location}에서 ${subject}의 ${problem}이 발생하고 있습니다. 이로 인해 차량 통행이 지체되고 보행자 안전에도 불편과 위험이 우려됩니다.`,
+        '',
+        '처리 요청 사항',
+        `1. ${subject}의 주정차 위반 여부 확인`,
+        '2. 위반 사항이 확인될 경우 현장 단속 또는 계도 조치',
+        '3. 반복 발생 구간이면 주정차 금지 안내와 단속 강화 검토',
+        '',
+        '추가로 첨부하면 좋은 정보',
+        '- 차량번호 뒷자리, 사진, 정확한 발생 시간대, 진행 방향'
       ].join('\n')
     };
+  }
+
+  private extractComplaintLocation(text: string) {
+    const compact = text.replace(/\s+/g, ' ').trim();
+    const beforeSubject = compact.match(/^(.+?)\s+(?:카니발|차량|자동차|불법|주정차|주차|정차|소음|쓰레기|악취|파손|고장|위험|방치)/);
+    if (beforeSubject?.[1] && beforeSubject[1].length <= 30) {
+      return beforeSubject[1].trim();
+    }
+    const place = compact.match(/([가-힣A-Za-z0-9]+(?:대|역|동|로|길|초|중|고|아파트|공원|병원|마트|시장)\s*(?:앞|근처|주변|입구|정문|후문|사거리|도로|골목)?)/);
+    return place?.[1]?.trim() || '해당 위치';
+  }
+
+  private extractComplaintSubject(text: string) {
+    if (/카니발/i.test(text)) {
+      return '카니발 차량';
+    }
+    if (/(차량|자동차)/.test(text)) {
+      return '해당 차량';
+    }
+    if (/(오토바이|이륜차)/.test(text)) {
+      return '해당 이륜차';
+    }
+    return '해당 대상';
+  }
+
+  private inferComplaintProblem(text: string) {
+    if (/(주정차|주차|정차)/.test(text)) {
+      return '주정차로 인한 교통 불편';
+    }
+    if (/소음/.test(text)) {
+      return '소음 불편';
+    }
+    if (/(쓰레기|악취)/.test(text)) {
+      return '환경 불편';
+    }
+    if (/(파손|고장|위험)/.test(text)) {
+      return '시설 안전 문제';
+    }
+    return '생활 불편';
+  }
+
+  private inferComplaintRequest(text: string) {
+    if (/(주정차|주차|정차)/.test(text)) {
+      return '주정차 단속 요청';
+    }
+    if (/소음/.test(text)) {
+      return '소음 민원 처리 요청';
+    }
+    if (/(쓰레기|악취)/.test(text)) {
+      return '환경 민원 처리 요청';
+    }
+    if (/(파손|고장|위험)/.test(text)) {
+      return '시설 점검 및 정비 요청';
+    }
+    return '민원 처리 요청';
   }
 }
