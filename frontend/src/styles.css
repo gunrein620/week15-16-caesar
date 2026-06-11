@@ -5950,15 +5950,45 @@ a.embedCard {
 .boardListTools .searchbar {
   background: var(--surface-2);
   border: 0;
-  border-radius: 0;
+  border-radius: 8px;
   box-sizing: border-box;
-  gap: 14px;
-  height: 44px;
-  padding: 0 18px;
+  gap: 12px;
+  height: 38px;
+  padding: 0 14px;
 }
 
 .boardListTools .searchbar input {
   background: transparent;
-  font-size: 16px;
+  font-size: 15px;
   min-width: 0;
+}
+
+.boardListTools .filterSelect {
+  background: var(--surface-2);
+  border: 0;
+  border-radius: 8px;
+  box-sizing: border-box;
+  color: var(--text-soft);
+  font-size: 14px;
+  font-weight: 750;
+  height: 38px;
+  margin-top: 0;
+  padding: 0 14px;
+}
+
+.actionRail,
+.videoPoster .cardActions.actionRail {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.actionRail .youtubeAppButton,
+.actionRail .saveButton,
+.actionRail .railButton,
+.videoPoster .youtubeAppButton,
+.videoPoster .saveButton {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
 }
