@@ -6,6 +6,7 @@ import {
   extractYoutubeVideoId,
   youtubeAppUrl,
   youtubeEmbedPreviewUrl,
+  youtubeWebUrl,
 } from './youtubeLinks.ts'
 
 test('extractYoutubeVideoId handles common YouTube URLs', () => {
@@ -20,6 +21,14 @@ test('youtubeAppUrl builds a YouTube app scheme URL', () => {
     'youtube://watch?v=I_C6jACrTSI',
   )
   assert.equal(youtubeAppUrl('/posts/1'), null)
+})
+
+test('youtubeWebUrl builds a browser fallback URL', () => {
+  assert.equal(
+    youtubeWebUrl('https://youtu.be/I_C6jACrTSI?si=abc'),
+    'https://www.youtube.com/watch?v=I_C6jACrTSI',
+  )
+  assert.equal(youtubeWebUrl('/posts/1'), null)
 })
 
 test('youtubeEmbedPreviewUrl builds a muted nocookie autoplay embed URL', () => {

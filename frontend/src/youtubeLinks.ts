@@ -27,6 +27,11 @@ export function youtubeAppUrl(value: string): string | null {
   return videoId ? `youtube://watch?v=${videoId}` : null
 }
 
+export function youtubeWebUrl(value: string): string | null {
+  const videoId = extractYoutubeVideoId(value)
+  return videoId ? `https://www.youtube.com/watch?v=${videoId}` : null
+}
+
 export function youtubeEmbedPreviewUrl(value: string): string | null {
   const videoId = extractYoutubeVideoId(value)
   if (!videoId) return null

@@ -117,7 +117,7 @@ import {
   savedFeedItemPayload,
 } from './savedFeed'
 import { sortYoutubeVideos, type VideoSort } from './videoSorting'
-import { extractYoutubeVideoId, youtubeAppUrl } from './youtubeLinks'
+import { extractYoutubeVideoId, youtubeAppUrl, youtubeWebUrl } from './youtubeLinks'
 import { buildYoutubeSourcePayload } from './youtubeSourceForm'
 import { MEMBER_COLORS, MEMBER_ORDER, memberColor, memberOn } from './memberColors'
 import { compactMemberNamesText, memberLabel, memberNamesText } from './memberDisplay'
@@ -359,19 +359,40 @@ function YoutubeAppLink({
   metadata?: AnalyticsMetadata
 }) {
   const appUrl = youtubeAppUrl(url)
-  if (!appUrl) return null
+  const webUrl = youtubeWebUrl(url)
+  if (!appUrl || !webUrl) return null
   const videoId = appUrl.split('/').pop() ?? ''
   return (
     <a
       className={className}
-      href={appUrl}
+      href={webUrl}
       onClick={(event) => {
+        event.preventDefault()
         event.stopPropagation()
         trackAnalyticsEvent({
           eventName: 'youtube_app_open',
           panel,
           metadata: { source: 'youtube', video_id: videoId, ...metadata },
         })
+        let shouldFallback = true
+        const cancelFallback = () => {
+          shouldFallback = false
+          window.removeEventListener('pagehide', cancelFallback)
+          document.removeEventListener('visibilitychange', handleVisibilityChange)
+        }
+        const handleVisibilityChange = () => {
+          if (document.visibilityState === 'hidden') cancelFallback()
+        }
+        window.addEventListener('pagehide', cancelFallback, { once: true })
+        document.addEventListener('visibilitychange', handleVisibilityChange)
+        window.location.href = appUrl
+        window.setTimeout(() => {
+          window.removeEventListener('pagehide', cancelFallback)
+          document.removeEventListener('visibilitychange', handleVisibilityChange)
+          if (shouldFallback && document.visibilityState === 'visible') {
+            window.location.href = webUrl
+          }
+        }, 900)
       }}
       title="YouTube 앱으로 열기"
       aria-label="YouTube 앱으로 열기"
