@@ -188,6 +188,8 @@ export class AgentToolRegistryService {
     const subject = this.extractComplaintSubject(issue);
     const problem = this.inferComplaintProblem(issue);
     const request = this.inferComplaintRequest(issue);
+    const actions = this.inferComplaintActions(issue, subject);
+    const impact = this.inferComplaintImpact(issue);
     const title = `[생활민원] ${location} ${subject} ${request}`;
     return {
       title,
@@ -199,22 +201,22 @@ export class AgentToolRegistryService {
         location,
         '',
         '민원 내용',
-        `${location}에서 ${subject}의 ${problem}이 발생하고 있습니다. 이로 인해 차량 통행이 지체되고 보행자 안전에도 불편과 위험이 우려됩니다.`,
+        `${location}에서 ${subject}의 ${this.withSubjectParticle(problem)} 발생하고 있습니다. ${impact}`,
         '',
         '처리 요청 사항',
-        `1. ${subject}의 주정차 위반 여부 확인`,
-        '2. 위반 사항이 확인될 경우 현장 단속 또는 계도 조치',
-        '3. 반복 발생 구간이면 주정차 금지 안내와 단속 강화 검토',
+        ...actions.map((action, index) => `${index + 1}. ${action}`),
         '',
         '추가로 첨부하면 좋은 정보',
-        '- 차량번호 뒷자리, 사진, 정확한 발생 시간대, 진행 방향'
+        this.inferComplaintAttachmentHint(issue)
       ].join('\n')
     };
   }
 
   private extractComplaintLocation(text: string) {
     const compact = text.replace(/\s+/g, ' ').trim();
-    const beforeSubject = compact.match(/^(.+?)\s+(?:카니발|차량|자동차|불법|주정차|주차|정차|소음|쓰레기|악취|파손|고장|위험|방치)/);
+    const beforeSubject = compact.match(
+      /^(.+?)\s+(?:카니발|차량|자동차|오토바이|이륜차|보도블록|보도|인도|도로|가로등|신호등|하수구|배수로|불법|주정차|주차|정차|소음|쓰레기|악취|파손|고장|위험|방치)/
+    );
     if (beforeSubject?.[1] && beforeSubject[1].length <= 30) {
       return beforeSubject[1].trim();
     }
@@ -231,6 +233,24 @@ export class AgentToolRegistryService {
     }
     if (/(오토바이|이륜차)/.test(text)) {
       return '해당 이륜차';
+    }
+    if (/보도블록/.test(text)) {
+      return '보도블록';
+    }
+    if (/(인도|보도)/.test(text)) {
+      return '보도';
+    }
+    if (/도로/.test(text)) {
+      return '도로';
+    }
+    if (/가로등/.test(text)) {
+      return '가로등';
+    }
+    if (/신호등/.test(text)) {
+      return '신호등';
+    }
+    if (/(하수구|배수로)/.test(text)) {
+      return '배수 시설';
     }
     return '해당 대상';
   }
@@ -265,5 +285,55 @@ export class AgentToolRegistryService {
       return '시설 점검 및 정비 요청';
     }
     return '민원 처리 요청';
+  }
+
+  private inferComplaintActions(text: string, subject: string) {
+    if (/(주정차|주차|정차)/.test(text)) {
+      return [
+        `${subject}의 주정차 위반 여부 확인`,
+        '위반 사항이 확인될 경우 현장 단속 또는 계도 조치',
+        '반복 발생 구간이면 주정차 금지 안내와 단속 강화 검토'
+      ];
+    }
+    if (/소음/.test(text)) {
+      return ['소음 발생 원인과 시간대 확인', '현장 점검 후 계도 또는 행정지도', '반복 민원 발생 시 추가 단속 검토'];
+    }
+    if (/(쓰레기|악취)/.test(text)) {
+      return ['현장 쓰레기 또는 악취 발생 여부 확인', '수거 및 청소 조치', '상습 투기 구간이면 안내문 부착과 점검 강화'];
+    }
+    if (/(파손|고장|위험)/.test(text)) {
+      return [`${subject} 파손 또는 위험 여부 현장 점검`, '보수 또는 안전 조치', '정비 전까지 보행자 주의 안내 또는 임시 안전 조치'];
+    }
+    return ['현장 확인', '불편 사항 처리', '반복 발생 방지를 위한 후속 조치 검토'];
+  }
+
+  private withSubjectParticle(text: string) {
+    return text.endsWith('문제') ? `${text}가` : `${text}이`;
+  }
+
+  private inferComplaintImpact(text: string) {
+    if (/(주정차|주차|정차)/.test(text)) {
+      return '이로 인해 차량 통행이 지체되고 보행자 안전에도 불편과 위험이 우려됩니다.';
+    }
+    if (/소음/.test(text)) {
+      return '이로 인해 인근 주민의 생활 불편이 커지고 반복 발생 시 휴식권 침해가 우려됩니다.';
+    }
+    if (/(쓰레기|악취)/.test(text)) {
+      return '이로 인해 보행 환경이 나빠지고 위생 문제와 악취 민원이 반복될 우려가 있습니다.';
+    }
+    if (/(파손|고장|위험)/.test(text)) {
+      return '이로 인해 보행자가 넘어지거나 다칠 위험이 있어 현장 확인과 정비가 필요합니다.';
+    }
+    return '이로 인해 주민 생활 불편이 발생하고 있어 현장 확인과 조치가 필요합니다.';
+  }
+
+  private inferComplaintAttachmentHint(text: string) {
+    if (/(주정차|주차|정차)/.test(text)) {
+      return '- 차량번호 뒷자리, 사진, 정확한 발생 시간대, 진행 방향';
+    }
+    if (/(파손|고장|위험)/.test(text)) {
+      return '- 파손 부위 사진, 정확한 위치, 발견 시간대, 주변 위험 상황';
+    }
+    return '- 현장 사진, 정확한 위치, 발생 시간대, 반복 여부';
   }
 }

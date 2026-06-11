@@ -59,4 +59,21 @@ describe('AgentToolRegistryService', () => {
     expect(draft.content).toContain('주정차 위반 여부 확인');
     expect(draft.content).toContain('현장 단속 또는 계도 조치');
   });
+
+  it('drafts a facility repair complaint without using parking enforcement text', async () => {
+    const service = new AgentToolRegistryService(rag as never, mcpClient as never);
+
+    const result = await service.execute('draft_complaint_post', {
+      issue: '세교동 공원 입구 보도블록 파손으로 보행자가 넘어질 위험이 있어 정비 요청'
+    });
+    const draft = result as { title: string; content: string };
+
+    expect(draft.title).toContain('세교동 공원 입구 보도블록 시설 점검 및 정비 요청');
+    expect(draft.content).toContain('발생 위치\n세교동 공원 입구');
+    expect(draft.content).toContain('시설 안전 문제가 발생하고 있습니다');
+    expect(draft.content).toContain('보도블록 파손 또는 위험 여부 현장 점검');
+    expect(draft.content).toContain('보수 또는 안전 조치');
+    expect(draft.content).not.toContain('주정차 위반');
+    expect(draft.content).not.toContain('현장 단속 또는 계도 조치');
+  });
 });
