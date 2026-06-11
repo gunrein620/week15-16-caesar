@@ -18,7 +18,7 @@ from app.schemas import (
     WritingAssistRequest,
 )
 from app.api.posts import _post_read, _post_query
-from app.services.quota import consume_ai_quota
+from app.services.quota import ai_rate_limit_cost, consume_ai_quota
 from app.services.rag import answer_question, similar_posts
 from app.services.rag_context import build_rag_context, saved_summary_context
 
@@ -26,14 +26,15 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 
 
 @router.post("/qa", response_model=QaResponse)
-@limiter.limit("20/day")
+@limiter.limit("20/day", cost=ai_rate_limit_cost)
 def qa(
     request: Request,
     payload: QaRequest,
     user: Annotated[User, Depends(require_verified_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> QaResponse:
-    consume_ai_quota(db, user, "qa")
+    if payload.offset == 0 and payload.include_answer:
+        consume_ai_quota(db, user, "qa")
     answer, sources, has_more, next_offset = answer_question(
         db,
         payload.question,
@@ -46,7 +47,7 @@ def qa(
 
 
 @router.post("/context", response_model=RagContextResponse)
-@limiter.limit("20/day")
+@limiter.limit("20/day", cost=ai_rate_limit_cost)
 def rag_context(
     request: Request,
     payload: RagContextRequest,
@@ -68,7 +69,7 @@ def rag_context(
 
 
 @router.post("/saved-summary", response_model=RagContextResponse)
-@limiter.limit("20/day")
+@limiter.limit("20/day", cost=ai_rate_limit_cost)
 def saved_summary(
     request: Request,
     payload: SavedSummaryRequest,
@@ -81,7 +82,7 @@ def saved_summary(
 
 
 @router.post("/writing-assist", response_model=RagContextResponse)
-@limiter.limit("20/day")
+@limiter.limit("20/day", cost=ai_rate_limit_cost)
 def writing_assist(
     request: Request,
     payload: WritingAssistRequest,
@@ -101,7 +102,7 @@ def writing_assist(
 
 
 @router.post("/similar", response_model=list[PostRead])
-@limiter.limit("20/day")
+@limiter.limit("20/day", cost=ai_rate_limit_cost)
 def similar(
     request: Request,
     payload: SimilarRequest,

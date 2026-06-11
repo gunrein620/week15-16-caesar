@@ -29,10 +29,60 @@ def test_ai_requires_auth_and_enforces_daily_quota(client):
         "/ai/qa", json={"question": "리센느 입덕 포인트는?", "artist_id": 1}, headers=headers
     )
     assert first.status_code == 200, first.text
+    page = client.post(
+        "/ai/qa",
+        json={
+            "question": "리센느 입덕 포인트는?",
+            "artist_id": 1,
+            "offset": 10,
+            "include_answer": False,
+        },
+        headers=headers,
+    )
+    assert page.status_code == 200, page.text
     second = client.post("/ai/qa", json={"question": "한 번 더", "artist_id": 1}, headers=headers)
     assert second.status_code == 200
     third = client.post("/ai/qa", json={"question": "세 번째", "artist_id": 1}, headers=headers)
     assert third.status_code == 429
+    assert third.json()["detail"] == "오늘 AI 검색 한도를 초과했습니다."
+
+
+def test_admin_bypasses_ai_quota_and_rate_limit(client):
+    token = login(client, "admin@example.com", "admin-password")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    for index in range(25):
+        response = client.post(
+            "/ai/qa",
+            json={"question": f"관리자 테스트 {index}", "artist_id": 1},
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+
+
+def test_ai_quota_reports_global_limit_separately(client):
+    token = signup(client, "global-limit@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    with get_session_factory()() as db:
+        db.add(
+            AiUsageCounter(
+                scope="global",
+                scope_id="global",
+                feature="qa",
+                day=datetime.now(UTC).date(),
+                count=20,
+            )
+        )
+        db.commit()
+
+    response = client.post(
+        "/ai/qa",
+        json={"question": "전체 한도 테스트", "artist_id": 1},
+        headers=headers,
+    )
+
+    assert response.status_code == 429
+    assert response.json()["detail"] == "오늘 전체 AI 사용량 한도를 초과했습니다."
 
 
 def test_writing_assist_returns_empty_response_for_short_draft(client):
@@ -589,7 +639,7 @@ def test_sync_and_briefing_are_admin_only(client):
     assert any(embed["type"] == "source_card" for embed in published_body["embeds"])
     with get_session_factory()() as db:
         publish_features = set(db.scalars(select(AiUsageCounter.feature)).all())
-    assert "briefing_publish" in publish_features
+    assert "briefing_publish" not in publish_features
 
     duplicate_preview = client.post("/ai/briefing/preview", headers=admin_headers)
     duplicate = client.post(
@@ -733,7 +783,8 @@ def test_preview_does_not_create_post_and_agent_logs_mcp_tool_calls(client):
         )
         post_count_after = db.scalar(select(func.count(Post.id)))
 
-    assert {"briefing_preview", "youtube_sync"} <= features
+    assert "briefing_preview" not in features
+    assert "youtube_sync" not in features
     assert {"youtube_sync_if_stale", "youtube_get_cached", "naver_news_search"} <= tool_names
     assert post_count_after == post_count_before
 

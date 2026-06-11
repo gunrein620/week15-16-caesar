@@ -33,7 +33,7 @@ from app.schemas import (
     YoutubeSourceRead,
     YoutubeVideoRead,
 )
-from app.services.quota import consume_ai_quota
+from app.services.quota import ai_rate_limit_cost, consume_ai_quota
 from app.services.external_updates import sync_external_updates
 from app.services.updates import get_artist_updates, select_home_highlight_item
 from app.services.youtube import backfill_artist_videos, sync_artist_videos
@@ -141,7 +141,7 @@ def get_update_highlight(
 
 
 @router.post("/artists/{artist_id}/sync-updates")
-@limiter.limit("20/day")
+@limiter.limit("20/day", cost=ai_rate_limit_cost)
 def sync_updates(
     request: Request,
     artist_id: int,
@@ -172,7 +172,7 @@ def sync_updates(
 
 
 @router.post("/artists/{artist_id}/sync")
-@limiter.limit("10/day")
+@limiter.limit("10/day", cost=ai_rate_limit_cost)
 def sync_videos(
     request: Request,
     artist_id: int,
@@ -186,7 +186,7 @@ def sync_videos(
 
 
 @router.post("/artists/{artist_id}/youtube-backfill", response_model=YoutubeBackfillResult)
-@limiter.limit("5/day")
+@limiter.limit("5/day", cost=ai_rate_limit_cost)
 def backfill_videos(
     request: Request,
     artist_id: int,

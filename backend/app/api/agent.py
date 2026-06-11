@@ -16,7 +16,7 @@ from app.dependencies import require_admin
 from app.models import AgentRun, Artist, Briefing, McpCallLog, Post, User, YoutubeSource
 from app.schemas import AgentRunRead, BriefingPreviewResponse, PostRead
 from app.services.mcp_client import McpToolClient
-from app.services.quota import consume_ai_quota
+from app.services.quota import ai_rate_limit_cost, consume_ai_quota
 from app.services.rag import refresh_post_chunks
 from app.services.rag_context import build_rag_context, dedupe_sources
 from app.services.updates import get_artist_updates
@@ -275,7 +275,7 @@ def _briefing_source_cards(db: Session, artist_id: int, limit: int = 12) -> list
 
 
 @router.post("/ai/briefing/preview", response_model=BriefingPreviewResponse)
-@limiter.limit("10/day")
+@limiter.limit("10/day", cost=ai_rate_limit_cost)
 def preview_briefing(
     request: Request,
     user: Annotated[User, Depends(require_admin)],
@@ -309,7 +309,7 @@ def preview_briefing(
 
 
 @router.post("/ai/briefing/{run_id}/publish", response_model=PostRead)
-@limiter.limit("10/day")
+@limiter.limit("10/day", cost=ai_rate_limit_cost)
 def publish_briefing(
     request: Request,
     run_id: int,
