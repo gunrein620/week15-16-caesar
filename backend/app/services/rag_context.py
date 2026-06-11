@@ -22,6 +22,8 @@ def _source_key(source: dict) -> tuple[str, str]:
         return ("youtube", str(source["youtube_video_id"]))
     if source.get("post_id"):
         return ("post", str(source["post_id"]))
+    if source.get("external_update_id"):
+        return ("external", str(source["external_update_id"]))
     return (str(source.get("source_type") or ""), str(source.get("url") or source.get("title") or ""))
 
 

@@ -261,6 +261,9 @@ class ExternalUpdate(Base, TimestampMixin):
     raw_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
     artist: Mapped[Artist] = relationship(back_populates="external_updates")
+    rag_chunks: Mapped[list["RagChunk"]] = relationship(
+        back_populates="external_update", cascade="all, delete-orphan"
+    )
 
 
 class SavedItem(Base, TimestampMixin):
@@ -367,6 +370,15 @@ class YoutubeVideo(Base, TimestampMixin):
     like_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     comment_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    transcript_status: Mapped[str] = mapped_column(
+        String(20), default="pending", server_default="pending", nullable=False
+    )
+    transcript_fetched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    transcript_lang: Mapped[str] = mapped_column(
+        String(16), default="", server_default="", nullable=False
+    )
 
     sources: Mapped[list["YoutubeVideoSource"]] = relationship(
         back_populates="video", cascade="all, delete-orphan"
@@ -394,12 +406,14 @@ class RagChunk(Base, TimestampMixin):
     __tablename__ = "rag_chunks"
     __table_args__ = (
         CheckConstraint(
-            "(post_id IS NOT NULL AND youtube_video_id IS NULL) OR "
-            "(post_id IS NULL AND youtube_video_id IS NOT NULL)",
+            "(post_id IS NOT NULL AND youtube_video_id IS NULL AND external_update_id IS NULL) OR "
+            "(post_id IS NULL AND youtube_video_id IS NOT NULL AND external_update_id IS NULL) OR "
+            "(post_id IS NULL AND youtube_video_id IS NULL AND external_update_id IS NOT NULL)",
             name="ck_rag_chunk_exactly_one_source",
         ),
         Index("ux_rag_chunk_post_index", "post_id", "chunk_index", unique=True),
-    Index("ux_rag_chunk_youtube_index", "youtube_video_id", "chunk_index", unique=True),
+        Index("ux_rag_chunk_youtube_index", "youtube_video_id", "chunk_index", unique=True),
+        Index("ux_rag_chunk_external_index", "external_update_id", "chunk_index", unique=True),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -410,6 +424,9 @@ class RagChunk(Base, TimestampMixin):
     youtube_video_id: Mapped[str | None] = mapped_column(
         ForeignKey("youtube_videos.id", ondelete="CASCADE"), nullable=True, index=True
     )
+    external_update_id: Mapped[int | None] = mapped_column(
+        ForeignKey("external_updates.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     chunk_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -417,6 +434,7 @@ class RagChunk(Base, TimestampMixin):
 
     post: Mapped[Post | None] = relationship(back_populates="rag_chunks")
     youtube_video: Mapped[YoutubeVideo | None] = relationship(back_populates="rag_chunks")
+    external_update: Mapped[ExternalUpdate | None] = relationship(back_populates="rag_chunks")
 
 
 class RagEmbeddingJob(Base, TimestampMixin):

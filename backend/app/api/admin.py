@@ -36,6 +36,8 @@ from app.schemas import (
     RagEmbeddingJobRead,
     RagEmbedYoutubeRequest,
     RagEmbedYoutubeResult,
+    RagTranscriptBatchRequest,
+    RagTranscriptBatchResult,
     SignupSettingsRead,
     SignupSettingsUpdate,
     SyncSettings,
@@ -58,6 +60,7 @@ from app.services.rag_admin import (
     latest_rag_embedding_job,
     process_rag_embedding_job_batch,
 )
+from app.services.transcripts import fetch_transcripts_batch
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 ADMIN_ROLES = {"user", "admin"}
@@ -367,6 +370,23 @@ def embed_youtube_rag_chunks(
         limit=payload.limit,
         days=payload.days,
         source_type=payload.source_type,
+        force=payload.force,
+    )
+    db.commit()
+    return result
+
+
+@router.post("/rag/transcripts/batch", response_model=RagTranscriptBatchResult)
+def fetch_youtube_transcript_batch(
+    payload: RagTranscriptBatchRequest,
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, int]:
+    result = fetch_transcripts_batch(
+        db,
+        payload.artist_id,
+        limit=payload.limit,
+        days=payload.days,
         force=payload.force,
     )
     db.commit()

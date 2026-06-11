@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.models import Artist, ArtistKeyword, ExternalUpdate, Member
 from app.services.link_preview import resolve_link_preview
 from app.services.naver import naver_blog_search, naver_news_search
+from app.services.rag import refresh_external_update_chunks
 
 TAG_RE = re.compile(r"<[^>]+>")
 
@@ -90,21 +91,22 @@ def _sync_naver_items(
             )
         )
         if existing is None:
-            db.add(
-                ExternalUpdate(
-                    artist_id=artist_id,
-                    source_type=source_type,
-                    external_id=external_id,
-                    title=title,
-                    description=description,
-                    url=url,
-                    thumbnail_url=thumbnail_url,
-                    source_label=source_label,
-                    published_at=_parse_naver_date(item),
-                    content_hash=content_hash,
-                    raw_payload=item,
-                )
+            row = ExternalUpdate(
+                artist_id=artist_id,
+                source_type=source_type,
+                external_id=external_id,
+                title=title,
+                description=description,
+                url=url,
+                thumbnail_url=thumbnail_url,
+                source_label=source_label,
+                published_at=_parse_naver_date(item),
+                content_hash=content_hash,
+                raw_payload=item,
             )
+            db.add(row)
+            db.flush()
+            refresh_external_update_chunks(db, row)
             created += 1
             continue
         if existing.content_hash != content_hash:
@@ -116,6 +118,7 @@ def _sync_naver_items(
             existing.published_at = _parse_naver_date(item)
             existing.content_hash = content_hash
             existing.raw_payload = item
+            refresh_external_update_chunks(db, existing)
             updated += 1
     return {"created": created, "updated": updated}
 

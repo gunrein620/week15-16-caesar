@@ -311,6 +311,11 @@ class RagCoverageRead(BaseModel):
     youtube_stale_videos: int
     post_chunks: int
     youtube_chunks: int
+    transcript_fetched_videos: int = 0
+    transcript_unavailable_videos: int = 0
+    transcript_pending_videos: int = 0
+    transcript_chunks: int = 0
+    external_update_chunks: int = 0
     estimated_tokens: int
     estimated_standard_cost_usd: float
     estimated_batch_cost_usd: float
@@ -344,6 +349,21 @@ class RagEmbedYoutubeResult(BaseModel):
     created_chunks: int
     remaining_missing: int
     estimated_tokens: int
+
+
+class RagTranscriptBatchRequest(BaseModel):
+    artist_id: int = 1
+    limit: int = Field(default=25, ge=1, le=100)
+    days: int | None = Field(default=None, ge=1, le=3650)
+    force: bool = False
+
+
+class RagTranscriptBatchResult(BaseModel):
+    processed: int
+    fetched: int
+    unavailable: int
+    failed: int
+    created_chunks: int
 
 
 class RagEmbeddingJobCreate(BaseModel):

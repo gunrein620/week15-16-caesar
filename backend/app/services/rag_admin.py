@@ -78,8 +78,15 @@ def _chunks_are_stale(
 ) -> bool:
     if not chunks:
         return False
+    metadata_chunk = next((chunk for chunk in chunks if chunk.chunk_index == 0), None)
+    if metadata_chunk is None:
+        return True
     expected_hash = video_embedding_hash(db, video, artist_id)
-    return len(chunks) != 1 or chunks[0].chunk_index != 0 or chunks[0].content_hash != expected_hash
+    return metadata_chunk.content_hash != expected_hash
+
+
+def _has_metadata_chunk(chunks: list[RagChunk]) -> bool:
+    return any(chunk.chunk_index == 0 for chunk in chunks)
 
 
 def _embedding_candidates(
@@ -95,7 +102,7 @@ def _embedding_candidates(
     candidates: list[YoutubeVideo] = []
     for video in videos:
         chunks = chunks_by_video.get(video.id, [])
-        if force or not chunks or _chunks_are_stale(db, video, artist_id, chunks):
+        if force or not _has_metadata_chunk(chunks) or _chunks_are_stale(db, video, artist_id, chunks):
             candidates.append(video)
     return candidates, chunks_by_video
 
@@ -104,7 +111,7 @@ def get_rag_coverage(db: Session, artist_id: int) -> dict:
     videos = _artist_youtube_videos(db, artist_id)
     video_ids = [video.id for video in videos]
     chunks_by_video = _chunks_for_videos(db, video_ids)
-    embedded = sum(1 for video in videos if chunks_by_video.get(video.id))
+    embedded = sum(1 for video in videos if _has_metadata_chunk(chunks_by_video.get(video.id, [])))
     stale = sum(
         1
         for video in videos
@@ -114,7 +121,7 @@ def get_rag_coverage(db: Session, artist_id: int) -> dict:
     candidates = [
         video
         for video in videos
-        if not chunks_by_video.get(video.id)
+        if not _has_metadata_chunk(chunks_by_video.get(video.id, []))
         or _chunks_are_stale(db, video, artist_id, chunks_by_video.get(video.id, []))
     ]
     estimated_tokens = sum(_approx_tokens(build_video_embedding_text(db, video, artist_id)) for video in candidates)
@@ -124,7 +131,9 @@ def get_rag_coverage(db: Session, artist_id: int) -> dict:
         for video in videos
         if video.published_at and _aware_utc(video.published_at) >= recent_cutoff
     ]
-    recent_missing = sum(1 for video in recent if not chunks_by_video.get(video.id))
+    recent_missing = sum(
+        1 for video in recent if not _has_metadata_chunk(chunks_by_video.get(video.id, []))
+    )
     post_chunks = db.scalar(
         select(func.count())
         .select_from(RagChunk)
@@ -135,6 +144,23 @@ def get_rag_coverage(db: Session, artist_id: int) -> dict:
         .select_from(RagChunk)
         .where(RagChunk.artist_id == artist_id, RagChunk.youtube_video_id.is_not(None))
     )
+    transcript_chunks = db.scalar(
+        select(func.count())
+        .select_from(RagChunk)
+        .where(
+            RagChunk.artist_id == artist_id,
+            RagChunk.youtube_video_id.is_not(None),
+            RagChunk.chunk_index >= 1,
+        )
+    )
+    external_update_chunks = db.scalar(
+        select(func.count())
+        .select_from(RagChunk)
+        .where(RagChunk.artist_id == artist_id, RagChunk.external_update_id.is_not(None))
+    )
+    transcript_fetched = sum(1 for video in videos if video.transcript_status == "fetched")
+    transcript_unavailable = sum(1 for video in videos if video.transcript_status == "unavailable")
+    transcript_pending = sum(1 for video in videos if video.transcript_status == "pending")
     return {
         "artist_id": artist_id,
         "youtube_videos": len(videos),
@@ -143,6 +169,11 @@ def get_rag_coverage(db: Session, artist_id: int) -> dict:
         "youtube_stale_videos": stale,
         "post_chunks": int(post_chunks or 0),
         "youtube_chunks": int(youtube_chunks or 0),
+        "transcript_fetched_videos": transcript_fetched,
+        "transcript_unavailable_videos": transcript_unavailable,
+        "transcript_pending_videos": transcript_pending,
+        "transcript_chunks": int(transcript_chunks or 0),
+        "external_update_chunks": int(external_update_chunks or 0),
         "estimated_tokens": estimated_tokens,
         "estimated_standard_cost_usd": round(
             estimated_tokens / 1_000_000 * STANDARD_EMBEDDING_USD_PER_1M,
@@ -181,21 +212,23 @@ def cleanup_rag_chunks(db: Session, artist_id: int) -> dict[str, int]:
     if stale_video_ids:
         stale_deleted = int(
             db.query(RagChunk)
-            .filter(RagChunk.youtube_video_id.in_(stale_video_ids))
+            .filter(RagChunk.youtube_video_id.in_(stale_video_ids), RagChunk.chunk_index == 0)
             .delete(synchronize_session=False)
         )
 
     duplicate_ids: list[int] = []
-    if stale_video_ids:
-        chunks_by_video = {
-            video_id: chunks
-            for video_id, chunks in chunks_by_video.items()
-            if video_id not in set(stale_video_ids)
-        }
+    groups: dict[tuple[str, int], list[RagChunk]] = defaultdict(list)
+    stale_video_id_set = set(stale_video_ids)
     for chunks in chunks_by_video.values():
+        for chunk in chunks:
+            if chunk.youtube_video_id:
+                if chunk.youtube_video_id in stale_video_id_set and chunk.chunk_index == 0:
+                    continue
+                groups[(chunk.youtube_video_id, chunk.chunk_index)].append(chunk)
+    for chunks in groups.values():
         if len(chunks) <= 1:
             continue
-        keep = next((chunk for chunk in chunks if chunk.chunk_index == 0), chunks[0])
+        keep = min(chunks, key=lambda chunk: chunk.id)
         duplicate_ids.extend(chunk.id for chunk in chunks if chunk.id != keep.id)
     if duplicate_ids:
         db.execute(delete(RagChunk).where(RagChunk.id.in_(duplicate_ids)))
@@ -323,7 +356,12 @@ def process_rag_embedding_job_batch(db: Session, job: RagEmbeddingJob) -> RagEmb
     try:
         embeddings = embed_texts([item[1] for item in prepared])
         video_ids = [item[0] for item in prepared]
-        db.execute(delete(RagChunk).where(RagChunk.youtube_video_id.in_(video_ids)))
+        db.execute(
+            delete(RagChunk).where(
+                RagChunk.youtube_video_id.in_(video_ids),
+                RagChunk.chunk_index == 0,
+            )
+        )
         rows = []
         for (video_id, body, hashed), embedding in zip(prepared, embeddings, strict=True):
             rows.append(
@@ -337,6 +375,7 @@ def process_rag_embedding_job_batch(db: Session, job: RagEmbeddingJob) -> RagEmb
                 )
             )
         db.add_all(rows)
+        db.flush()
         job.processed += len(prepared)
         job.embedded += len(prepared)
         job.created_chunks += len(prepared)

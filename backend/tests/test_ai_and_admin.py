@@ -483,7 +483,7 @@ def test_admin_rag_embed_youtube_processes_limited_missing_batch(client):
         ).all()
     assert len(chunks) == 2
     assert all(chunk.chunk_index == 0 for chunk in chunks)
-    assert "channel:" in chunks[0].content
+    assert "RESCENE 채널의 YouTube 영상" in chunks[0].content
 
 
 def test_admin_rag_job_processes_missing_and_stale_videos_without_duplicate_chunks(client):

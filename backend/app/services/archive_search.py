@@ -6,7 +6,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.db import is_postgres
-from app.models import Post, RagChunk, YoutubeVideo
+from app.models import ExternalUpdate, Post, RagChunk, YoutubeVideo
 from app.services.search_intent import (
     SearchIntent,
     normalize_search_text,
@@ -44,6 +44,16 @@ def _source_for_chunk(db: Session, chunk: RagChunk) -> _ChunkSource | None:
             title=post.title,
             tags=tuple(post_tag.tag.name for post_tag in post.tags),
             source_type="post",
+        )
+    if chunk.external_update_id:
+        item = chunk.external_update or db.get(ExternalUpdate, chunk.external_update_id)
+        if item is None:
+            return None
+        return _ChunkSource(
+            key=("external", str(item.id)),
+            title=item.title,
+            tags=(),
+            source_type=item.source_type,
         )
     return None
 

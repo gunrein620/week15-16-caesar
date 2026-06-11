@@ -1,4 +1,5 @@
 import os
+import sys
 
 import pytest
 from mcp import ClientSession
@@ -31,11 +32,10 @@ async def test_mcp_initialize_list_tools_and_call(tmp_path, monkeypatch):
         "DATABASE_URL": database_url,
         "ENVIRONMENT": "test",
         "JWT_SECRET_KEY": "test-secret",
-        "UV_CACHE_DIR": str(tmp_path / "uv-cache"),
     }
     params = StdioServerParameters(
-        command="uv",
-        args=["run", "python", "-m", "app.mcp_server.server"],
+        command=sys.executable,
+        args=["-m", "app.mcp_server.server"],
         cwd=os.getcwd(),
         env=env,
     )

@@ -1,10 +1,12 @@
 from datetime import UTC, datetime, timedelta, timezone
+from html import unescape
+import re
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models import ArtistKeyword, Member, Post, RagChunk, YoutubeVideo
+from app.models import ArtistKeyword, ExternalUpdate, Member, Post, RagChunk, YoutubeVideo
 from app.schemas import UpdateFeedItem
 from app.services.search_intent import SearchIntent, intent_from_payload, parse_search_intent
 from app.services.text import chunk_text, content_hash, cosine_similarity, deterministic_embedding
@@ -12,6 +14,8 @@ from app.services.updates import _matches_keywords, _matches_youtube_members, ge
 
 
 KST = timezone(timedelta(hours=9))
+TAG_RE = re.compile(r"<[^>]+>")
+YOUTUBE_TIMESTAMP_RE = re.compile(r"^\[(?:(?P<hours>\d+):)?(?P<minutes>\d{1,2}):(?P<seconds>\d{2})\]")
 
 
 def embed_text(text: str) -> list[float]:
@@ -39,6 +43,7 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
 
 
 def refresh_post_chunks(db: Session, post: Post) -> None:
+    db.flush()
     db.execute(delete(RagChunk).where(RagChunk.post_id == post.id))
     body = f"{post.title}\n\n{post.content}"
     hashed = content_hash(body)
@@ -53,6 +58,7 @@ def refresh_post_chunks(db: Session, post: Post) -> None:
                 embedding=embed_text(chunk),
             )
         )
+    db.flush()
 
 
 def _published_at_text(value: datetime | None) -> str:
@@ -61,6 +67,18 @@ def _published_at_text(value: datetime | None) -> str:
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
     return value.astimezone(UTC).isoformat()
+
+
+def _published_date_text(value: datetime | None) -> str:
+    if value is None:
+        return ""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).date().isoformat()
+
+
+def _clean_html_text(value: str | None) -> str:
+    return " ".join(TAG_RE.sub("", unescape(value or "")).split())
 
 
 def build_video_embedding_text(db: Session, video: YoutubeVideo, artist_id: int) -> str:
@@ -80,16 +98,40 @@ def build_video_embedding_text(db: Session, video: YoutubeVideo, artist_id: int)
         "\n".join([video.title or "", description, video.channel_title or ""]),
         keywords,
     )
-    lines = [
-        f"title: {video.title or ''}",
-        f"channel: {video.channel_title or ''}",
-        f"published_at: {_published_at_text(video.published_at)}",
-        f"views: {video.view_count if video.view_count is not None else ''}",
-        f"members: {', '.join(matched_members)}",
-        f"keywords: {', '.join(matched_keywords)}",
-        f"description: {description[:700]}",
-    ]
-    return "\n".join(line for line in lines if line.split(": ", 1)[-1].strip()).strip()
+    parts: list[str] = []
+    if video.title:
+        parts.append(f"{video.title}.")
+    if video.channel_title:
+        parts.append(f"{video.channel_title} 채널의 YouTube 영상.")
+    if matched_members:
+        parts.append(f"멤버: {', '.join(matched_members)}.")
+    if matched_keywords:
+        parts.append(f"키워드: {', '.join(matched_keywords)}.")
+    published_at = _published_date_text(video.published_at)
+    if published_at:
+        parts.append(f"게시일 {published_at}.")
+    if description.strip():
+        parts.append(f"설명: {description[:700].strip()}")
+    return " ".join(parts).strip()
+
+
+def build_external_update_embedding_text(item: ExternalUpdate) -> str:
+    title = _clean_html_text(item.title)
+    description = _clean_html_text(item.description)
+    source_kind = "뉴스" if item.source_type == "naver_news" else "블로그"
+    parts: list[str] = []
+    if title:
+        parts.append(f"{title}.")
+    if item.source_label:
+        parts.append(f"{item.source_label} {source_kind}.")
+    else:
+        parts.append(f"{source_kind}.")
+    published_at = _published_date_text(item.published_at)
+    if published_at:
+        parts.append(f"게시일 {published_at}.")
+    if description:
+        parts.append(f"내용: {description[:500].strip()}")
+    return " ".join(parts).strip()
 
 
 def video_embedding_hash(db: Session, video: YoutubeVideo, artist_id: int) -> str:
@@ -97,10 +139,17 @@ def video_embedding_hash(db: Session, video: YoutubeVideo, artist_id: int) -> st
 
 
 def refresh_video_chunks(db: Session, video: YoutubeVideo, artist_id: int) -> int:
-    db.execute(delete(RagChunk).where(RagChunk.youtube_video_id == video.id))
+    db.flush()
+    db.execute(
+        delete(RagChunk).where(
+            RagChunk.youtube_video_id == video.id,
+            RagChunk.chunk_index == 0,
+        )
+    )
     body = build_video_embedding_text(db, video, artist_id)
     hashed = content_hash(body)
     if not body:
+        db.flush()
         return 0
     db.add(
         RagChunk(
@@ -112,6 +161,29 @@ def refresh_video_chunks(db: Session, video: YoutubeVideo, artist_id: int) -> in
             embedding=embed_text(body),
         )
     )
+    db.flush()
+    return 1
+
+
+def refresh_external_update_chunks(db: Session, item: ExternalUpdate) -> int:
+    db.flush()
+    db.execute(delete(RagChunk).where(RagChunk.external_update_id == item.id))
+    body = build_external_update_embedding_text(item)
+    hashed = content_hash(body)
+    if not body:
+        db.flush()
+        return 0
+    db.add(
+        RagChunk(
+            artist_id=item.artist_id,
+            external_update_id=item.id,
+            chunk_index=0,
+            content=body,
+            content_hash=hashed,
+            embedding=embed_text(body),
+        )
+    )
+    db.flush()
     return 1
 
 
@@ -140,20 +212,46 @@ def _chunk_source_payload(db: Session, chunk: RagChunk) -> dict:
         "chunk_id": chunk.id,
         "post_id": chunk.post_id,
         "youtube_video_id": chunk.youtube_video_id,
+        "external_update_id": chunk.external_update_id,
         "content": chunk.content,
     }
     if chunk.youtube_video_id:
         video = chunk.youtube_video or db.get(YoutubeVideo, chunk.youtube_video_id)
+        url = video.url if video else ""
+        timestamp_seconds = _timestamp_seconds_from_content(chunk.content)
+        extra: dict = {}
+        if chunk.chunk_index >= 1 and timestamp_seconds is not None:
+            if url:
+                separator = "&" if "?" in url else "?"
+                url = f"{url}{separator}t={timestamp_seconds}s"
+            extra = {
+                "timestamp_seconds": timestamp_seconds,
+                "snippet": chunk.content,
+            }
         return {
             **base,
             "source_type": "youtube",
             "title": video.title if video else "YouTube video",
-            "url": video.url if video else "",
+            "url": url,
             "thumbnail_url": video.thumbnail_url if video else "",
             "channel_title": video.channel_title if video else "",
             "source_label": "YouTube",
             "published_at": video.published_at.isoformat() if video and video.published_at else None,
             "view_count": video.view_count if video else None,
+            **extra,
+        }
+    if chunk.external_update_id:
+        item = chunk.external_update or db.get(ExternalUpdate, chunk.external_update_id)
+        return {
+            **base,
+            "source_type": item.source_type if item else "external",
+            "title": item.title if item else "External update",
+            "url": item.url if item else "",
+            "thumbnail_url": item.thumbnail_url if item else "",
+            "channel_title": "",
+            "source_label": item.source_label if item else "",
+            "published_at": item.published_at.isoformat() if item and item.published_at else None,
+            "view_count": None,
         }
     post = chunk.post or (db.get(Post, chunk.post_id) if chunk.post_id else None)
     return {
@@ -167,6 +265,18 @@ def _chunk_source_payload(db: Session, chunk: RagChunk) -> dict:
         "published_at": post.created_at.isoformat() if post and post.created_at else None,
         "view_count": None,
     }
+
+
+def _timestamp_seconds_from_content(content: str) -> int | None:
+    match = YOUTUBE_TIMESTAMP_RE.match(content.strip())
+    if match is None:
+        return None
+    hours = int(match.group("hours") or 0)
+    minutes = int(match.group("minutes"))
+    seconds = int(match.group("seconds"))
+    if minutes >= 60 or seconds >= 60:
+        return None
+    return hours * 3600 + minutes * 60 + seconds
 
 
 def _aware_utc(value: datetime) -> datetime:

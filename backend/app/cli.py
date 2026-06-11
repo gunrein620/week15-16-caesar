@@ -2,11 +2,19 @@ import json
 from pathlib import Path
 
 import typer
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.db import get_session_factory
-from app.services.rag import answer_question
+from app.models import ExternalUpdate, RagChunk
+from app.services.rag import (
+    answer_question,
+    build_external_update_embedding_text,
+    refresh_external_update_chunks,
+)
 from app.services.seed import ensure_admin_user, ensure_minimal_rag_seed
+from app.services.text import content_hash
+from app.services.transcripts import fetch_transcripts_batch
 
 cli = typer.Typer()
 
@@ -24,6 +32,69 @@ def seed_demo() -> None:
     with get_session_factory()() as db:
         ensure_minimal_rag_seed(db)
         typer.echo("demo seed ready")
+
+
+@cli.command("fetch-transcripts")
+def fetch_transcripts(
+    artist_id: int = typer.Option(1, "--artist-id", min=1),
+    limit: int = typer.Option(25, "--limit", min=1, max=100),
+    days: int | None = typer.Option(None, "--days", min=1, max=3650),
+    force: bool = typer.Option(False, "--force"),
+) -> None:
+    with get_session_factory()() as db:
+        result = fetch_transcripts_batch(
+            db,
+            artist_id,
+            limit=limit,
+            days=days,
+            force=force,
+        )
+        db.commit()
+    typer.echo(json.dumps(result, ensure_ascii=False))
+
+
+@cli.command("embed-external-updates")
+def embed_external_updates(
+    artist_id: int = typer.Option(1, "--artist-id", min=1),
+    limit: int = typer.Option(100, "--limit", min=1, max=1000),
+) -> None:
+    processed = 0
+    embedded = 0
+    skipped = 0
+    with get_session_factory()() as db:
+        items = db.scalars(
+            select(ExternalUpdate)
+            .where(ExternalUpdate.artist_id == artist_id)
+            .order_by(ExternalUpdate.published_at.desc(), ExternalUpdate.id.desc())
+        ).all()
+        for item in items:
+            if embedded >= limit:
+                break
+            processed += 1
+            expected_hash = content_hash(build_external_update_embedding_text(item))
+            chunk = db.scalar(
+                select(RagChunk).where(
+                    RagChunk.external_update_id == item.id,
+                    RagChunk.chunk_index == 0,
+                )
+            )
+            if chunk is not None and chunk.content_hash == expected_hash:
+                skipped += 1
+                continue
+            refresh_external_update_chunks(db, item)
+            embedded += 1
+        db.commit()
+    typer.echo(
+        json.dumps(
+            {
+                "processed": processed,
+                "embedded": embedded,
+                "skipped": skipped,
+                "remaining_missing": max(len(items) - processed, 0),
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 def _matches_expect(source: dict, expect: dict) -> bool:
