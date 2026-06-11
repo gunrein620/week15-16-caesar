@@ -6,6 +6,8 @@ import { FloatingWriteButton } from './FloatingWriteButton.js';
 
 export type AppView = 'home' | 'community' | 'map' | 'detail' | 'editor' | 'ai' | 'login' | 'signup';
 
+const categoryShortcuts = ['맛집', '분실물', '동네생활', '동네행사', '생활민원', '중고거래'] as const;
+
 type AppShellProps = {
   children: ReactNode;
   view: AppView;
@@ -186,6 +188,16 @@ export function AppShell({
               <Map size={18} />
               동네지도
             </button>
+          </div>
+          <div className="shortcut-section" aria-label="카테고리 바로가기">
+            <strong>카테고리 바로가기</strong>
+            <div className="shortcut-grid">
+              {categoryShortcuts.map((shortcut) => (
+                <button type="button" key={shortcut} onClick={() => submitSearch(shortcut)}>
+                  {shortcut}
+                </button>
+              ))}
+            </div>
           </div>
           <button
             className="menu-account-button"
