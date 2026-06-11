@@ -10,19 +10,12 @@ type AiAssistantPageProps = {
 type AiMode = 'rag' | 'post-helper' | 'complaint-helper';
 
 export function AiAssistantPage({ isAuthed, onLogin }: AiAssistantPageProps) {
-  const [mode, setMode] = useState<AiMode>('rag');
   const [input, setInput] = useState('근처 야간 약국 어디 있어?');
   const [answer, setAnswer] = useState('오산 게시판에 쌓인 글과 외부 도구를 활용해 답변합니다.');
   const [sources, setSources] = useState<RagSource[]>([]);
   const [externalSources, setExternalSources] = useState<ExternalSource[]>([]);
+  const [lastMode, setLastMode] = useState<AiMode>('rag');
   const [isLoading, setIsLoading] = useState(false);
-
-  function selectMode(nextMode: AiMode) {
-    setMode(nextMode);
-    if (nextMode !== 'rag') {
-      setExternalSources([]);
-    }
-  }
 
   async function ask() {
     if (!isAuthed) {
@@ -31,6 +24,8 @@ export function AiAssistantPage({ isAuthed, onLogin }: AiAssistantPageProps) {
     }
     setIsLoading(true);
     try {
+      const mode = inferAiMode(input);
+      setLastMode(mode);
       if (mode === 'rag') {
         const result = await api.ragAsk(input);
         setAnswer(result.answer);
@@ -68,20 +63,8 @@ export function AiAssistantPage({ isAuthed, onLogin }: AiAssistantPageProps) {
         </div>
       </div>
 
-      <div className="segmented-control" role="tablist" aria-label="AI 모드">
-        <button className={mode === 'rag' ? 'active' : ''} type="button" onClick={() => selectMode('rag')}>
-          Q&A
-        </button>
-        <button className={mode === 'post-helper' ? 'active' : ''} type="button" onClick={() => selectMode('post-helper')}>
-          글 도우미
-        </button>
-        <button className={mode === 'complaint-helper' ? 'active' : ''} type="button" onClick={() => selectMode('complaint-helper')}>
-          민원
-        </button>
-      </div>
-
       <label className="prompt-box">
-        <span>{mode === 'rag' ? '질문' : '요청'}</span>
+        <span>질문 또는 요청</span>
         <textarea value={input} onChange={(event) => setInput(event.target.value)} />
       </label>
 
@@ -91,7 +74,7 @@ export function AiAssistantPage({ isAuthed, onLogin }: AiAssistantPageProps) {
 
       <article className="answer-panel">
         <header>
-          {mode === 'complaint-helper' ? <Megaphone size={18} /> : <FileText size={18} />}
+          {lastMode === 'complaint-helper' ? <Megaphone size={18} /> : <FileText size={18} />}
           <strong>답변</strong>
         </header>
         <p>{answer}</p>
@@ -148,6 +131,25 @@ export function AiAssistantPage({ isAuthed, onLogin }: AiAssistantPageProps) {
       </article>
     </section>
   );
+}
+
+export function inferAiMode(text: string): AiMode {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (
+    /(민원|신고|불편|불법|단속|악취|소음|쓰레기|파손|고장|위험|방치|막혀|개선\s*요청|처리\s*요청|정비\s*요청|주정차|주차|정차)/i.test(
+      normalized
+    )
+  ) {
+    return 'complaint-helper';
+  }
+  if (
+    /(게시글|글쓰기|글\s*(작성|써|도와)|초안|문구|태그|중복\s*확인|작성해\s*줘|써\s*줘|작성할래|작성하고)/i.test(
+      normalized
+    )
+  ) {
+    return 'post-helper';
+  }
+  return 'rag';
 }
 
 function sourceTitle(source: RagSource) {
