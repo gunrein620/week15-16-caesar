@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -8,6 +9,7 @@ from app.core.rate_limit import limiter
 from app.dependencies import require_verified_user
 from app.models import Post, User
 from app.schemas import (
+    ChatRequest,
     QaRequest,
     QaResponse,
     RagContextRequest,
@@ -18,6 +20,7 @@ from app.schemas import (
     WritingAssistRequest,
 )
 from app.api.posts import _post_read, _post_query
+from app.services.chat_agent import stream_chat_events
 from app.services.quota import ai_rate_limit_cost, consume_ai_quota
 from app.services.rag import answer_question, similar_posts
 from app.services.rag_context import build_rag_context, saved_summary_context
@@ -51,6 +54,25 @@ def qa(
         has_more=has_more,
         next_offset=next_offset,
         search_intent=intent_to_payload(intent),
+    )
+
+
+@router.post("/chat")
+@limiter.limit("80/day", cost=ai_rate_limit_cost)
+def chat(
+    request: Request,
+    payload: ChatRequest,
+    user: Annotated[User, Depends(require_verified_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> StreamingResponse:
+    consume_ai_quota(db, user, "chat")
+    return StreamingResponse(
+        stream_chat_events(payload, user_id=user.id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

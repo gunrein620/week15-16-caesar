@@ -24,6 +24,7 @@ import {
   Search,
   Send,
   ShieldCheck,
+  Sparkles,
   Sun,
   Trash2,
   Upload,
@@ -48,7 +49,6 @@ import {
   Post,
   PostEmbed,
   PostList,
-  QaResponse,
   QaSource,
   RagContextResponse,
   RagCleanupResult,
@@ -67,6 +67,7 @@ import {
   YoutubeVideo,
   API_BASE,
   api,
+  streamChat,
 } from './api'
 import { shouldTrackPanelView, trackAnalyticsEvent, type AnalyticsMetadata } from './analytics'
 import {
@@ -90,10 +91,7 @@ import {
   type AppPanel,
   type BoardMode,
 } from './boardNavigation'
-import {
-  buildArchiveAnswerPreview,
-  buildArchiveSourceDisplay,
-} from './archiveSearch'
+import { buildArchiveSourceDisplay } from './archiveSearch'
 import {
   appendReferenceText,
   buildWritingAssistQuery,
@@ -202,7 +200,7 @@ const VIDEO_RENDER_STEP = 48
 const topTabLabels: Record<AppPanel, string> = {
   home: '홈',
   board: '팬 게시판',
-  rag: '아카이브',
+  rag: 'AI 검색',
   youtube: 'YouTube',
   briefing: '오늘의 요약',
   saved: '저장한 자료',
@@ -214,7 +212,7 @@ const desktopShellNavMeta: Partial<
 > = {
   home: { label: '홈', icon: Home, accent: true },
   board: { label: '게시판', icon: MessageSquare },
-  rag: { label: '검색', icon: Search },
+  rag: { label: 'AI 검색', icon: Sparkles },
   youtube: { label: 'YouTube', icon: PlayCircle },
   briefing: { label: '요약', icon: Upload },
   saved: { label: '프로필', icon: UserCircle },
@@ -743,6 +741,12 @@ export default function App() {
           {panel === 'admin' && <AdminPanel token={token} user={me.data} />}
         </section>
       </main>
+      {panel !== 'rag' && (
+        <button className="chatFab" type="button" onClick={() => openPanel('rag')}>
+          <Sparkles size={20} />
+          <span>AI에게 묻기</span>
+        </button>
+      )}
       {showBackToTop && (
         <button className="backToTopButton" onClick={scrollToPageTop} title="맨 위로" aria-label="맨 위로 이동">
           <ChevronUp size={22} />
@@ -783,7 +787,7 @@ function AppShell({
     <div className={searchMode ? 'shell appShell searchShell' : 'shell appShell'}>
       <header className={searchMode ? 'topbar appTopbar searchMode' : 'topbar appTopbar'}>
         <div className="searchModeHead">
-          <strong>검색</strong>
+          <strong>AI 검색</strong>
           <button className="iconButton" type="button" onClick={() => onPanelSelect('home')} title="검색 닫기">
             <X size={18} />
           </button>
@@ -875,7 +879,7 @@ const bottomTabMeta: Record<
 > = {
   home: { label: '홈', icon: Home },
   board: { label: '게시판', icon: MessageSquare },
-  rag: { label: '검색', icon: Search },
+  rag: { label: 'AI 검색', icon: Sparkles },
   youtube: { label: 'YouTube', icon: PlayCircle },
   saved: { label: '프로필', icon: UserCircle },
 }
@@ -2545,6 +2549,47 @@ function EmbedCard({ embed, onOpenPost }: { embed: PostEmbed; onOpenPost: (postI
   return <article className="embedCard">{cardContent}</article>
 }
 
+type ChatUiMessage = {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  sources?: QaSource[]
+  suggestions?: string[]
+}
+
+const CHAT_STORAGE_KEY = 'rescene_chat_messages_v1'
+const CHAT_EXAMPLE_QUESTIONS = ['최근 리센느 영상 뭐가 있어?', 'Love Attack 무대 자료 찾아줘', '원이 직캠 근거랑 같이 알려줘']
+
+function createChatMessageId() {
+  return `chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function loadStoredChatMessages(): ChatUiMessage[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(CHAT_STORAGE_KEY) ?? '[]')
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter(
+        (message): message is ChatUiMessage =>
+          message &&
+          (message.role === 'user' || message.role === 'assistant') &&
+          typeof message.content === 'string',
+      )
+      .slice(-30)
+  } catch {
+    return []
+  }
+}
+
+function chatToolLabel(name: string) {
+  if (name === 'search_archive') return '아카이브 검색 중...'
+  if (name === 'get_recent_updates') return '최근 업데이트 확인 중...'
+  if (name === 'get_video_detail') return '영상 정보 확인 중...'
+  if (name === 'naver_news_search') return '뉴스 검색 중...'
+  return '자료 확인 중...'
+}
+
 function RagPanel({
   token,
   initialQuestion,
@@ -2559,11 +2604,17 @@ function RagPanel({
   onOpenPost: (postId: number) => void
 }) {
   const queryClient = useQueryClient()
-  const [question, setQuestion] = useState('')
-  const [qaResult, setQaResult] = useState<QaResponse | null>(null)
+  const [draft, setDraft] = useState('')
+  const [messages, setMessages] = useState<ChatUiMessage[]>(loadStoredChatMessages)
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [activeAssistantId, setActiveAssistantId] = useState<string | null>(null)
+  const [toolStatus, setToolStatus] = useState<string | null>(null)
+  const [streamError, setStreamError] = useState('')
   const [pendingSavedKeys, setPendingSavedKeys] = useState<Set<string>>(() => new Set())
   const [saveError, setSaveError] = useState('')
+  const abortRef = useRef<AbortController | null>(null)
   const lastAutoSearch = useRef('')
+  const threadRef = useRef<HTMLDivElement | null>(null)
   const savedItemsQueryKey = ['saved-items', token] as const
   const savedItems = useQuery({
     queryKey: savedItemsQueryKey,
@@ -2633,163 +2684,246 @@ function RagPanel({
       })
     },
   })
-  const qa = useMutation({
-    mutationFn: (payload: {
-      question: string
-      offset: number
-      includeAnswer: boolean
-      searchIntent?: Record<string, unknown> | null
-    }) =>
-      api<QaResponse>(
-        '/ai/qa',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            question: payload.question,
-            artist_id: 1,
-            limit: 10,
-            offset: payload.offset,
-            include_answer: payload.includeAnswer,
-            search_intent: payload.searchIntent ?? null,
-          }),
-        },
-        token,
-      ),
-    onSuccess: (data, payload) => {
-      if (payload.offset === 0) {
-        setQaResult(data)
-        return
-      }
-      setQaResult((current) => ({
-        answer: current?.answer ?? data.answer,
-        sources: [...(current?.sources ?? []), ...data.sources],
-        has_more: data.has_more,
-        next_offset: data.next_offset,
-        search_intent: current?.search_intent ?? data.search_intent,
-      }))
-    },
-  })
-  const runArchiveSearch = (query: string) => {
+  useEffect(() => {
+    window.localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages.slice(-30)))
+  }, [messages])
+  useEffect(() => {
+    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' })
+  }, [messages, toolStatus])
+  const updateAssistantMessage = (assistantId: string, updater: (message: ChatUiMessage) => ChatUiMessage) => {
+    setMessages((current) => current.map((message) => (message.id === assistantId ? updater(message) : message)))
+  }
+  const sendQuestion = async (query: string) => {
     const trimmed = query.trim()
-    if (!trimmed) return
+    if (!trimmed || isStreaming) return
     if (!token) {
       onRequireAuth()
       return
     }
     if (!onRequireVerified()) return
-    setQaResult(null)
+    const userMessage: ChatUiMessage = { id: createChatMessageId(), role: 'user', content: trimmed }
+    const assistantMessage: ChatUiMessage = { id: createChatMessageId(), role: 'assistant', content: '' }
+    const requestMessages = [...messages, userMessage]
+      .filter((message) => message.content.trim())
+      .slice(-12)
+      .map((message) => ({ role: message.role, content: message.content }))
+    setDraft('')
+    setStreamError('')
+    setToolStatus(null)
+    setMessages((current) => [...current, userMessage, assistantMessage].slice(-30))
+    setActiveAssistantId(assistantMessage.id)
+    setIsStreaming(true)
+    const controller = new AbortController()
+    abortRef.current = controller
     trackAnalyticsEvent({
       eventName: 'archive_search_submit',
       panel: 'rag',
       token,
-      metadata: { query: trimmed, limit: 10, offset: 0 },
+      metadata: { query: trimmed, mode: 'chat' },
     })
-    qa.mutate({ question: trimmed, offset: 0, includeAnswer: true })
+    try {
+      await streamChat({
+        messages: requestMessages,
+        artistId: 1,
+        token,
+        signal: controller.signal,
+        onEvent: (event) => {
+          if (event.type === 'tool_call') {
+            setToolStatus(chatToolLabel(event.name))
+            return
+          }
+          if (event.type === 'tool_result') {
+            setToolStatus(null)
+            return
+          }
+          if (event.type === 'sources') {
+            updateAssistantMessage(assistantMessage.id, (message) => ({
+              ...message,
+              sources: event.sources as QaSource[],
+            }))
+            return
+          }
+          if (event.type === 'delta') {
+            updateAssistantMessage(assistantMessage.id, (message) => ({
+              ...message,
+              content: `${message.content}${event.text}`,
+            }))
+            return
+          }
+          if (event.type === 'suggestions') {
+            updateAssistantMessage(assistantMessage.id, (message) => ({
+              ...message,
+              suggestions: event.items,
+            }))
+            return
+          }
+          if (event.type === 'error') {
+            setStreamError(event.message)
+            updateAssistantMessage(assistantMessage.id, (message) => ({
+              ...message,
+              content: message.content || '응답 생성 중 문제가 발생했습니다.',
+            }))
+          }
+        },
+      })
+    } catch (error) {
+      const aborted = controller.signal.aborted
+      const message = aborted ? '응답 생성을 중단했습니다.' : error instanceof Error ? error.message : '요청에 실패했습니다.'
+      if (!aborted) setStreamError(message)
+      updateAssistantMessage(assistantMessage.id, (current) => ({
+        ...current,
+        content: current.content || message,
+      }))
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null
+      setIsStreaming(false)
+      setToolStatus(null)
+      setActiveAssistantId(null)
+    }
   }
   useEffect(() => {
     const trimmed = initialQuestion.trim()
     if (!trimmed || lastAutoSearch.current === trimmed) return
     lastAutoSearch.current = trimmed
-    setQuestion(trimmed)
-    runArchiveSearch(trimmed)
+    setDraft(trimmed)
+    void sendQuestion(trimmed)
   }, [initialQuestion, token])
+  const resetChat = () => {
+    abortRef.current?.abort()
+    setMessages([])
+    setDraft('')
+    setStreamError('')
+    setToolStatus(null)
+    setActiveAssistantId(null)
+    window.localStorage.removeItem(CHAT_STORAGE_KEY)
+  }
   return (
-    <div className="ragResultsScreen">
+    <div className="ragResultsScreen chatScreen">
+      <div className="chatHeader">
+        <div>
+          <p className="eyebrow">AI Archive Guide</p>
+          <h2>AI 검색</h2>
+        </div>
+        <button type="button" className="secondary" onClick={resetChat} disabled={isStreaming && !messages.length}>
+          <RefreshCw size={16} />
+          새 대화
+        </button>
+      </div>
+      <div className="chatThread" ref={threadRef}>
+        {!messages.length && (
+          <div className="ragSearchEmpty chatEmpty">
+            <Sparkles size={34} />
+            <h2>리센느 아카이브에 대해 무엇이든 물어보세요.</h2>
+            <p>영상·자막·게시글·뉴스를 검색해 근거와 함께 답합니다.</p>
+            <div className="chatSuggestionRow">
+              {CHAT_EXAMPLE_QUESTIONS.map((question) => (
+                <button key={question} type="button" className="suggestionChip" onClick={() => void sendQuestion(question)}>
+                  {question}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {messages.map((message) => {
+          const isAssistant = message.role === 'assistant'
+          return (
+            <article className={`chatTurn ${message.role}`} key={message.id}>
+              {isAssistant && isStreaming && activeAssistantId === message.id && toolStatus && (
+                <div className="chatToolStatus">
+                  <RefreshCw size={14} />
+                  <span>{toolStatus}</span>
+                </div>
+              )}
+              <div className={`chatBubble ${message.role}`}>
+                {message.content ? (
+                  <LinkedText className="chatMessageText" text={message.content} />
+                ) : (
+                  <p className="chatMessageText muted">답변을 준비하고 있습니다...</p>
+                )}
+              </div>
+              {isAssistant && message.sources?.length ? (
+                <div className="sourceCards ragSourceGrid chatSourceGrid">
+                  {message.sources.map((source, index) => {
+                    const savedItem = findSavedSourceItem(savedItems.data, source)
+                    const itemKey = savedItem?.item_key ?? savedItemKeyFromSource(source)
+                    return (
+                      <SourceCard
+                        key={`${source.source_type}-${source.chunk_id ?? source.url}-${index}`}
+                        source={source}
+                        onOpenPost={onOpenPost}
+                        savedItem={savedItem}
+                        savePending={pendingSavedKeys.has(itemKey)}
+                        onToggleSave={() => {
+                          if (!token) {
+                            onRequireAuth()
+                            return
+                          }
+                          if (!onRequireVerified()) return
+                          if (savedItem) {
+                            removeSavedSource.mutate(savedItem)
+                            return
+                          }
+                          saveSource.mutate(source)
+                        }}
+                      />
+                    )
+                  })}
+                </div>
+              ) : null}
+              {isAssistant && message.suggestions?.length ? (
+                <div className="chatSuggestionRow">
+                  {message.suggestions.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      className="suggestionChip"
+                      disabled={isStreaming}
+                      onClick={() => void sendQuestion(suggestion)}
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </article>
+          )
+        })}
+      </div>
+      {streamError && <p className="error chatError">{streamError}</p>}
+      {saveError && <p className="error">{saveError}</p>}
       <form
-        className="mobileSearchForm"
+        className="chatComposer"
         onSubmit={(event) => {
           event.preventDefault()
-          runArchiveSearch(question)
+          void sendQuestion(draft)
         }}
       >
-        <Search size={18} />
-        <input
-          value={question}
-          onChange={(event) => setQuestion(event.target.value)}
-          placeholder="검색"
-          aria-label="검색"
+        <textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault()
+              void sendQuestion(draft)
+            }
+          }}
+          placeholder="리센느 아카이브에 질문하기"
+          aria-label="AI 검색 질문"
+          disabled={isStreaming}
+          rows={1}
         />
-        <button type="submit">검색</button>
+        {isStreaming ? (
+          <button type="button" className="secondary chatStopButton" onClick={() => abortRef.current?.abort()}>
+            <X size={17} />
+            중단
+          </button>
+        ) : (
+          <button type="submit" disabled={!draft.trim()}>
+            <Send size={17} />
+            전송
+          </button>
+        )}
       </form>
-      {!question && !qaResult && !qa.isPending && (
-        <div className="ragSearchEmpty">
-          <Search size={34} />
-          <h2>검색창에 검색어를 입력해 보세요.</h2>
-          <p>저장된 게시글과 YouTube 자료를 한 번에 검색합니다.</p>
-        </div>
-      )}
-      {question && !qaResult && !qa.isPending && !qa.error && (
-        <div className="ragSearchEmpty compact">
-          <Search size={28} />
-          <h2>{question}</h2>
-          <p>검색어를 입력하면 결과가 여기에 표시됩니다.</p>
-        </div>
-      )}
-      {qa.isPending && (
-        <div className="ragSearchEmpty compact">
-          <RefreshCw size={28} />
-          <h2>{question}</h2>
-          <p>검색 결과를 불러오는 중...</p>
-        </div>
-      )}
-      {qa.error && <p className="error">{qa.error.message}</p>}
-      {saveError && <p className="error">{saveError}</p>}
-      {qaResult && (
-        <section className="answer archiveResults">
-          <h2>{question}</h2>
-          {qaResult.answer && <ArchiveAnswerBlock answer={qaResult.answer} />}
-          <div className="sourceCards ragSourceGrid">
-            {qaResult.sources.map((source, index) => {
-              const savedItem = findSavedSourceItem(savedItems.data, source)
-              const itemKey = savedItem?.item_key ?? savedItemKeyFromSource(source)
-              return (
-                <SourceCard
-                  key={`${source.source_type}-${source.chunk_id}-${index}`}
-                  source={source}
-                  onOpenPost={onOpenPost}
-                  savedItem={savedItem}
-                  savePending={pendingSavedKeys.has(itemKey)}
-                  onToggleSave={() => {
-                    if (!token) {
-                      onRequireAuth()
-                      return
-                    }
-                    if (!onRequireVerified()) return
-                    if (savedItem) {
-                      removeSavedSource.mutate(savedItem)
-                      return
-                    }
-                    saveSource.mutate(source)
-                  }}
-                />
-              )
-            })}
-          </div>
-          {qaResult.has_more && (
-            <button
-              className="secondary"
-              disabled={qa.isPending}
-              onClick={() => {
-                const offset = qaResult.next_offset ?? qaResult.sources.length
-                trackAnalyticsEvent({
-                  eventName: 'archive_search_load_more',
-                  panel: 'rag',
-                  token,
-                  metadata: { query: question, limit: 10, offset },
-                })
-                qa.mutate({
-                  question,
-                  offset,
-                  includeAnswer: false,
-                  searchIntent: qaResult.search_intent,
-                })
-              }}
-            >
-              더 보기
-            </button>
-          )}
-        </section>
-      )}
     </div>
   )
 }
@@ -2841,19 +2975,6 @@ function WritingAssistPanel({
         </div>
       ) : null}
     </section>
-  )
-}
-
-function ArchiveAnswerBlock({ answer }: { answer: string }) {
-  const preview = buildArchiveAnswerPreview(answer)
-  return (
-    <details className="archiveAnswerBlock">
-      <summary>
-        <span>AI 요약</span>
-        <small>{preview.text}</small>
-      </summary>
-      <p>{answer}</p>
-    </details>
   )
 }
 

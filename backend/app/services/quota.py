@@ -58,14 +58,16 @@ def consume_ai_quota(db: Session, user: User, feature: str) -> None:
     if user.role == "admin":
         return
     settings = get_settings()
+    user_limit = settings.chat_daily_user_limit if feature == "chat" else settings.ai_daily_user_limit
+    global_limit = settings.chat_daily_global_limit if feature == "chat" else settings.ai_daily_global_limit
     user_counter = _counter(db, "user", str(user.id), feature)
     global_counter = _counter(db, "global", "global", feature)
-    if user_counter.count >= settings.ai_daily_user_limit:
+    if user_counter.count >= user_limit:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="오늘 AI 검색 한도를 초과했습니다.",
         )
-    if global_counter.count >= settings.ai_daily_global_limit:
+    if global_counter.count >= global_limit:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="오늘 전체 AI 사용량 한도를 초과했습니다.",

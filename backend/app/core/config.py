@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     oauth_redirect_base_url: str | None = None
     ai_daily_user_limit: int = 20
     ai_daily_global_limit: int = 200
+    chat_daily_user_limit: int = 40
+    chat_daily_global_limit: int = 400
     public_signup_enabled: bool = True
     infra_budget_hard_stop_enabled: bool = True
     infra_monthly_budget_usd: float = 10.0
@@ -51,6 +53,8 @@ class Settings(BaseSettings):
     seed_admin_password: str = "change-me-admin"
     embedding_model: str = "text-embedding-3-small"
     chat_model: str = "gpt-5.5"
+    chat_max_tool_iterations: int = 4
+    chat_suggestions_enabled: bool = True
     rerank_model: str = "gpt-5.5-mini"
     rerank_candidates: int = 30
     rerank_enabled: bool = True

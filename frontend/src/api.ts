@@ -1,5 +1,6 @@
 import { resolveApiBase } from './apiBase.ts'
 import { ACCESS_TOKEN_EVENT, storeAccessToken } from './authSession.ts'
+import { createSseBuffer, type ChatEvent } from './chatStream.ts'
 
 export const API_BASE = resolveApiBase(import.meta.env?.VITE_API_BASE_URL, Boolean(import.meta.env?.PROD))
 
@@ -180,6 +181,11 @@ export type QaResponse = {
   has_more: boolean
   next_offset: number | null
   search_intent: Record<string, unknown> | null
+}
+
+export type ChatMessagePayload = {
+  role: 'user' | 'assistant'
+  content: string
 }
 
 export type RagContextResponse = {
@@ -416,4 +422,81 @@ export async function api<T>(
   }
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
+}
+
+async function streamChatRequest({
+  messages,
+  artistId,
+  token,
+  onEvent,
+  signal,
+  retryOnUnauthorized = true,
+}: {
+  messages: ChatMessagePayload[]
+  artistId: number
+  token?: string | null
+  onEvent: (event: ChatEvent) => void
+  signal?: AbortSignal
+  retryOnUnauthorized?: boolean
+}) {
+  const headers = new Headers()
+  headers.set('Content-Type', 'application/json')
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  const response = await fetch(`${API_BASE}/ai/chat`, {
+    method: 'POST',
+    headers,
+    credentials: 'include',
+    body: JSON.stringify({ messages, artist_id: artistId }),
+    signal,
+  })
+  if (response.status === 401 && token && retryOnUnauthorized) {
+    const refreshedToken = await refreshAccessToken()
+    if (refreshedToken) {
+      await streamChatRequest({
+        messages,
+        artistId,
+        token: refreshedToken,
+        onEvent,
+        signal,
+        retryOnUnauthorized: false,
+      })
+      return
+    }
+  }
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({ detail: response.statusText }))
+    throw new Error(typeof body.detail === 'string' ? body.detail : response.statusText)
+  }
+  if (!response.body) throw new Error('스트리밍 응답을 읽을 수 없습니다.')
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  const sse = createSseBuffer()
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    for (const event of sse.push(decoder.decode(value, { stream: true }))) {
+      onEvent(event)
+    }
+  }
+  const tail = decoder.decode()
+  if (tail) {
+    for (const event of sse.push(tail)) onEvent(event)
+  }
+}
+
+export async function streamChat({
+  messages,
+  artistId = 1,
+  token,
+  onEvent,
+  signal,
+}: {
+  messages: ChatMessagePayload[]
+  artistId?: number
+  token?: string | null
+  onEvent: (event: ChatEvent) => void
+  signal?: AbortSignal
+}) {
+  await streamChatRequest({ messages, artistId, token, onEvent, signal })
 }
