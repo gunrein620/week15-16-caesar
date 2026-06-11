@@ -6,12 +6,18 @@ export type BoardFilter = '추천' | '인기' | '투표' | '생활정보' | 'AI�
 export type BoardFeedState = {
   category: BoardCategory;
   filter: BoardFilter;
+  searchQuery?: string;
 };
 
 export const boardCategories: BoardCategory[] = ['동네생활', '모임', '카페', '아파트', '게임', '맛집/음식'];
 export const boardFilters: BoardFilter[] = ['추천', '인기', '투표', '생활정보', 'AI추천'];
 
 export function selectBoardPosts(posts: Post[], state: BoardFeedState) {
+  const searchQuery = state.searchQuery?.trim();
+  if (searchQuery) {
+    return sortPosts(posts.filter((post) => matchesSearch(post, searchQuery)), state.filter);
+  }
+
   const categoryMatched = posts.filter((post) => matchesCategory(post, state.category));
   const filterMatched = categoryMatched.filter((post) => matchesFilter(post, state.filter));
   const fallbackMatched =
@@ -31,6 +37,9 @@ export function boardFilterLabel(filter: BoardFilter) {
 }
 
 export function emptyFeedMessage(state: BoardFeedState) {
+  if (state.searchQuery?.trim()) {
+    return `"${state.searchQuery.trim()}" 검색 결과가 없습니다. 다른 키워드로 다시 찾아보세요.`;
+  }
   if (state.filter === '투표') {
     return '아직 투표 게시글이 없습니다. 첫 투표 글을 올려보세요.';
   }
@@ -68,6 +77,19 @@ function matchesFilter(post: Post, filter: BoardFilter) {
     return tags.includes('생활정보');
   }
   return tags.includes('AI추천');
+}
+
+function matchesSearch(post: Post, query: string) {
+  const terms = query
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .map((term) => term.trim())
+    .filter(Boolean);
+  if (terms.length === 0) {
+    return true;
+  }
+  const text = postSearchText(post);
+  return terms.every((term) => text.includes(term));
 }
 
 function sortPosts(posts: Post[], filter: BoardFilter) {

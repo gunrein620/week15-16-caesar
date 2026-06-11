@@ -42,7 +42,7 @@ export function CommunityPage({ onOpenPost, boardState }: CommunityPageProps) {
       </div>
 
       <div className="community-stats" aria-label="커뮤니티 요약">
-        <span>{boardState.category}</span>
+        <span>{boardState.searchQuery?.trim() ? `검색: ${boardState.searchQuery.trim()}` : boardState.category}</span>
         <span>{boardFilterLabel(boardState.filter)}</span>
         <span>{visiblePosts.length}개</span>
       </div>

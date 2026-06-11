@@ -17,11 +17,12 @@ export function App() {
   const [user, setUser] = useState<AuthResponse['user'] | null>(null);
   const [activeCategory, setActiveCategory] = useState<BoardCategory>('동네생활');
   const [activeFilter, setActiveFilter] = useState<BoardFilter>('추천');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const isAuthed = useMemo(() => Boolean(getAccessToken()), [user, view]);
   const boardState = useMemo(
-    () => ({ category: activeCategory, filter: activeFilter }),
-    [activeCategory, activeFilter]
+    () => ({ category: activeCategory, filter: activeFilter, searchQuery }),
+    [activeCategory, activeFilter, searchQuery]
   );
 
   function handleAuth(auth: AuthResponse) {
@@ -45,6 +46,15 @@ export function App() {
       activeFilter={activeFilter}
       onCategoryChange={setActiveCategory}
       onFilterChange={setActiveFilter}
+      searchQuery={searchQuery}
+      onSearch={(query) => {
+        setSearchQuery(query.trim());
+        setView('community');
+        setSelectedPost(null);
+      }}
+      onClearSearch={() => {
+        setSearchQuery('');
+      }}
       onNavigate={(next) => {
         setView(next);
         if (next !== 'detail') {
