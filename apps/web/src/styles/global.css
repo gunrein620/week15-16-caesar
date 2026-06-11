@@ -344,22 +344,56 @@ button:disabled {
     linear-gradient(160deg, #ffffff 0 45%, #d7f4e5 45% 70%, #ffcf99 70%);
 }
 
-.write-button {
+.write-menu {
   position: fixed;
   right: max(18px, calc((100vw - 430px) / 2 + 18px));
   bottom: calc(var(--bottom-nav-height) + 18px);
   z-index: 10;
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
+.write-menu-actions {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+.write-menu-actions button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 54px;
-  padding: 0 19px;
+  gap: 8px;
+  min-width: 126px;
+  height: 44px;
+  padding: 0 15px;
   border-radius: 999px;
+  background: #ffffff;
+  color: var(--color-text);
+  font-size: 15px;
+  font-weight: 900;
+  box-shadow: 0 10px 22px rgba(30, 35, 41, 0.16);
+}
+
+.write-menu-actions button:first-child {
   background: var(--color-primary);
   color: #ffffff;
-  font-size: 17px;
+}
+
+.write-button {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #ffffff;
   font-weight: 900;
   box-shadow: 0 12px 24px rgba(255, 111, 15, 0.28);
+}
+
+.write-menu.open .write-button {
+  transform: rotate(45deg);
 }
 
 .bottom-nav {

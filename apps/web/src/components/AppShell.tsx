@@ -1,4 +1,4 @@
-import { Bell, Bot, Home, LogIn, LogOut, Map, Menu, Plus, Search, UserRound, UsersRound } from 'lucide-react';
+import { Bell, Bot, Home, LogIn, LogOut, Map, Menu, Search, UserRound, UsersRound } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { boardCategories, boardFilters, type BoardCategory, type BoardFilter } from '../board/boardFilters.js';
 import { BottomNav } from './BottomNav.js';
@@ -99,13 +99,13 @@ export function AppShell({
 
       {showWrite && (
         <FloatingWriteButton
-          onClick={() => {
+          onWrite={() => {
             onNavigate('editor');
           }}
-        >
-          <Plus size={22} />
-          글쓰기
-        </FloatingWriteButton>
+          onAi={() => {
+            onNavigate('ai');
+          }}
+        />
       )}
 
       <BottomNav
