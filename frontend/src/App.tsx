@@ -17,6 +17,7 @@ import {
   MessageSquarePlus,
   Moon,
   MoreHorizontal,
+  Pause,
   PlayCircle,
   RefreshCw,
   Save,
@@ -28,6 +29,8 @@ import {
   Upload,
   UserCircle,
   UserPlus,
+  Volume2,
+  VolumeX,
   X,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
@@ -113,7 +116,7 @@ import {
   savedFeedItemPayload,
 } from './savedFeed'
 import { sortYoutubeVideos, type VideoSort } from './videoSorting'
-import { youtubeAppUrl } from './youtubeLinks'
+import { extractYoutubeVideoId, youtubeAppUrl } from './youtubeLinks'
 import { buildYoutubeSourcePayload } from './youtubeSourceForm'
 import { MEMBER_COLORS, MEMBER_ORDER, memberColor, memberOn } from './memberColors'
 import { compactMemberNamesText, memberLabel, memberNamesText } from './memberDisplay'
@@ -122,6 +125,76 @@ import { emailVerificationStatusText } from './emailVerification'
 
 type FeedSource = 'all' | 'youtube' | 'naver' | 'briefing' | 'post'
 type Theme = 'light' | 'dark'
+
+type YoutubePlayerState = {
+  PLAYING: number
+  PAUSED: number
+  ENDED: number
+}
+
+type YoutubePlayerInstance = {
+  playVideo: () => void
+  pauseVideo: () => void
+  mute: () => void
+  unMute: () => void
+  isMuted: () => boolean
+  getCurrentTime: () => number
+  getDuration: () => number
+  getPlayerState: () => number
+  seekTo: (seconds: number, allowSeekAhead: boolean) => void
+  destroy: () => void
+}
+
+type YoutubePlayerConstructor = new (
+  element: HTMLElement,
+  options: {
+    videoId: string
+    playerVars: Record<string, string | number>
+    events: {
+      onReady: (event: { target: YoutubePlayerInstance }) => void
+      onStateChange: (event: { data: number }) => void
+    }
+  },
+) => YoutubePlayerInstance
+
+type YoutubeApi = {
+  Player: YoutubePlayerConstructor
+  PlayerState: YoutubePlayerState
+}
+
+declare global {
+  interface Window {
+    YT?: YoutubeApi
+    onYouTubeIframeAPIReady?: () => void
+  }
+}
+
+let youtubeIframeApiPromise: Promise<YoutubeApi> | null = null
+
+function loadYoutubeIframeApi(): Promise<YoutubeApi> {
+  if (typeof window === 'undefined') return Promise.reject(new Error('YouTube API requires a browser'))
+  if (window.YT?.Player) return Promise.resolve(window.YT)
+  if (youtubeIframeApiPromise) return youtubeIframeApiPromise
+  youtubeIframeApiPromise = new Promise((resolve, reject) => {
+    const previousReady = window.onYouTubeIframeAPIReady
+    window.onYouTubeIframeAPIReady = () => {
+      previousReady?.()
+      if (window.YT?.Player) {
+        resolve(window.YT)
+        return
+      }
+      reject(new Error('YouTube API did not initialize'))
+    }
+    const existingScript = document.querySelector<HTMLScriptElement>('script[src="https://www.youtube.com/iframe_api"]')
+    if (existingScript) return
+    const script = document.createElement('script')
+    script.src = 'https://www.youtube.com/iframe_api'
+    script.async = true
+    script.onerror = () => reject(new Error('YouTube API failed to load'))
+    document.head.appendChild(script)
+  })
+  return youtubeIframeApiPromise
+}
 
 const VIDEO_RENDER_STEP = 48
 
@@ -814,9 +887,12 @@ function HomePanel({
   theme: Theme
 }) {
   const queryClient = useQueryClient()
+  const feedViewportRef = useRef<HTMLDivElement | null>(null)
   const [source, setSource] = useState<FeedSource>('all')
   const [pendingSavedKeys, setPendingSavedKeys] = useState<Set<string>>(() => new Set())
   const [saveError, setSaveError] = useState('')
+  const [activeFeedItemId, setActiveFeedItemId] = useState<string | null>(null)
+  const [feedMuted, setFeedMuted] = useState(true)
   const savedItemsQueryKey = ['saved-items', token] as const
   const updates = useInfiniteQuery({
     queryKey: ['updates', source],
@@ -928,10 +1004,49 @@ function HomePanel({
   })
   const heroItem = showHero ? highlight.data ?? selectHomeHeroItem(feedItems) : null
   const feedSlides = heroItem ? [heroItem, ...feedItems.filter((item) => item.id !== heroItem.id)] : feedItems
+  const feedSlideIds = feedSlides.map((item) => item.id).join('|')
+  useEffect(() => {
+    const root = feedViewportRef.current
+    if (!root || feedSlides.length === 0) {
+      setActiveFeedItemId(null)
+      return
+    }
+    const ratios = new Map<string, number>()
+    const updateActiveItem = () => {
+      let nextId: string | null = null
+      let bestRatio = 0
+      ratios.forEach((ratio, itemId) => {
+        if (ratio > bestRatio) {
+          bestRatio = ratio
+          nextId = itemId
+        }
+      })
+      setActiveFeedItemId(bestRatio >= 0.6 ? nextId : null)
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          const itemId = entry.target.getAttribute('data-feed-id')
+          if (!itemId) return
+          ratios.set(itemId, entry.isIntersecting ? entry.intersectionRatio : 0)
+        })
+        updateActiveItem()
+      },
+      {
+        root,
+        threshold: [0, 0.25, 0.5, 0.6, 0.75, 1],
+      },
+    )
+    root.querySelectorAll<HTMLElement>('.feedSlide[data-feed-id]').forEach((slide) => {
+      ratios.set(slide.getAttribute('data-feed-id') ?? '', 0)
+      observer.observe(slide)
+    })
+    return () => observer.disconnect()
+  }, [feedSlideIds, feedSlides.length])
   return (
     <div className="feedScreen">
       <section className="feedPanel">
-        <div className="feedViewport">
+        <div className="feedViewport" ref={feedViewportRef}>
           <div className="feedTopOverlay">
             <div className="feedSourceTabs" aria-label="source filter">
               {sourceOptions.map((option) => (
@@ -971,6 +1086,9 @@ function HomePanel({
                   token={token}
                   onOpenPost={onOpenPost}
                   theme={theme}
+                  isActive={activeFeedItemId === item.id}
+                  feedMuted={feedMuted}
+                  onFeedMutedChange={setFeedMuted}
                   savedItem={savedItem}
                   onToggleSave={() => {
                     if (!token) {
@@ -1016,6 +1134,9 @@ function UpdateFeedCard({
   token,
   onOpenPost,
   theme,
+  isActive,
+  feedMuted,
+  onFeedMutedChange,
   savedItem,
   onToggleSave,
   savePending,
@@ -1024,6 +1145,9 @@ function UpdateFeedCard({
   token: string | null
   onOpenPost: (postId: number) => void
   theme: Theme
+  isActive: boolean
+  feedMuted: boolean
+  onFeedMutedChange: (muted: boolean) => void
   savedItem: SavedItem | null
   onToggleSave: () => void
   savePending: boolean
@@ -1031,7 +1155,9 @@ function UpdateFeedCard({
   const postId = postIdFromUrl(item.url)
   const isExternal = item.url.startsWith('http')
   const isYoutube = item.item_type === 'youtube'
+  const videoId = isYoutube ? extractYoutubeVideoId(item.url) : null
   const isNote = item.item_type === 'briefing' || item.item_type === 'post'
+  const [playToggleSignal, setPlayToggleSignal] = useState(0)
   const primaryMember = item.member_names[0] ?? ''
   const label =
     item.item_type === 'youtube'
@@ -1053,7 +1179,17 @@ function UpdateFeedCard({
     <>
       <div className="updateThumb mediaStage">
         <span className={`typeBadge ${item.item_type}`}>{label}</span>
-        {isNote ? (
+        {videoId ? (
+          <YoutubeFeedPlayer
+            videoId={videoId}
+            title={item.title}
+            thumbnailUrl={item.thumbnail_url}
+            isActive={isActive}
+            muted={feedMuted}
+            onMutedChange={onFeedMutedChange}
+            playToggleSignal={playToggleSignal}
+          />
+        ) : isNote ? (
           <div className="noteInner">
             <span>{label}</span>
             <strong className="serif">{item.title}</strong>
@@ -1092,8 +1228,22 @@ function UpdateFeedCard({
     </>
   )
   return (
-    <FeedSlide className={isNote ? 'noteCard' : ''} style={cardStyle}>
-      {isExternal ? (
+    <FeedSlide itemId={item.id} className={isNote ? 'noteCard' : ''} style={cardStyle}>
+      {isYoutube ? (
+        <div
+          className="updateMainLink youtubeFeedMain"
+          role="button"
+          tabIndex={0}
+          onClick={() => setPlayToggleSignal((current) => current + 1)}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return
+            event.preventDefault()
+            setPlayToggleSignal((current) => current + 1)
+          }}
+        >
+          {body}
+        </div>
+      ) : isExternal ? (
         <a
           className="updateMainLink"
           href={item.url}
@@ -1152,18 +1302,214 @@ function UpdateFeedCard({
 }
 
 function FeedSlide({
+  itemId,
   className = '',
   style,
   children,
 }: {
+  itemId: string
   className?: string
   style?: CSSProperties
   children: ReactNode
 }) {
   return (
-    <article className={['updateCard', 'feedSlide', className].filter(Boolean).join(' ')} style={style}>
+    <article
+      className={['updateCard', 'feedSlide', className].filter(Boolean).join(' ')}
+      data-feed-id={itemId}
+      style={style}
+    >
       {children}
     </article>
+  )
+}
+
+function YoutubeFeedPlayer({
+  videoId,
+  title,
+  thumbnailUrl,
+  isActive,
+  muted,
+  onMutedChange,
+  playToggleSignal,
+}: {
+  videoId: string
+  title: string
+  thumbnailUrl: string
+  isActive: boolean
+  muted: boolean
+  onMutedChange: (muted: boolean) => void
+  playToggleSignal: number
+}) {
+  const hostRef = useRef<HTMLDivElement | null>(null)
+  const playerRef = useRef<YoutubePlayerInstance | null>(null)
+  const [ready, setReady] = useState(false)
+  const [apiFailed, setApiFailed] = useState(false)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [duration, setDuration] = useState(0)
+  const [currentTime, setCurrentTime] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    setReady(false)
+    setApiFailed(false)
+    setIsPlaying(false)
+    setDuration(0)
+    setCurrentTime(0)
+    loadYoutubeIframeApi()
+      .then((YT) => {
+        if (cancelled || !hostRef.current) return
+        const player = new YT.Player(hostRef.current, {
+          videoId,
+          playerVars: {
+            autoplay: 0,
+            controls: 0,
+            disablekb: 1,
+            enablejsapi: 1,
+            fs: 0,
+            iv_load_policy: 3,
+            modestbranding: 1,
+            playsinline: 1,
+            rel: 0,
+          },
+          events: {
+            onReady: (event) => {
+              if (cancelled) return
+              playerRef.current = event.target
+              event.target.mute()
+              setReady(true)
+              setDuration(event.target.getDuration() || 0)
+              if (isActive) {
+                event.target.playVideo()
+                if (!muted) event.target.unMute()
+              }
+            },
+            onStateChange: (event) => {
+              if (!window.YT?.PlayerState) return
+              setIsPlaying(event.data === window.YT.PlayerState.PLAYING)
+              if (event.data === window.YT.PlayerState.ENDED) {
+                playerRef.current?.seekTo(0, true)
+                if (isActive) playerRef.current?.playVideo()
+              }
+            },
+          },
+        })
+        playerRef.current = player
+      })
+      .catch(() => {
+        if (!cancelled) setApiFailed(true)
+      })
+    return () => {
+      cancelled = true
+      playerRef.current?.destroy()
+      playerRef.current = null
+    }
+  }, [videoId])
+
+  useEffect(() => {
+    const player = playerRef.current
+    if (!ready || !player) return
+    if (muted) {
+      player.mute()
+    } else {
+      player.unMute()
+    }
+  }, [muted, ready])
+
+  useEffect(() => {
+    const player = playerRef.current
+    if (!ready || !player) return
+    if (isActive) {
+      player.playVideo()
+    } else {
+      player.pauseVideo()
+    }
+  }, [isActive, ready])
+
+  useEffect(() => {
+    const player = playerRef.current
+    if (!ready || !player || playToggleSignal === 0) return
+    if (player.getPlayerState() === window.YT?.PlayerState.PLAYING) {
+      player.pauseVideo()
+    } else {
+      player.playVideo()
+      if (muted) player.mute()
+    }
+  }, [playToggleSignal, muted, ready])
+
+  useEffect(() => {
+    if (!ready) return
+    const interval = window.setInterval(() => {
+      const player = playerRef.current
+      if (!player) return
+      setCurrentTime(player.getCurrentTime() || 0)
+      setDuration(player.getDuration() || 0)
+      setIsPlaying(player.getPlayerState() === window.YT?.PlayerState.PLAYING)
+    }, 500)
+    return () => window.clearInterval(interval)
+  }, [ready])
+
+  const progressMax = duration > 0 ? duration : 1
+  const progressValue = Math.min(currentTime, progressMax)
+
+  return (
+    <>
+      {thumbnailUrl && (
+        <img
+          className={ready && !apiFailed ? 'feedVideoPoster loaded' : 'feedVideoPoster'}
+          src={thumbnailUrl}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+        />
+      )}
+      <div className={ready ? 'feedPlayerHost ready' : 'feedPlayerHost'} ref={hostRef} title={title} />
+      {apiFailed && !thumbnailUrl && <PlayCircle size={26} />}
+      <div className="feedPlayerTapLayer" aria-hidden="true" />
+      <div className="feedVideoControls" onClick={(event) => event.stopPropagation()}>
+        <button
+          type="button"
+          className="feedVideoControlButton"
+          onClick={() => {
+            const player = playerRef.current
+            if (!player) return
+            if (player.getPlayerState() === window.YT?.PlayerState.PLAYING) {
+              player.pauseVideo()
+            } else {
+              player.playVideo()
+            }
+          }}
+          title={isPlaying ? '일시정지' : '재생'}
+          aria-label={isPlaying ? '일시정지' : '재생'}
+          disabled={!ready}
+        >
+          {isPlaying ? <Pause size={15} /> : <PlayCircle size={15} />}
+        </button>
+        <input
+          className="feedVideoSeek"
+          type="range"
+          min="0"
+          max={progressMax}
+          step="0.1"
+          value={progressValue}
+          aria-label="재생 위치"
+          disabled={!ready || duration <= 0}
+          onChange={(event) => {
+            const nextTime = Number(event.currentTarget.value)
+            setCurrentTime(nextTime)
+            playerRef.current?.seekTo(nextTime, true)
+          }}
+        />
+        <button
+          type="button"
+          className="feedVideoControlButton"
+          onClick={() => onMutedChange(!muted)}
+          title={muted ? '음소거 해제' : '음소거'}
+          aria-label={muted ? '음소거 해제' : '음소거'}
+        >
+          {muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+        </button>
+      </div>
+    </>
   )
 }
 

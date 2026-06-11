@@ -2357,6 +2357,90 @@ h2 {
   width: 100%;
 }
 
+.feedVideoPoster {
+  inset: 0;
+  opacity: 1;
+  position: absolute;
+  transition: opacity 180ms ease;
+  z-index: 0;
+}
+
+.feedVideoPoster.loaded {
+  opacity: 0;
+}
+
+.feedPlayerHost {
+  background: #000;
+  border-radius: inherit;
+  inset: 0;
+  opacity: 0;
+  overflow: hidden;
+  position: absolute;
+  transition: opacity 180ms ease;
+  z-index: 1;
+}
+
+.feedPlayerHost.ready {
+  opacity: 1;
+}
+
+.feedPlayerHost iframe {
+  border: 0;
+  border-radius: inherit;
+  height: 100%;
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  width: 100%;
+}
+
+.feedPlayerTapLayer {
+  background: transparent;
+  inset: 0;
+  position: absolute;
+  z-index: 2;
+}
+
+.feedVideoControls {
+  align-items: center;
+  bottom: 12px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 30px minmax(0, 1fr) 30px;
+  left: 14px;
+  pointer-events: auto;
+  position: absolute;
+  right: 104px;
+  z-index: 5;
+}
+
+.feedVideoControlButton {
+  align-items: center;
+  backdrop-filter: blur(10px);
+  background: rgb(0 0 0 / 48%);
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 999px;
+  color: #fff;
+  display: inline-flex;
+  height: 30px;
+  justify-content: center;
+  padding: 0;
+  width: 30px;
+}
+
+.feedVideoControlButton:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.feedVideoSeek {
+  accent-color: #fff;
+  cursor: pointer;
+  height: 20px;
+  min-width: 0;
+  width: 100%;
+}
+
 .mediaStage .typeBadge {
   background: rgb(0 0 0 / 55%);
   border: 1px solid rgb(255 255 255 / 22%);
@@ -5801,6 +5885,12 @@ button:disabled {
 
   .feedScreen .mediaStage > .typeBadge {
     display: none;
+  }
+
+  .feedVideoControls {
+    bottom: calc(14px + env(safe-area-inset-bottom));
+    left: 12px;
+    right: 82px;
   }
 
   .feedSourceTabs {
