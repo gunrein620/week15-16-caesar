@@ -1340,7 +1340,7 @@ function YoutubeFeedPlayer({
   onMutedChange: (muted: boolean) => void
   playToggleSignal: number
 }) {
-  const hostRef = useRef<HTMLDivElement | null>(null)
+  const playerMountRef = useRef<HTMLDivElement | null>(null)
   const playerRef = useRef<YoutubePlayerInstance | null>(null)
   const [ready, setReady] = useState(false)
   const [apiFailed, setApiFailed] = useState(false)
@@ -1359,8 +1359,8 @@ function YoutubeFeedPlayer({
     setCurrentTime(0)
     loadYoutubeIframeApi()
       .then((YT) => {
-        if (cancelled || !hostRef.current) return
-        const player = new YT.Player(hostRef.current, {
+        if (cancelled || !playerMountRef.current) return
+        const player = new YT.Player(playerMountRef.current, {
           videoId,
           playerVars: {
             autoplay: 0,
@@ -1370,6 +1370,7 @@ function YoutubeFeedPlayer({
             fs: 0,
             iv_load_policy: 3,
             modestbranding: 1,
+            origin: window.location.origin,
             playsinline: 1,
             rel: 0,
           },
@@ -1467,7 +1468,11 @@ function YoutubeFeedPlayer({
           referrerPolicy="no-referrer"
         />
       )}
-      <div className={ready ? 'feedPlayerHost ready' : 'feedPlayerHost'} ref={hostRef} title={title} />
+      <div className={ready ? 'feedPlayerHost ready' : 'feedPlayerHost'} title={title}>
+        <div className="feedPlayerMount">
+          <div ref={playerMountRef} />
+        </div>
+      </div>
       {apiFailed && !thumbnailUrl && <PlayCircle size={26} />}
       <div className="feedPlayerTapLayer" aria-hidden="true" />
       <div className="feedVideoControls" onClick={(event) => event.stopPropagation()}>
