@@ -58,6 +58,17 @@ def _matches_archive_terms(source: _ChunkSource, intent: SearchIntent) -> bool:
     )
 
 
+def _matches_structured_terms(source: _ChunkSource, chunk: RagChunk, intent: SearchIntent) -> bool:
+    if not intent.include_terms and not intent.exclude_terms:
+        return True
+    haystack = normalize_search_text(" ".join([source.title, *source.tags, chunk.content]))
+    includes = [normalize_search_text(term) for term in intent.include_terms if normalize_search_text(term)]
+    excludes = [normalize_search_text(term) for term in intent.exclude_terms if normalize_search_text(term)]
+    return all(term in haystack for term in includes) and not any(
+        term in haystack for term in excludes
+    )
+
+
 def _source_boost(source: _ChunkSource, intent: SearchIntent) -> float:
     boost = 0.0
     primary_text = normalize_search_text(" ".join([source.title, *source.tags]))
@@ -101,6 +112,8 @@ def search_archive_candidates(
         if intent.media_type == "youtube" and source.source_type != "youtube":
             continue
         if not _matches_archive_terms(source, intent):
+            continue
+        if not _matches_structured_terms(source, chunk, intent):
             continue
         score = cosine_similarity(query_embedding, chunk.embedding) + _source_boost(source, intent)
         ranked.append((score, chunk, source))

@@ -70,6 +70,7 @@ import {
 } from './api'
 import { shouldTrackPanelView, trackAnalyticsEvent, type AnalyticsMetadata } from './analytics'
 import {
+  ACCESS_TOKEN_EVENT,
   configuredOauthProviders,
   getInitialAccessToken,
   oauthStartUrl,
@@ -250,6 +251,13 @@ const youtubeSourceOptions: { value: YoutubeSourceType; label: string; placehold
 
 function useStoredToken() {
   const [token, setToken] = useState(() => getInitialAccessToken())
+  useEffect(() => {
+    const handleAccessToken = (event: Event) => {
+      setToken((event as CustomEvent<string | null>).detail)
+    }
+    window.addEventListener(ACCESS_TOKEN_EVENT, handleAccessToken)
+    return () => window.removeEventListener(ACCESS_TOKEN_EVENT, handleAccessToken)
+  }, [])
   const saveToken = (next: string | null) => {
     storeAccessToken(next)
     setToken(next)

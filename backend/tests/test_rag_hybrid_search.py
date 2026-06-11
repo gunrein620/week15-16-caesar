@@ -1,8 +1,8 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 
 from app.core.db import get_session_factory
 from app.models import YoutubeSource, YoutubeVideo, YoutubeVideoSource
-from app.services.rag import refresh_video_chunks
+from app.services.rag import KST, refresh_video_chunks
 from tests.conftest import signup
 
 
@@ -14,6 +14,17 @@ def test_parse_temporal_update_intent(client):
     assert intent.temporal == "today"
     assert intent.route == "updates"
     assert intent.media_type is None
+
+
+def test_parse_today_after_time_intent(client):
+    from app.services.search_intent import parse_search_intent
+
+    intent = parse_search_intent("오늘 12시 이후 영상만 찾아줘", artist_id=1)
+
+    assert intent.temporal == "today"
+    assert intent.route == "updates"
+    assert intent.media_type == "youtube"
+    assert intent.time_after == time(12, 0)
 
 
 def test_parse_archive_song_video_intent(client):
@@ -138,6 +149,174 @@ def test_today_query_uses_recent_update_sources_not_old_vector_match(client):
     ids = [source["youtube_video_id"] for source in response.json()["sources"]]
     assert "today-video" in ids
     assert "old-video" not in ids
+
+
+def test_today_after_time_query_filters_youtube_sources_by_time(client):
+    token = signup(client, "today-after-time@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    today_kst = datetime.now(KST).date()
+    before_noon = datetime(
+        today_kst.year,
+        today_kst.month,
+        today_kst.day,
+        11,
+        30,
+        tzinfo=KST,
+    ).astimezone(UTC)
+    after_noon = datetime(
+        today_kst.year,
+        today_kst.month,
+        today_kst.day,
+        12,
+        30,
+        tzinfo=KST,
+    ).astimezone(UTC)
+
+    with get_session_factory()() as db:
+        source = YoutubeSource(
+            artist_id=1,
+            source_type="official_channel",
+            source_value="UU-time-test",
+            title="RESCENE time official",
+        )
+        before = YoutubeVideo(
+            id="today-before-noon",
+            title="RESCENE morning update",
+            description="오늘 오전 영상입니다.",
+            channel_title="RESCENE",
+            thumbnail_url="https://img.youtube.com/vi/today-before-noon/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=today-before-noon",
+            published_at=before_noon,
+            view_count=100,
+            like_count=10,
+            comment_count=1,
+            content_hash="today-before-noon-hash",
+        )
+        after = YoutubeVideo(
+            id="today-after-noon",
+            title="RESCENE noon update",
+            description="오늘 12시 이후 영상입니다.",
+            channel_title="RESCENE",
+            thumbnail_url="https://img.youtube.com/vi/today-after-noon/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=today-after-noon",
+            published_at=after_noon,
+            view_count=100,
+            like_count=10,
+            comment_count=1,
+            content_hash="today-after-noon-hash",
+        )
+        db.add_all([source, before, after])
+        db.flush()
+        db.add_all(
+            [
+                YoutubeVideoSource(video_id=before.id, source_id=source.id),
+                YoutubeVideoSource(video_id=after.id, source_id=source.id),
+            ]
+        )
+        refresh_video_chunks(db, before, artist_id=1)
+        refresh_video_chunks(db, after, artist_id=1)
+        db.commit()
+
+    response = client.post(
+        "/ai/qa",
+        json={"question": "오늘 12시 이후 영상만 찾아줘", "artist_id": 1},
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    ids = [source["youtube_video_id"] for source in response.json()["sources"]]
+    assert "today-after-noon" in ids
+    assert "today-before-noon" not in ids
+
+
+def test_llm_intent_filters_updates_with_structured_conditions(client, monkeypatch):
+    token = signup(client, "llm-structured-search@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    monkeypatch.setattr(
+        "app.services.search_intent._llm_payload",
+        lambda question, archive_terms: {
+            "route": "updates",
+            "temporal": "custom",
+            "media_type": "youtube",
+            "published_after": "2026-06-09T00:00:00+09:00",
+            "published_before": "2026-06-11T00:00:00+09:00",
+            "include_terms": ["원이"],
+            "exclude_terms": ["쇼츠"],
+            "sort": "latest",
+        },
+    )
+
+    with get_session_factory()() as db:
+        source = YoutubeSource(
+            artist_id=1,
+            source_type="official_channel",
+            source_value="UU-llm-structured",
+            title="RESCENE LLM official",
+        )
+        older = YoutubeVideo(
+            id="llm-older-woni",
+            title="RESCENE 원이 older update",
+            description="원이 영상입니다.",
+            channel_title="RESCENE",
+            thumbnail_url="https://img.youtube.com/vi/llm-older-woni/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=llm-older-woni",
+            published_at=datetime(2026, 6, 8, 12, tzinfo=UTC),
+            view_count=300,
+            like_count=10,
+            comment_count=1,
+            content_hash="llm-older-woni-hash",
+        )
+        matched = YoutubeVideo(
+            id="llm-matched-woni",
+            title="RESCENE 원이 update",
+            description="원이 직캠 영상입니다.",
+            channel_title="RESCENE",
+            thumbnail_url="https://img.youtube.com/vi/llm-matched-woni/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=llm-matched-woni",
+            published_at=datetime(2026, 6, 10, 12, tzinfo=UTC),
+            view_count=200,
+            like_count=10,
+            comment_count=1,
+            content_hash="llm-matched-woni-hash",
+        )
+        excluded = YoutubeVideo(
+            id="llm-excluded-shorts",
+            title="RESCENE 원이 쇼츠",
+            description="원이 쇼츠 영상입니다.",
+            channel_title="RESCENE",
+            thumbnail_url="https://img.youtube.com/vi/llm-excluded-shorts/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=llm-excluded-shorts",
+            published_at=datetime(2026, 6, 10, 13, tzinfo=UTC),
+            view_count=1000,
+            like_count=10,
+            comment_count=1,
+            content_hash="llm-excluded-shorts-hash",
+        )
+        db.add_all([source, older, matched, excluded])
+        db.flush()
+        db.add_all(
+            [
+                YoutubeVideoSource(video_id=older.id, source_id=source.id),
+                YoutubeVideoSource(video_id=matched.id, source_id=source.id),
+                YoutubeVideoSource(video_id=excluded.id, source_id=source.id),
+            ]
+        )
+        refresh_video_chunks(db, older, artist_id=1)
+        refresh_video_chunks(db, matched, artist_id=1)
+        refresh_video_chunks(db, excluded, artist_id=1)
+        db.commit()
+
+    response = client.post(
+        "/ai/qa",
+        json={"question": "원이 영상 찾아줘. 쇼츠는 빼고", "artist_id": 1},
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    ids = [source["youtube_video_id"] for source in response.json()["sources"]]
+    assert "llm-matched-woni" in ids
+    assert "llm-older-woni" not in ids
+    assert "llm-excluded-shorts" not in ids
 
 
 def test_qa_returns_ten_sources_and_supports_offset_without_new_answer(client):

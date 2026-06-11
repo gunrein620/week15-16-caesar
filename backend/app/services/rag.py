@@ -168,8 +168,18 @@ def _aware_utc(value: datetime) -> datetime:
 
 
 def _temporal_cutoff(intent: SearchIntent) -> datetime | None:
+    if intent.published_after is not None:
+        return intent.published_after
     if intent.temporal == "today":
         now_kst = datetime.now(KST)
+        cutoff_time = intent.time_after
+        if cutoff_time is not None:
+            return now_kst.replace(
+                hour=cutoff_time.hour,
+                minute=cutoff_time.minute,
+                second=0,
+                microsecond=0,
+            ).astimezone(UTC)
         return now_kst.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
     if intent.temporal == "recent":
         return datetime.now(UTC) - timedelta(days=7)
@@ -220,6 +230,43 @@ def _matches_temporal_archive_terms(item: UpdateFeedItem, intent: SearchIntent) 
     )
 
 
+def _matches_structured_terms(item: UpdateFeedItem, intent: SearchIntent) -> bool:
+    if not intent.include_terms and not intent.exclude_terms:
+        return True
+    from app.services.search_intent import normalize_search_text
+
+    haystack = normalize_search_text(
+        " ".join(
+            [
+                item.title,
+                item.description,
+                item.source_label,
+                *item.tags,
+                *item.matched_keywords,
+                *item.member_names,
+            ]
+        )
+    )
+    includes = [normalize_search_text(term) for term in intent.include_terms if normalize_search_text(term)]
+    excludes = [normalize_search_text(term) for term in intent.exclude_terms if normalize_search_text(term)]
+    return all(term in haystack for term in includes) and not any(
+        term in haystack for term in excludes
+    )
+
+
+def _sort_temporal_items(items: list[UpdateFeedItem], intent: SearchIntent) -> list[UpdateFeedItem]:
+    if intent.sort == "popular":
+        return sorted(
+            items,
+            key=lambda item: (
+                item.view_count if item.view_count is not None else -1,
+                _aware_utc(item.published_at),
+            ),
+            reverse=True,
+        )
+    return items
+
+
 def _temporal_update_sources(
     db: Session,
     intent: SearchIntent,
@@ -233,7 +280,15 @@ def _temporal_update_sources(
     items = response.items
     if cutoff is not None:
         items = [item for item in items if _aware_utc(item.published_at) >= cutoff]
+    if intent.published_before is not None:
+        items = [
+            item
+            for item in items
+            if _aware_utc(item.published_at) <= intent.published_before
+        ]
     items = [item for item in items if _matches_temporal_archive_terms(item, intent)]
+    items = [item for item in items if _matches_structured_terms(item, intent)]
+    items = _sort_temporal_items(items, intent)
     return [_update_source_payload(item) for item in items[offset : offset + limit]]
 
 

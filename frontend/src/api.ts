@@ -1,6 +1,29 @@
 import { resolveApiBase } from './apiBase.ts'
+import { ACCESS_TOKEN_EVENT, storeAccessToken } from './authSession.ts'
 
 export const API_BASE = resolveApiBase(import.meta.env?.VITE_API_BASE_URL, Boolean(import.meta.env?.PROD))
+
+type AuthRefreshResponse = {
+  access_token: string
+}
+
+function publishAccessToken(token: string | null) {
+  storeAccessToken(token)
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent<string | null>(ACCESS_TOKEN_EVENT, { detail: token }))
+  }
+}
+
+async function refreshAccessToken(): Promise<string | null> {
+  const response = await fetch(`${API_BASE}/auth/refresh`, { method: 'POST', credentials: 'include' })
+  if (!response.ok) {
+    publishAccessToken(null)
+    return null
+  }
+  const body = (await response.json()) as AuthRefreshResponse
+  publishAccessToken(body.access_token)
+  return body.access_token
+}
 
 export type User = {
   id: number
@@ -373,6 +396,19 @@ export async function api<T>(
   headers.set('Content-Type', 'application/json')
   if (token) headers.set('Authorization', `Bearer ${token}`)
   const response = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: 'include' })
+  if (response.status === 401 && token && path !== '/auth/refresh') {
+    const refreshedToken = await refreshAccessToken()
+    if (refreshedToken) {
+      headers.set('Authorization', `Bearer ${refreshedToken}`)
+      const retry = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: 'include' })
+      if (!retry.ok) {
+        const body = await retry.json().catch(() => ({ detail: retry.statusText }))
+        throw new Error(typeof body.detail === 'string' ? body.detail : retry.statusText)
+      }
+      if (retry.status === 204) return undefined as T
+      return retry.json() as Promise<T>
+    }
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => ({ detail: response.statusText }))
     throw new Error(typeof body.detail === 'string' ? body.detail : response.statusText)

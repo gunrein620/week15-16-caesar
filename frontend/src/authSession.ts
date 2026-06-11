@@ -2,6 +2,7 @@ import type { User } from './api.ts'
 
 export type OAuthProvider = 'google' | 'kakao' | 'naver'
 export type OAuthStatus = Record<OAuthProvider, boolean>
+export const ACCESS_TOKEN_EVENT = 'caesar:access-token'
 
 export const oauthProviderLabels: Record<OAuthProvider, string> = {
   google: 'Google 계정으로 로그인',
@@ -11,13 +12,17 @@ export const oauthProviderLabels: Record<OAuthProvider, string> = {
 
 let memoryAccessToken: string | null = null
 
-export function getInitialAccessToken(storage: Storage = window.localStorage): string | null {
-  storage.removeItem('caesar_token')
+function defaultStorage(): Storage | null {
+  return typeof window === 'undefined' ? null : window.localStorage
+}
+
+export function getInitialAccessToken(storage: Storage | null = defaultStorage()): string | null {
+  storage?.removeItem('caesar_token')
   return memoryAccessToken
 }
 
-export function storeAccessToken(token: string | null, storage: Storage = window.localStorage): string | null {
-  storage.removeItem('caesar_token')
+export function storeAccessToken(token: string | null, storage: Storage | null = defaultStorage()): string | null {
+  storage?.removeItem('caesar_token')
   memoryAccessToken = token
   return memoryAccessToken
 }
