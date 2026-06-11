@@ -21,6 +21,7 @@ from app.api.posts import _post_read, _post_query
 from app.services.quota import ai_rate_limit_cost, consume_ai_quota
 from app.services.rag import answer_question, similar_posts
 from app.services.rag_context import build_rag_context, saved_summary_context
+from app.services.search_intent import intent_to_payload
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -35,15 +36,22 @@ def qa(
 ) -> QaResponse:
     if payload.offset == 0 and payload.include_answer:
         consume_ai_quota(db, user, "qa")
-    answer, sources, has_more, next_offset = answer_question(
+    answer, sources, has_more, next_offset, intent = answer_question(
         db,
         payload.question,
         payload.artist_id,
         limit=payload.limit,
         offset=payload.offset,
         include_answer=payload.include_answer,
+        search_intent_payload=payload.search_intent,
     )
-    return QaResponse(answer=answer, sources=sources, has_more=has_more, next_offset=next_offset)
+    return QaResponse(
+        answer=answer,
+        sources=sources,
+        has_more=has_more,
+        next_offset=next_offset,
+        search_intent=intent_to_payload(intent),
+    )
 
 
 @router.post("/context", response_model=RagContextResponse)

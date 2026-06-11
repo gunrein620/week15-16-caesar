@@ -199,6 +199,7 @@ class QaRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=30)
     offset: int = Field(default=0, ge=0)
     include_answer: bool = True
+    search_intent: dict[str, Any] | None = None
 
 
 class QaResponse(BaseModel):
@@ -206,6 +207,7 @@ class QaResponse(BaseModel):
     sources: list[dict]
     has_more: bool = False
     next_offset: int | None = None
+    search_intent: dict[str, Any] | None = None
 
 
 class RagContextRequest(BaseModel):

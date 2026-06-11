@@ -319,6 +319,82 @@ def test_llm_intent_filters_updates_with_structured_conditions(client, monkeypat
     assert "llm-excluded-shorts" not in ids
 
 
+def test_load_more_reuses_search_intent_without_llm_reparse(client, monkeypatch):
+    token = signup(client, "intent-reuse@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    calls = {"count": 0}
+
+    def fake_llm_payload(question, archive_terms):
+        calls["count"] += 1
+        return {
+            "route": "updates",
+            "temporal": "recent",
+            "media_type": "youtube",
+            "published_after": None,
+            "published_before": None,
+            "include_terms": [],
+            "boost_terms": [],
+            "exclude_terms": [],
+            "source_types": ["youtube"],
+            "sort": "latest",
+        }
+
+    monkeypatch.setattr("app.services.search_intent._llm_payload", fake_llm_payload)
+
+    with get_session_factory()() as db:
+        source = YoutubeSource(
+            artist_id=1,
+            source_type="official_channel",
+            source_value="UU-intent-reuse",
+            title="RESCENE intent reuse",
+        )
+        db.add(source)
+        db.flush()
+        for index in range(12):
+            video = YoutubeVideo(
+                id=f"intent-reuse-{index:02d}",
+                title=f"RESCENE intent reuse {index:02d}",
+                description="더보기 intent 재사용 테스트 영상",
+                channel_title="RESCENE",
+                thumbnail_url=f"https://img.youtube.com/vi/intent-reuse-{index:02d}/hqdefault.jpg",
+                url=f"https://www.youtube.com/watch?v=intent-reuse-{index:02d}",
+                published_at=datetime.now(UTC) - timedelta(minutes=index),
+                view_count=100,
+                like_count=10,
+                comment_count=1,
+                content_hash=f"intent-reuse-hash-{index:02d}",
+            )
+            db.add(video)
+            db.flush()
+            db.add(YoutubeVideoSource(video_id=video.id, source_id=source.id))
+            refresh_video_chunks(db, video, artist_id=1)
+        db.commit()
+
+    first = client.post(
+        "/ai/qa",
+        json={"question": "최근 영상 찾아줘", "artist_id": 1},
+        headers=headers,
+    )
+    assert first.status_code == 200, first.text
+    assert calls["count"] == 1
+    first_body = first.json()
+    assert first_body["search_intent"]
+
+    second = client.post(
+        "/ai/qa",
+        json={
+            "question": "최근 영상 찾아줘",
+            "artist_id": 1,
+            "offset": first_body["next_offset"],
+            "include_answer": False,
+            "search_intent": first_body["search_intent"],
+        },
+        headers=headers,
+    )
+    assert second.status_code == 200, second.text
+    assert calls["count"] == 1
+
+
 def test_qa_returns_ten_sources_and_supports_offset_without_new_answer(client):
     token = signup(client, "qa-pagination@example.com")
     headers = {"Authorization": f"Bearer {token}"}

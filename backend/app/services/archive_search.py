@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.db import is_postgres
@@ -69,6 +69,14 @@ def _matches_structured_terms(source: _ChunkSource, chunk: RagChunk, intent: Sea
     )
 
 
+def _source_type_matches(source: _ChunkSource, intent: SearchIntent) -> bool:
+    if intent.media_type == "youtube" and source.source_type != "youtube":
+        return False
+    if intent.source_types and source.source_type not in intent.source_types:
+        return False
+    return True
+
+
 def _source_boost(source: _ChunkSource, intent: SearchIntent) -> float:
     boost = 0.0
     primary_text = normalize_search_text(" ".join([source.title, *source.tags]))
@@ -79,7 +87,27 @@ def _source_boost(source: _ChunkSource, intent: SearchIntent) -> float:
                 boost += 0.4
     if intent.media_type == "youtube" and source.source_type == "youtube":
         boost += 0.4
+    for term in intent.include_terms:
+        normalized = normalize_search_text(term)
+        if normalized and normalized in primary_text:
+            boost += 1.0
+    for term in intent.boost_terms:
+        normalized = normalize_search_text(term)
+        if normalized and normalized in primary_text:
+            boost += 0.5
     return boost
+
+
+def _lexical_terms(intent: SearchIntent) -> list[str]:
+    terms = [*intent.include_terms, *intent.boost_terms]
+    for term in intent.archive_terms:
+        terms.extend(term.raw_aliases)
+    seen: dict[str, None] = {}
+    for term in terms:
+        normalized = term.strip()
+        if normalized:
+            seen.setdefault(normalized, None)
+    return list(seen)[:12]
 
 
 def search_archive_candidates(
@@ -89,13 +117,14 @@ def search_archive_candidates(
     artist_id: int,
     limit: int = 10,
     offset: int = 0,
+    intent: SearchIntent | None = None,
 ) -> list[RagChunk]:
     from app.services.rag import embed_text
 
-    intent = parse_search_intent(question, artist_id=artist_id, db=db)
+    intent = intent or parse_search_intent(question, artist_id=artist_id, db=db)
     query_embedding = embed_text(question)
+    fetch_limit = max((limit + offset) * 8, 120)
     if is_postgres():
-        fetch_limit = max((limit + offset) * 4, 80)
         chunks = db.scalars(
             select(RagChunk)
             .where(RagChunk.artist_id == artist_id)
@@ -104,22 +133,37 @@ def search_archive_candidates(
         ).all()
     else:
         chunks = db.scalars(select(RagChunk).where(RagChunk.artist_id == artist_id)).all()
+    lexical_terms = _lexical_terms(intent)
+    if lexical_terms:
+        lexical_filters = [RagChunk.content.ilike(f"%{term}%") for term in lexical_terms]
+        lexical_chunks = db.scalars(
+            select(RagChunk)
+            .where(RagChunk.artist_id == artist_id)
+            .where(or_(*lexical_filters))
+            .limit(fetch_limit)
+        ).all()
+        chunks = list({chunk.id: chunk for chunk in [*chunks, *lexical_chunks]}.values())
     ranked: list[tuple[float, RagChunk, _ChunkSource]] = []
     for chunk in chunks:
         source = _source_for_chunk(db, chunk)
         if source is None:
             continue
-        if intent.media_type == "youtube" and source.source_type != "youtube":
+        if not _source_type_matches(source, intent):
             continue
         if not _matches_archive_terms(source, intent):
             continue
         if not _matches_structured_terms(source, chunk, intent):
             continue
-        score = cosine_similarity(query_embedding, chunk.embedding) + _source_boost(source, intent)
+        content_text = normalize_search_text(chunk.content)
+        lexical_boost = sum(
+            0.25
+            for term in _lexical_terms(intent)
+            if normalize_search_text(term) and normalize_search_text(term) in content_text
+        )
+        score = cosine_similarity(query_embedding, chunk.embedding) + _source_boost(source, intent) + lexical_boost
         ranked.append((score, chunk, source))
 
-    if not is_postgres():
-        ranked.sort(key=lambda item: item[0], reverse=True)
+    ranked.sort(key=lambda item: item[0], reverse=True)
     deduped: list[RagChunk] = []
     seen_sources: set[tuple[str, str]] = set()
     for _, chunk, source in ranked:

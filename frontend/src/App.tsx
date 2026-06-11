@@ -2634,7 +2634,12 @@ function RagPanel({
     },
   })
   const qa = useMutation({
-    mutationFn: (payload: { question: string; offset: number; includeAnswer: boolean }) =>
+    mutationFn: (payload: {
+      question: string
+      offset: number
+      includeAnswer: boolean
+      searchIntent?: Record<string, unknown> | null
+    }) =>
       api<QaResponse>(
         '/ai/qa',
         {
@@ -2645,6 +2650,7 @@ function RagPanel({
             limit: 10,
             offset: payload.offset,
             include_answer: payload.includeAnswer,
+            search_intent: payload.searchIntent ?? null,
           }),
         },
         token,
@@ -2659,6 +2665,7 @@ function RagPanel({
         sources: [...(current?.sources ?? []), ...data.sources],
         has_more: data.has_more,
         next_offset: data.next_offset,
+        search_intent: current?.search_intent ?? data.search_intent,
       }))
     },
   })
@@ -2770,7 +2777,12 @@ function RagPanel({
                   token,
                   metadata: { query: question, limit: 10, offset },
                 })
-                qa.mutate({ question, offset, includeAnswer: false })
+                qa.mutate({
+                  question,
+                  offset,
+                  includeAnswer: false,
+                  searchIntent: qaResult.search_intent,
+                })
               }}
             >
               더 보기

@@ -179,6 +179,7 @@ export type QaResponse = {
   sources: QaSource[]
   has_more: boolean
   next_offset: number | null
+  search_intent: Record<string, unknown> | null
 }
 
 export type RagContextResponse = {

@@ -42,7 +42,9 @@ class SearchIntent:
     published_before: datetime | None = None
     media_type: str | None = None
     include_terms: tuple[str, ...] = ()
+    boost_terms: tuple[str, ...] = ()
     exclude_terms: tuple[str, ...] = ()
+    source_types: tuple[str, ...] = ()
     sort: str | None = None
     llm_used: bool = False
     archive_terms: list[ArchiveTermMatch] = field(default_factory=list)
@@ -168,6 +170,11 @@ def _valid_media_type(value: Any) -> str | None:
     return None
 
 
+def _valid_source_types(value: Any) -> tuple[str, ...]:
+    allowed = {"youtube", "post", "briefing", "naver_news", "naver_blog"}
+    return tuple(item for item in _string_tuple(value) if item in allowed)
+
+
 def _valid_sort(value: Any) -> str | None:
     if value in {"latest", "popular", "relevance"}:
         return value
@@ -196,13 +203,16 @@ def _llm_payload(question: str, archive_terms: list[ArchiveTermMatch]) -> dict[s
         "Use ISO 8601 timestamps with timezone for date filters. Interpret relative dates in Asia/Seoul. "
         "Set media_type='youtube' only when the user asks for videos, YouTube, fancams, stages, shorts, lives, or clips. "
         "Use include_terms and exclude_terms for explicit required or excluded words, members, channels, songs, or topics. "
+        "Use boost_terms for helpful but not mandatory ranking hints. "
         "Output schema: {"
         "\"route\":\"archive|updates\","
         "\"temporal\":\"today|recent|custom|null\","
         "\"media_type\":\"youtube|null\","
+        "\"source_types\":[\"youtube|post|briefing|naver_news|naver_blog\"],"
         "\"published_after\":\"ISO|null\","
         "\"published_before\":\"ISO|null\","
         "\"include_terms\":[\"...\"],"
+        "\"boost_terms\":[\"...\"],"
         "\"exclude_terms\":[\"...\"],"
         "\"sort\":\"latest|popular|relevance|null\""
         "}."
@@ -236,6 +246,66 @@ def _llm_payload(question: str, archive_terms: list[ArchiveTermMatch]) -> dict[s
     except json.JSONDecodeError:
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def intent_to_payload(intent: SearchIntent) -> dict[str, Any]:
+    return {
+        "route": intent.route,
+        "temporal": intent.temporal,
+        "time_after": intent.time_after.isoformat() if intent.time_after else None,
+        "published_after": intent.published_after.isoformat() if intent.published_after else None,
+        "published_before": intent.published_before.isoformat() if intent.published_before else None,
+        "media_type": intent.media_type,
+        "include_terms": list(intent.include_terms),
+        "boost_terms": list(intent.boost_terms),
+        "exclude_terms": list(intent.exclude_terms),
+        "source_types": list(intent.source_types),
+        "sort": intent.sort,
+        "llm_used": intent.llm_used,
+    }
+
+
+def _parse_time(value: Any) -> time | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return time.fromisoformat(value.strip())
+    except ValueError:
+        return None
+
+
+def intent_from_payload(
+    payload: dict[str, Any],
+    *,
+    question: str,
+    artist_id: int,
+    db: Session,
+) -> SearchIntent | None:
+    route = _valid_route(payload.get("route"))
+    if route is None:
+        return None
+    temporal = _valid_temporal(payload.get("temporal"))
+    published_after = _parse_datetime(payload.get("published_after"))
+    published_before = _parse_datetime(payload.get("published_before"))
+    if route == "archive" and (published_after or published_before or temporal):
+        route = "updates"
+    return SearchIntent(
+        question=question,
+        artist_id=artist_id,
+        route=route,
+        temporal=temporal,
+        time_after=_parse_time(payload.get("time_after")),
+        published_after=published_after,
+        published_before=published_before,
+        media_type=_valid_media_type(payload.get("media_type")),
+        include_terms=_string_tuple(payload.get("include_terms")),
+        boost_terms=_string_tuple(payload.get("boost_terms")),
+        exclude_terms=_string_tuple(payload.get("exclude_terms")),
+        source_types=_valid_source_types(payload.get("source_types")),
+        sort=_valid_sort(payload.get("sort")),
+        llm_used=bool(payload.get("llm_used")),
+        archive_terms=_load_archive_terms(db, artist_id, question),
+    )
 
 
 def _load_archive_terms(
@@ -292,7 +362,9 @@ def parse_search_intent(
                     published_before=published_before,
                     media_type=media_type,
                     include_terms=_string_tuple(llm_payload.get("include_terms")),
+                    boost_terms=_string_tuple(llm_payload.get("boost_terms")),
                     exclude_terms=_string_tuple(llm_payload.get("exclude_terms")),
+                    source_types=_valid_source_types(llm_payload.get("source_types")),
                     sort=_valid_sort(llm_payload.get("sort")),
                     llm_used=True,
                     archive_terms=archive_terms,

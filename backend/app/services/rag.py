@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models import ArtistKeyword, Member, Post, RagChunk, YoutubeVideo
 from app.schemas import UpdateFeedItem
-from app.services.search_intent import SearchIntent, parse_search_intent
+from app.services.search_intent import SearchIntent, intent_from_payload, parse_search_intent
 from app.services.text import chunk_text, content_hash, cosine_similarity, deterministic_embedding
 from app.services.updates import _matches_keywords, _matches_youtube_members, get_artist_updates
 
@@ -121,10 +121,18 @@ def search_chunks(
     artist_id: int,
     limit: int = 10,
     offset: int = 0,
+    intent: SearchIntent | None = None,
 ) -> list[RagChunk]:
     from app.services.archive_search import search_archive_candidates
 
-    return search_archive_candidates(db, question, artist_id=artist_id, limit=limit, offset=offset)
+    return search_archive_candidates(
+        db,
+        question,
+        artist_id=artist_id,
+        limit=limit,
+        offset=offset,
+        intent=intent,
+    )
 
 
 def _chunk_source_payload(db: Session, chunk: RagChunk) -> dict:
@@ -231,8 +239,10 @@ def _matches_temporal_archive_terms(item: UpdateFeedItem, intent: SearchIntent) 
 
 
 def _matches_structured_terms(item: UpdateFeedItem, intent: SearchIntent) -> bool:
-    if not intent.include_terms and not intent.exclude_terms:
+    if not intent.include_terms and not intent.exclude_terms and not intent.source_types:
         return True
+    if intent.source_types and item.item_type not in intent.source_types:
+        return False
     from app.services.search_intent import normalize_search_text
 
     haystack = normalize_search_text(
@@ -265,6 +275,19 @@ def _sort_temporal_items(items: list[UpdateFeedItem], intent: SearchIntent) -> l
             reverse=True,
         )
     return items
+
+
+def _intent_for_question(
+    db: Session,
+    question: str,
+    artist_id: int,
+    payload: dict | None,
+) -> SearchIntent:
+    if payload:
+        reused = intent_from_payload(payload, question=question, artist_id=artist_id, db=db)
+        if reused is not None:
+            return reused
+    return parse_search_intent(question, artist_id=artist_id, db=db)
 
 
 def _temporal_update_sources(
@@ -324,24 +347,25 @@ def answer_question(
     limit: int = 10,
     offset: int = 0,
     include_answer: bool = True,
-) -> tuple[str, list[dict], bool, int | None]:
-    intent = parse_search_intent(question, artist_id=artist_id, db=db)
+    search_intent_payload: dict | None = None,
+) -> tuple[str, list[dict], bool, int | None, SearchIntent]:
+    intent = _intent_for_question(db, question, artist_id, search_intent_payload)
     if intent.route == "updates":
         sources = _temporal_update_sources(db, intent, limit=limit + 1, offset=offset)
         has_more = len(sources) > limit
         visible = sources[:limit]
         answer = _temporal_answer(intent, visible) if include_answer else ""
-        return answer, visible, has_more, offset + limit if has_more else None
+        return answer, visible, has_more, offset + limit if has_more else None, intent
 
-    chunks = search_chunks(db, question, artist_id, limit=limit + 1, offset=offset)
+    chunks = search_chunks(db, question, artist_id, limit=limit + 1, offset=offset, intent=intent)
     has_more = len(chunks) > limit
     chunks = chunks[:limit]
     sources = [_chunk_source_payload(db, chunk) for chunk in chunks]
     if not chunks:
         answer = "아직 참고할 게시글이나 영상 데이터가 없습니다." if include_answer else ""
-        return answer, sources, False, None
+        return answer, sources, False, None, intent
     if not include_answer:
-        return "", sources, has_more, offset + limit if has_more else None
+        return "", sources, has_more, offset + limit if has_more else None, intent
 
     settings = get_settings()
     context = format_context_for_answer(sources)
@@ -362,13 +386,20 @@ def answer_question(
                 {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"},
             ],
         )
-        return response.choices[0].message.content or "", sources, has_more, offset + limit if has_more else None
+        return (
+            response.choices[0].message.content or "",
+            sources,
+            has_more,
+            offset + limit if has_more else None,
+            intent,
+        )
 
     return (
         f"관련 근거를 찾았습니다: {chunks[0].content}",
         sources,
         has_more,
         offset + limit if has_more else None,
+        intent,
     )
 
 
