@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from html import unescape
+import json
 import re
 from typing import Annotated, Any, TypedDict
 
@@ -10,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.posts import _post_read, _post_query
+from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.rate_limit import limiter
 from app.dependencies import require_admin
@@ -28,8 +30,14 @@ HTML_RE = re.compile(r"<[^>]+>")
 class BriefingState(TypedDict):
     db: Any
     artist_id: int
+    artist_name: str
     refresh: bool
     agent_run_id: int | None
+    videos: list[Any]
+    fan_posts: list[Any]
+    naver_items: list[Any]
+    context_sources: list[dict[str, Any]]
+    highlights: list[str]
     markdown: str
 
 
@@ -128,9 +136,81 @@ def _briefing_context_query(items: list[Any]) -> str:
     )
 
 
-def _render_briefing_markdown(
+def _response_message_content(response: Any) -> str:
+    choices = response.get("choices", []) if isinstance(response, dict) else getattr(response, "choices", [])
+    if not choices:
+        return ""
+    choice = choices[0]
+    message = choice.get("message", {}) if isinstance(choice, dict) else getattr(choice, "message", {})
+    content = message.get("content", "") if isinstance(message, dict) else getattr(message, "content", "")
+    return content or ""
+
+
+def _briefing_item_payload(item: Any) -> dict[str, str]:
+    return {
+        "title": _clip(_clean_external_text(getattr(item, "title", "")), 120),
+        "description": _clip(_clean_external_text(getattr(item, "description", "")), 120),
+    }
+
+
+def _briefing_context_payload(source: dict[str, Any]) -> dict[str, str]:
+    description = _display_description_from_rag_source(source)
+    return {
+        "title": _clip(_clean_external_text(source.get("title")), 120),
+        "description": _clip(_clean_external_text(description), 120),
+    }
+
+
+def _briefing_highlights(
+    artist_name: str,
+    videos: list[Any],
+    fan_posts: list[Any],
+    naver_items: list[Any],
+    context_sources: list[dict[str, Any]],
+) -> list[str]:
+    settings = get_settings()
+    if not settings.openai_api_key:
+        return []
+
+    payload = {
+        "artist_name": artist_name,
+        "videos": [_briefing_item_payload(item) for item in videos[:5]],
+        "fan_posts": [_briefing_item_payload(item) for item in fan_posts[:3]],
+        "naver_items": [_briefing_item_payload(item) for item in naver_items[:3]],
+        "context_sources": [_briefing_context_payload(source) for source in context_sources[:3]],
+    }
+    system = (
+        "RESCENE(리센느) 팬 아카이브의 오늘 브리핑 핵심 요약을 한국어로 작성하세요. "
+        "자료에 있는 사실만 종합해 2~4개의 완결된 문장 불릿을 만드세요. "
+        "JSON {\"highlights\": [\"...\"]}만 반환하세요."
+    )
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=settings.openai_api_key)
+        response = client.chat.completions.create(
+            model=settings.chat_model,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+        )
+        parsed = json.loads(_response_message_content(response))
+    except Exception:
+        return []
+
+    if not isinstance(parsed, dict):
+        return []
+    highlights = parsed.get("highlights")
+    if not isinstance(highlights, list) or not all(isinstance(item, str) for item in highlights):
+        return []
+    return [item.strip() for item in highlights if item.strip()][:4]
+
+
+def _collect_briefing_state(
     db: Session, artist_id: int, refresh: bool, agent_run_id: int | None = None
-) -> str:
+) -> dict[str, Any]:
     artist = db.get(Artist, artist_id)
     if artist is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
@@ -153,16 +233,39 @@ def _render_briefing_markdown(
         mode="briefing",
         limit=3,
     )
+    return {
+        "artist_name": artist.name,
+        "videos": videos,
+        "fan_posts": fan_posts,
+        "naver_items": naver_items,
+        "context_sources": context.sources,
+    }
+
+
+def _render_briefing_markdown(
+    artist_name: str,
+    videos: list[Any],
+    fan_posts: list[Any],
+    naver_items: list[Any],
+    context_sources: list[dict[str, Any]],
+    highlights: list[str],
+) -> str:
     lines = [
-        f"{artist.name} 오늘의 요약",
+        f"{artist_name} 오늘의 요약",
         f"기준일: {datetime.now(UTC).date().isoformat()}",
         "",
         "핵심 요약",
-        f"- 최근 영상 {len(videos[:5])}개, Naver 소식 {len(naver_items[:3])}개, 팬 게시글 {len(fan_posts[:3])}개를 확인했습니다.",
-        "- 자세히 볼 만한 링크를 아래에 모았습니다.",
-        "",
-        "최근 영상",
     ]
+    if highlights:
+        lines.extend(f"- {highlight}" for highlight in highlights)
+    else:
+        lines.extend(
+            [
+                f"- 최근 영상 {len(videos[:5])}개, Naver 소식 {len(naver_items[:3])}개, 팬 게시글 {len(fan_posts[:3])}개를 확인했습니다.",
+                "- 자세히 볼 만한 링크를 아래에 모았습니다.",
+            ]
+        )
+    lines.extend(["", "최근 영상"])
     if videos:
         for index, video in enumerate(videos[:5], start=1):
             title = _clip(_clean_external_text(video.title), 90)
@@ -193,8 +296,8 @@ def _render_briefing_markdown(
         lines.append("- 아직 동기화된 Naver 소식이 없습니다.")
     lines.append("")
     lines.append("과거 맥락")
-    if context.sources:
-        for index, source in enumerate(context.sources[:3], start=1):
+    if context_sources:
+        for index, source in enumerate(context_sources[:3], start=1):
             title = _clip(_clean_external_text(source.get("title")), 90)
             lines.append(f"{index}. {title}")
             if source.get("url"):
@@ -209,25 +312,56 @@ def _briefing_markdown(
 ) -> str:
     graph = StateGraph(BriefingState)
 
-    def render_node(state: BriefingState) -> dict[str, str]:
+    def collect_node(state: BriefingState) -> dict[str, Any]:
+        return _collect_briefing_state(
+            state["db"],
+            state["artist_id"],
+            state["refresh"],
+            state["agent_run_id"],
+        )
+
+    def summarize_node(state: BriefingState) -> dict[str, list[str]]:
         return {
-            "markdown": _render_briefing_markdown(
-                state["db"],
-                state["artist_id"],
-                state["refresh"],
-                state["agent_run_id"],
+            "highlights": _briefing_highlights(
+                state["artist_name"],
+                state["videos"],
+                state["fan_posts"],
+                state["naver_items"],
+                state["context_sources"],
             )
         }
 
+    def render_node(state: BriefingState) -> dict[str, str]:
+        return {
+            "markdown": _render_briefing_markdown(
+                state["artist_name"],
+                state["videos"],
+                state["fan_posts"],
+                state["naver_items"],
+                state["context_sources"],
+                state["highlights"],
+            )
+        }
+
+    graph.add_node("collect", collect_node)
+    graph.add_node("summarize", summarize_node)
     graph.add_node("render", render_node)
-    graph.add_edge(START, "render")
+    graph.add_edge(START, "collect")
+    graph.add_edge("collect", "summarize")
+    graph.add_edge("summarize", "render")
     graph.add_edge("render", END)
     result = graph.compile().invoke(
         {
             "db": db,
             "artist_id": artist_id,
+            "artist_name": "",
             "refresh": refresh,
             "agent_run_id": agent_run_id,
+            "videos": [],
+            "fan_posts": [],
+            "naver_items": [],
+            "context_sources": [],
+            "highlights": [],
             "markdown": "",
         }
     )

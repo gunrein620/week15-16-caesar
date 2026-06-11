@@ -12,6 +12,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("AI_DAILY_GLOBAL_LIMIT", "20")
     monkeypatch.setenv("SEED_ADMIN_EMAIL", "admin@example.com")
     monkeypatch.setenv("SEED_ADMIN_PASSWORD", "admin-password")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     from app.core.config import reset_settings_cache
     from app.core.db import Base, get_engine, get_session_factory, reset_engine

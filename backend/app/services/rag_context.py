@@ -1,8 +1,10 @@
 from dataclasses import dataclass
+import json
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.models import SavedItem, User
 from app.services.rag import _chunk_source_payload, search_chunks
 
@@ -64,6 +66,64 @@ def _summary_for(mode: str, query: str, sources: list[dict]) -> str:
     return f"오늘 자료와 이어지는 과거 맥락 {len(sources)}개를 찾았습니다: {titles}"
 
 
+def _response_message_content(response: object) -> str:
+    choices = response.get("choices", []) if isinstance(response, dict) else getattr(response, "choices", [])
+    if not choices:
+        return ""
+    choice = choices[0]
+    message = choice.get("message", {}) if isinstance(choice, dict) else getattr(choice, "message", {})
+    content = message.get("content", "") if isinstance(message, dict) else getattr(message, "content", "")
+    return content or ""
+
+
+def _llm_context_summary(mode: str, query: str, sources: list[dict]) -> str | None:
+    settings = get_settings()
+    if not settings.openai_api_key:
+        return None
+
+    instructions = {
+        "writing_assist": "작성 중인 글과 연결되는 자료들을 1~2문장 한국어로 소개하세요.",
+        "saved_summary": "저장한 자료들의 공통 주제를 1~2문장으로 요약하세요.",
+    }
+    instruction = instructions.get(mode, "자료들이 보여주는 과거 맥락을 1~2문장으로 요약하세요.")
+    payload = {
+        "mode": mode,
+        "query": query,
+        "sources": [
+            {
+                "title": source.get("title") or "",
+                "source_type": source.get("source_type") or "",
+            }
+            for source in sources[:5]
+        ],
+    }
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=settings.openai_api_key)
+        response = client.chat.completions.create(
+            model=settings.rerank_model,
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "system",
+                    "content": f"{instruction} JSON {{\"summary\": \"...\"}}만 반환하세요.",
+                },
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+        )
+        parsed = json.loads(_response_message_content(response))
+    except Exception:
+        return None
+
+    if not isinstance(parsed, dict):
+        return None
+    summary = parsed.get("summary")
+    if not isinstance(summary, str) or not summary.strip():
+        return None
+    return summary.strip()
+
+
 def build_rag_context(
     db: Session,
     *,
@@ -79,8 +139,9 @@ def build_rag_context(
         return RagContextResult("요약할 기준 자료가 아직 충분하지 않습니다.", [])
     chunks = search_chunks(db, normalized, artist_id=artist_id, limit=limit)
     sources = dedupe_sources([_chunk_source_payload(db, chunk) for chunk in chunks])[:limit]
+    summary = _llm_context_summary(mode, normalized, sources) if sources else None
     return RagContextResult(
-        summary=_summary_for(mode, normalized, sources),
+        summary=summary or _summary_for(mode, normalized, sources),
         sources=sources,
         insert_text=build_insert_text(sources[0] if sources else None) if mode == "writing_assist" else "",
     )
