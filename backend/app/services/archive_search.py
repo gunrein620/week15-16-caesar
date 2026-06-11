@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.db import is_postgres
@@ -52,7 +52,7 @@ def _matches_archive_terms(source: _ChunkSource, intent: SearchIntent) -> bool:
     if not intent.archive_terms:
         return True
     primary_text = normalize_search_text(" ".join([source.title, *source.tags]))
-    return all(
+    return any(
         any(alias in primary_text for alias in term.aliases)
         for term in intent.archive_terms
     )
@@ -80,22 +80,28 @@ def _source_type_matches(source: _ChunkSource, intent: SearchIntent) -> bool:
 def _source_boost(source: _ChunkSource, intent: SearchIntent) -> float:
     boost = 0.0
     primary_text = normalize_search_text(" ".join([source.title, *source.tags]))
+    archive_boost = 0.0
     for term in intent.archive_terms:
         if any(alias in primary_text for alias in term.aliases):
-            boost += 2.0
+            archive_boost += 0.10
             if term.term_type == "song":
-                boost += 0.4
+                archive_boost += 0.02
+    boost += min(archive_boost, 0.20)
     if intent.media_type == "youtube" and source.source_type == "youtube":
-        boost += 0.4
+        boost += 0.04
+    include_boost = 0.0
     for term in intent.include_terms:
         normalized = normalize_search_text(term)
         if normalized and normalized in primary_text:
-            boost += 1.0
+            include_boost += 0.06
+    boost += min(include_boost, 0.12)
+    term_boost = 0.0
     for term in intent.boost_terms:
         normalized = normalize_search_text(term)
         if normalized and normalized in primary_text:
-            boost += 0.5
-    return boost
+            term_boost += 0.03
+    boost += min(term_boost, 0.06)
+    return min(boost, 0.35)
 
 
 def _lexical_terms(intent: SearchIntent) -> list[str]:
@@ -110,6 +116,31 @@ def _lexical_terms(intent: SearchIntent) -> list[str]:
     return list(seen)[:12]
 
 
+def _embedding_query(question: str, intent: SearchIntent) -> str:
+    terms = [*intent.include_terms, *intent.boost_terms]
+    for term in intent.archive_terms:
+        terms.extend(term.raw_aliases)
+    seen: dict[str, None] = {}
+    for term in terms:
+        normalized = term.strip()
+        if normalized:
+            seen.setdefault(normalized, None)
+        if len(seen) >= 8:
+            break
+    if not seen:
+        return question
+    return f"{question}\n핵심 키워드: {', '.join(seen)}"
+
+
+def _lexical_filter(term: str):
+    compact_term = term.lower().replace(" ", "")
+    compact_content = func.replace(func.lower(RagChunk.content), " ", "")
+    return or_(
+        RagChunk.content.ilike(f"%{term}%"),
+        compact_content.ilike(f"%{compact_term}%"),
+    )
+
+
 def search_archive_candidates(
     db: Session,
     question: str,
@@ -122,7 +153,7 @@ def search_archive_candidates(
     from app.services.rag import embed_text
 
     intent = intent or parse_search_intent(question, artist_id=artist_id, db=db)
-    query_embedding = embed_text(question)
+    query_embedding = embed_text(_embedding_query(question, intent))
     fetch_limit = max((limit + offset) * 8, 120)
     if is_postgres():
         chunks = db.scalars(
@@ -135,7 +166,7 @@ def search_archive_candidates(
         chunks = db.scalars(select(RagChunk).where(RagChunk.artist_id == artist_id)).all()
     lexical_terms = _lexical_terms(intent)
     if lexical_terms:
-        lexical_filters = [RagChunk.content.ilike(f"%{term}%") for term in lexical_terms]
+        lexical_filters = [_lexical_filter(term) for term in lexical_terms]
         lexical_chunks = db.scalars(
             select(RagChunk)
             .where(RagChunk.artist_id == artist_id)
@@ -155,12 +186,16 @@ def search_archive_candidates(
         if not _matches_structured_terms(source, chunk, intent):
             continue
         content_text = normalize_search_text(chunk.content)
-        lexical_boost = sum(
-            0.25
-            for term in _lexical_terms(intent)
-            if normalize_search_text(term) and normalize_search_text(term) in content_text
+        lexical_boost = min(
+            sum(
+                0.02
+                for term in _lexical_terms(intent)
+                if normalize_search_text(term) and normalize_search_text(term) in content_text
+            ),
+            0.06,
         )
-        score = cosine_similarity(query_embedding, chunk.embedding) + _source_boost(source, intent) + lexical_boost
+        boost = min(_source_boost(source, intent) + lexical_boost, 0.35)
+        score = cosine_similarity(query_embedding, chunk.embedding) + boost
         ranked.append((score, chunk, source))
 
     ranked.sort(key=lambda item: item[0], reverse=True)

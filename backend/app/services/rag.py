@@ -232,7 +232,7 @@ def _matches_temporal_archive_terms(item: UpdateFeedItem, intent: SearchIntent) 
     haystack = normalize_search_text(
         " ".join([item.title, item.description, *item.tags, *item.matched_keywords])
     )
-    return all(
+    return any(
         any(alias in haystack for alias in term.aliases)
         for term in intent.archive_terms
     )
@@ -357,7 +357,52 @@ def answer_question(
         answer = _temporal_answer(intent, visible) if include_answer else ""
         return answer, visible, has_more, offset + limit if has_more else None, intent
 
-    chunks = search_chunks(db, question, artist_id, limit=limit + 1, offset=offset, intent=intent)
+    settings = get_settings()
+    if offset == 0:
+        candidate_limit = max(settings.rerank_candidates, limit + 1)
+        chunks = search_chunks(
+            db,
+            question,
+            artist_id,
+            limit=candidate_limit,
+            offset=0,
+            intent=intent,
+        )
+        if settings.rerank_enabled and settings.openai_api_key and chunks:
+            from app.services.rerank import rerank_sources
+
+            rerank_candidates = []
+            for chunk in chunks:
+                source = _chunk_source_payload(db, chunk)
+                rerank_candidates.append(
+                    {
+                        "id": chunk.id,
+                        "title": source.get("title", ""),
+                        "snippet": chunk.content[:200],
+                    }
+                )
+            ranking = rerank_sources(question, rerank_candidates, top_k=limit)
+            if ranking is not None:
+                chunk_by_id = {chunk.id: chunk for chunk in chunks}
+                ranked_chunks = [
+                    chunk_by_id[chunk_id]
+                    for chunk_id in ranking
+                    if chunk_id in chunk_by_id
+                ]
+                ranked_ids = {chunk.id for chunk in ranked_chunks}
+                chunks = [
+                    *ranked_chunks,
+                    *(chunk for chunk in chunks if chunk.id not in ranked_ids),
+                ]
+    else:
+        chunks = search_chunks(
+            db,
+            question,
+            artist_id,
+            limit=limit + 1,
+            offset=offset,
+            intent=intent,
+        )
     has_more = len(chunks) > limit
     chunks = chunks[:limit]
     sources = [_chunk_source_payload(db, chunk) for chunk in chunks]
@@ -367,7 +412,6 @@ def answer_question(
     if not include_answer:
         return "", sources, has_more, offset + limit if has_more else None, intent
 
-    settings = get_settings()
     context = format_context_for_answer(sources)
     if settings.openai_api_key:
         from openai import OpenAI
@@ -407,13 +451,25 @@ def similar_posts(db: Session, post_id: int, limit: int = 5) -> list[Post]:
     source_post = db.get(Post, post_id)
     if source_post is None:
         return []
-    source_embedding = embed_text(f"{source_post.title}\n\n{source_post.content}")
-    posts = db.scalars(select(Post).where(Post.id != post_id, Post.artist_id == source_post.artist_id)).all()
+    source_chunk = db.scalar(
+        select(RagChunk).where(RagChunk.post_id == post_id, RagChunk.chunk_index == 0)
+    )
+    if source_chunk is not None:
+        source_embedding = source_chunk.embedding
+    else:
+        source_embedding = embed_text(f"{source_post.title}\n\n{source_post.content}")
+    rows = db.execute(
+        select(Post, RagChunk)
+        .join(RagChunk, RagChunk.post_id == Post.id)
+        .where(
+            Post.id != post_id,
+            Post.artist_id == source_post.artist_id,
+            RagChunk.chunk_index == 0,
+        )
+    ).all()
     ranked = sorted(
-        posts,
-        key=lambda post: cosine_similarity(
-            source_embedding, embed_text(f"{post.title}\n\n{post.content}")
-        ),
+        rows,
+        key=lambda row: cosine_similarity(source_embedding, row[1].embedding),
         reverse=True,
     )
-    return ranked[:limit]
+    return [row[0] for row in ranked[:limit]]

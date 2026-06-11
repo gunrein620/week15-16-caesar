@@ -1,0 +1,12 @@
+{"question": "원이 관련 아카이브 찾아줘", "expect": {"source_type": null, "title_contains_any": ["원이", "woni"]}}
+{"question": "리브 직캠 영상 찾아줘", "expect": {"source_type": "youtube", "title_contains_any": ["리브", "liv"]}}
+{"question": "미나미 라이브 영상 모아줘", "expect": {"source_type": "youtube", "title_contains_any": ["미나미", "minami"]}}
+{"question": "메이 생목 라이브 있니?", "expect": {"source_type": "youtube", "title_contains_any": ["메이", "may", "라이브", "live"]}}
+{"question": "제나 무대 직캠 보여줘", "expect": {"source_type": "youtube", "title_contains_any": ["제나", "zena"]}}
+{"question": "러브어택 무대 영상 찾아줘", "expect": {"source_type": "youtube", "title_contains_any": ["러브어택", "love attack", "loveattack"]}}
+{"question": "Love Attack 활동 이야기 요약 근거 찾아줘", "expect": {"source_type": null, "title_contains_any": ["러브어택", "love attack"]}}
+{"question": "러브 어택 관련 게시글 찾아줘", "expect": {"source_type": "post", "title_contains_any": ["러브어택", "love attack"]}}
+{"question": "팬 커뮤니티 이용 안내 게시글 찾아줘", "expect": {"source_type": "post", "title_contains_any": ["팬 커뮤니티", "이용 안내"]}}
+{"question": "리센느 입덕 포인트 글 찾아줘", "expect": {"source_type": "post", "title_contains_any": ["입덕", "리센느"]}}
+{"question": "최근 브리핑 게시글 찾아줘", "expect": {"source_type": "post", "title_contains_any": ["브리핑", "briefing"]}}
+{"question": "리센느 라이브 생목 영상 추천해줘", "expect": {"source_type": "youtube", "title_contains_any": ["라이브", "live", "생목"]}}

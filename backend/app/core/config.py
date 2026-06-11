@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     seed_admin_password: str = "change-me-admin"
     embedding_model: str = "text-embedding-3-small"
     chat_model: str = "gpt-5.5"
+    rerank_model: str = "gpt-5.5-mini"
+    rerank_candidates: int = 30
+    rerank_enabled: bool = True
 
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
