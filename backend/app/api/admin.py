@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
@@ -36,8 +36,13 @@ from app.schemas import (
     RagEmbeddingJobRead,
     RagEmbedYoutubeRequest,
     RagEmbedYoutubeResult,
+    RagExternalUpdateBackfillRequest,
+    RagExternalUpdateBackfillResult,
     RagTranscriptBatchRequest,
     RagTranscriptBatchResult,
+    RagTranscriptPendingRead,
+    RagTranscriptUploadRequest,
+    RagTranscriptUploadResult,
     SignupSettingsRead,
     SignupSettingsUpdate,
     SyncSettings,
@@ -55,12 +60,17 @@ from app.services.auth_sessions import revoke_user_sessions
 from app.services.rag_admin import (
     cleanup_rag_chunks,
     create_rag_embedding_job,
+    embed_external_updates_backfill,
     embed_youtube_batch,
     get_rag_coverage,
     latest_rag_embedding_job,
     process_rag_embedding_job_batch,
 )
-from app.services.transcripts import fetch_transcripts_batch
+from app.services.transcripts import (
+    fetch_transcripts_batch,
+    list_pending_transcript_videos,
+    upload_video_transcript,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 ADMIN_ROLES = {"user", "admin"}
@@ -389,5 +399,61 @@ def fetch_youtube_transcript_batch(
         days=payload.days,
         force=payload.force,
     )
+    db.commit()
+    return result
+
+
+@router.post("/rag/transcripts/upload", response_model=RagTranscriptUploadResult)
+def upload_youtube_transcript(
+    payload: RagTranscriptUploadRequest,
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, int | str]:
+    segments = [
+        {
+            "start": segment.start,
+            "duration": 0.0,
+            "text": segment.text,
+        }
+        for segment in payload.segments
+    ]
+    result = upload_video_transcript(
+        db,
+        video_id=payload.video_id,
+        lang=payload.lang,
+        segments=segments,
+        mark_unavailable=payload.mark_unavailable,
+    )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="YouTube video not found")
+    db.commit()
+    return result
+
+
+@router.get("/rag/transcripts/pending", response_model=list[RagTranscriptPendingRead])
+def list_pending_youtube_transcripts(
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+    artist_id: int = 1,
+    limit: int = Query(default=50, ge=1, le=200),
+    days: int | None = Query(default=None, ge=1, le=3650),
+    include_failed: bool = False,
+) -> list:
+    return list_pending_transcript_videos(
+        db,
+        artist_id,
+        limit=limit,
+        days=days,
+        include_failed=include_failed,
+    )
+
+
+@router.post("/rag/external-updates/backfill", response_model=RagExternalUpdateBackfillResult)
+def backfill_external_update_chunks(
+    payload: RagExternalUpdateBackfillRequest,
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, int]:
+    result = embed_external_updates_backfill(db, payload.artist_id, limit=payload.limit)
     db.commit()
     return result

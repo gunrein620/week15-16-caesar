@@ -382,6 +382,44 @@ class RagTranscriptBatchResult(BaseModel):
     created_chunks: int
 
 
+class RagTranscriptUploadSegment(BaseModel):
+    start: float = Field(ge=0)
+    text: str = Field(max_length=2000)
+
+
+class RagTranscriptUploadRequest(BaseModel):
+    video_id: str
+    lang: str = Field(default="", max_length=16)
+    segments: list[RagTranscriptUploadSegment] = Field(default_factory=list, max_length=5000)
+    mark_unavailable: bool = False
+
+
+class RagTranscriptUploadResult(BaseModel):
+    video_id: str
+    created_chunks: int
+    status: str
+
+
+class RagTranscriptPendingRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    title: str
+    published_at: datetime | None
+    transcript_status: str
+
+
+class RagExternalUpdateBackfillRequest(BaseModel):
+    artist_id: int = 1
+    limit: int = Field(default=200, ge=1, le=500)
+
+
+class RagExternalUpdateBackfillResult(BaseModel):
+    processed: int
+    embedded: int
+    skipped: int
+
+
 class RagEmbeddingJobCreate(BaseModel):
     artist_id: int = 1
     scope: Literal["recent_90d", "all"] = "recent_90d"

@@ -159,7 +159,7 @@ def _timestamp_label(seconds: int) -> str:
     return f"[{minutes}:{secs:02d}]"
 
 
-def _replace_transcript_chunks(
+def replace_video_transcript_chunks(
     db: Session,
     video: YoutubeVideo,
     artist_id: int,
@@ -204,7 +204,52 @@ def refresh_video_transcript_chunks(db: Session, video: YoutubeVideo, artist_id:
     status, _, segments = fetch_video_transcript(video.id)
     if status != "fetched":
         return 0
-    return _replace_transcript_chunks(db, video, artist_id, segments)
+    return replace_video_transcript_chunks(db, video, artist_id, segments)
+
+
+def _artist_id_for_video(db: Session, video_id: str) -> int:
+    artist_id = db.scalar(
+        select(YoutubeSource.artist_id)
+        .join(YoutubeVideoSource, YoutubeVideoSource.source_id == YoutubeSource.id)
+        .where(YoutubeVideoSource.video_id == video_id)
+        .order_by(YoutubeSource.artist_id.asc())
+        .limit(1)
+    )
+    if artist_id is not None:
+        return int(artist_id)
+    chunk_artist_id = db.scalar(
+        select(RagChunk.artist_id)
+        .where(RagChunk.youtube_video_id == video_id)
+        .order_by(RagChunk.chunk_index.asc(), RagChunk.id.asc())
+        .limit(1)
+    )
+    return int(chunk_artist_id or 1)
+
+
+def upload_video_transcript(
+    db: Session,
+    *,
+    video_id: str,
+    lang: str,
+    segments: list[dict[str, Any]],
+    mark_unavailable: bool,
+) -> dict[str, int | str] | None:
+    video = db.get(YoutubeVideo, video_id)
+    if video is None:
+        return None
+    if mark_unavailable or not segments:
+        video.transcript_status = "unavailable"
+        video.transcript_fetched_at = datetime.now(UTC)
+        db.flush()
+        return {"video_id": video.id, "created_chunks": 0, "status": "unavailable"}
+
+    artist_id = _artist_id_for_video(db, video.id)
+    created_chunks = replace_video_transcript_chunks(db, video, artist_id, segments)
+    video.transcript_status = "fetched"
+    video.transcript_lang = lang.strip()
+    video.transcript_fetched_at = datetime.now(UTC)
+    db.flush()
+    return {"video_id": video.id, "created_chunks": created_chunks, "status": "fetched"}
 
 
 def _candidate_statement(
@@ -221,10 +266,35 @@ def _candidate_statement(
         .order_by(YoutubeVideo.published_at.desc().nullslast(), YoutubeVideo.id.asc())
     )
     if not force:
-        statement = statement.where(YoutubeVideo.transcript_status.in_(["pending", "failed"]))
+        statement = statement.where(YoutubeVideo.transcript_status == "pending")
     if days is not None:
         statement = statement.where(YoutubeVideo.published_at >= datetime.now(UTC) - timedelta(days=days))
     return statement
+
+
+def list_pending_transcript_videos(
+    db: Session,
+    artist_id: int,
+    *,
+    limit: int,
+    days: int | None = None,
+    include_failed: bool = False,
+) -> list[YoutubeVideo]:
+    statuses = ["pending", "failed"] if include_failed else ["pending"]
+    statement = (
+        select(YoutubeVideo)
+        .join(YoutubeVideoSource, YoutubeVideoSource.video_id == YoutubeVideo.id)
+        .join(YoutubeSource, YoutubeSource.id == YoutubeVideoSource.source_id)
+        .where(
+            YoutubeSource.artist_id == artist_id,
+            YoutubeVideo.transcript_status.in_(statuses),
+        )
+        .order_by(YoutubeVideo.published_at.desc().nullslast(), YoutubeVideo.id.asc())
+        .limit(limit)
+    )
+    if days is not None:
+        statement = statement.where(YoutubeVideo.published_at >= datetime.now(UTC) - timedelta(days=days))
+    return list(db.scalars(statement).unique().all())
 
 
 def fetch_transcripts_batch(
@@ -252,7 +322,12 @@ def fetch_transcripts_batch(
         try:
             status, lang, segments = fetch_video_transcript(video.id)
             if status == "fetched":
-                stats["created_chunks"] += _replace_transcript_chunks(db, video, artist_id, segments)
+                stats["created_chunks"] += replace_video_transcript_chunks(
+                    db,
+                    video,
+                    artist_id,
+                    segments,
+                )
             elif status not in {"unavailable", "failed"}:
                 status = "failed"
             video.transcript_status = status

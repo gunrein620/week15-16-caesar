@@ -4,8 +4,22 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.models import RagChunk, RagEmbeddingJob, YoutubeSource, YoutubeVideo, YoutubeVideoSource
-from app.services.rag import build_video_embedding_text, embed_texts, refresh_video_chunks, video_embedding_hash
+from app.models import (
+    ExternalUpdate,
+    RagChunk,
+    RagEmbeddingJob,
+    YoutubeSource,
+    YoutubeVideo,
+    YoutubeVideoSource,
+)
+from app.services.rag import (
+    build_external_update_embedding_text,
+    build_video_embedding_text,
+    embed_texts,
+    refresh_external_update_chunks,
+    refresh_video_chunks,
+    video_embedding_hash,
+)
 from app.services.text import content_hash
 
 STANDARD_EMBEDDING_USD_PER_1M = 0.02
@@ -282,6 +296,44 @@ def embed_youtube_batch(
         "created_chunks": created_chunks,
         "remaining_missing": remaining_missing,
         "estimated_tokens": estimated_tokens,
+    }
+
+
+def embed_external_updates_backfill(
+    db: Session,
+    artist_id: int,
+    *,
+    limit: int,
+) -> dict[str, int]:
+    processed = 0
+    embedded = 0
+    skipped = 0
+    items = db.scalars(
+        select(ExternalUpdate)
+        .where(ExternalUpdate.artist_id == artist_id)
+        .order_by(ExternalUpdate.published_at.desc(), ExternalUpdate.id.desc())
+    ).all()
+    for item in items:
+        if embedded >= limit:
+            break
+        processed += 1
+        expected_hash = content_hash(build_external_update_embedding_text(item))
+        chunk = db.scalar(
+            select(RagChunk).where(
+                RagChunk.external_update_id == item.id,
+                RagChunk.chunk_index == 0,
+            )
+        )
+        if chunk is not None and chunk.content_hash == expected_hash:
+            skipped += 1
+            continue
+        refresh_external_update_chunks(db, item)
+        embedded += 1
+    return {
+        "processed": processed,
+        "embedded": embedded,
+        "skipped": skipped,
+        "remaining_missing": max(len(items) - processed, 0),
     }
 
 

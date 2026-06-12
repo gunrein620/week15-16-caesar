@@ -11,7 +11,11 @@ from app.services.rag import (
     search_chunks,
 )
 from app.services.rag_admin import _chunks_are_stale, cleanup_rag_chunks, get_rag_coverage
-from app.services.transcripts import build_transcript_windows, refresh_video_transcript_chunks
+from app.services.transcripts import (
+    build_transcript_windows,
+    fetch_transcripts_batch,
+    refresh_video_transcript_chunks,
+)
 from tests.conftest import login
 
 
@@ -208,6 +212,252 @@ def test_fetch_transcripts_batch_status_transitions_through_admin(client, monkey
     assert rows["transcript-failed"].transcript_status == "failed"
     assert chunk is not None
     assert chunk.content.startswith("[2:05] ")
+
+
+def test_upload_transcript_endpoint_replaces_chunks_marks_empty_and_404s(client):
+    admin_token = login(client, "admin@example.com", "admin-password")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    with get_session_factory()() as db:
+        normal = _video("upload-normal")
+        empty = _video("upload-empty", status="fetched")
+        empty.transcript_lang = "ko"
+        _add_source_with_videos(db, [normal, empty])
+        db.flush()
+        refresh_video_chunks(db, normal, artist_id=1)
+        db.add_all(
+            [
+                RagChunk(
+                    artist_id=1,
+                    youtube_video_id=normal.id,
+                    chunk_index=1,
+                    content="[0:01] 이전 자막",
+                    content_hash="old-normal-transcript",
+                    embedding=[0.0] * 1536,
+                ),
+                RagChunk(
+                    artist_id=1,
+                    youtube_video_id=empty.id,
+                    chunk_index=1,
+                    content="[0:02] 보존될 자막",
+                    content_hash="old-empty-transcript",
+                    embedding=[0.0] * 1536,
+                ),
+            ]
+        )
+        db.commit()
+
+    uploaded = client.post(
+        "/admin/rag/transcripts/upload",
+        json={
+            "video_id": "upload-normal",
+            "lang": "ko",
+            "segments": [
+                {"start": 3, "text": "첫 업로드 자막"},
+                {"start": 20, "text": "둘째 업로드 자막"},
+            ],
+        },
+        headers=headers,
+    )
+    emptied = client.post(
+        "/admin/rag/transcripts/upload",
+        json={"video_id": "upload-empty", "segments": []},
+        headers=headers,
+    )
+    missing = client.post(
+        "/admin/rag/transcripts/upload",
+        json={"video_id": "upload-missing", "segments": []},
+        headers=headers,
+    )
+
+    assert uploaded.status_code == 200, uploaded.text
+    assert uploaded.json() == {
+        "video_id": "upload-normal",
+        "created_chunks": 1,
+        "status": "fetched",
+    }
+    assert emptied.status_code == 200, emptied.text
+    assert emptied.json() == {
+        "video_id": "upload-empty",
+        "created_chunks": 0,
+        "status": "unavailable",
+    }
+    assert missing.status_code == 404
+    with get_session_factory()() as db:
+        normal_video = db.get(YoutubeVideo, "upload-normal")
+        empty_video = db.get(YoutubeVideo, "upload-empty")
+        normal_chunks = db.scalars(
+            select(RagChunk)
+            .where(RagChunk.youtube_video_id == "upload-normal")
+            .order_by(RagChunk.chunk_index)
+        ).all()
+        empty_chunk = db.scalar(
+            select(RagChunk).where(
+                RagChunk.youtube_video_id == "upload-empty",
+                RagChunk.chunk_index == 1,
+            )
+        )
+
+    assert normal_video is not None
+    assert normal_video.transcript_status == "fetched"
+    assert normal_video.transcript_lang == "ko"
+    assert normal_video.transcript_fetched_at is not None
+    assert [chunk.chunk_index for chunk in normal_chunks] == [0, 1]
+    assert normal_chunks[1].content == "[0:03] 첫 업로드 자막 둘째 업로드 자막"
+    assert empty_video is not None
+    assert empty_video.transcript_status == "unavailable"
+    assert empty_video.transcript_lang == "ko"
+    assert empty_video.transcript_fetched_at is not None
+    assert empty_chunk is not None
+    assert empty_chunk.content == "[0:02] 보존될 자막"
+
+
+def test_pending_transcripts_endpoint_filters_status_days_and_include_failed(client):
+    admin_token = login(client, "admin@example.com", "admin-password")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    now = datetime.now(UTC)
+
+    with get_session_factory()() as db:
+        videos = [
+            _video("pending-recent", published_at=now - timedelta(days=1), status="pending"),
+            _video("pending-old", published_at=now - timedelta(days=10), status="pending"),
+            _video("failed-recent", published_at=now - timedelta(days=2), status="failed"),
+            _video("unavailable-recent", published_at=now, status="unavailable"),
+        ]
+        _add_source_with_videos(db, videos)
+        db.commit()
+
+    pending_only = client.get(
+        "/admin/rag/transcripts/pending?artist_id=1&limit=10&days=3",
+        headers=headers,
+    )
+    with_failed = client.get(
+        "/admin/rag/transcripts/pending?artist_id=1&limit=10&days=3&include_failed=true",
+        headers=headers,
+    )
+
+    assert pending_only.status_code == 200, pending_only.text
+    assert [item["id"] for item in pending_only.json()] == ["pending-recent"]
+    assert with_failed.status_code == 200, with_failed.text
+    assert [item["id"] for item in with_failed.json()] == ["pending-recent", "failed-recent"]
+
+
+def test_external_updates_backfill_endpoint_embeds_missing_and_stale_chunks(client):
+    admin_token = login(client, "admin@example.com", "admin-password")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    now = datetime.now(UTC)
+
+    with get_session_factory()() as db:
+        skip = ExternalUpdate(
+            artist_id=1,
+            source_type="naver_news",
+            external_id="backfill-skip",
+            title="RESCENE backfill skip",
+            description="이미 임베딩된 뉴스",
+            url="https://news.example.com/backfill-skip",
+            thumbnail_url="",
+            source_label="Naver News",
+            published_at=now,
+            content_hash="backfill-skip-hash",
+            raw_payload={},
+        )
+        missing = ExternalUpdate(
+            artist_id=1,
+            source_type="naver_blog",
+            external_id="backfill-missing",
+            title="RESCENE backfill missing",
+            description="새로 임베딩할 블로그",
+            url="https://blog.example.com/backfill-missing",
+            thumbnail_url="",
+            source_label="Naver Blog",
+            published_at=now - timedelta(minutes=1),
+            content_hash="backfill-missing-hash",
+            raw_payload={},
+        )
+        stale = ExternalUpdate(
+            artist_id=1,
+            source_type="naver_news",
+            external_id="backfill-stale",
+            title="RESCENE backfill stale",
+            description="이전 뉴스",
+            url="https://news.example.com/backfill-stale",
+            thumbnail_url="",
+            source_label="Naver News",
+            published_at=now - timedelta(minutes=2),
+            content_hash="backfill-stale-hash",
+            raw_payload={},
+        )
+        db.add_all([skip, missing, stale])
+        db.flush()
+        refresh_external_update_chunks(db, skip)
+        refresh_external_update_chunks(db, stale)
+        stale.description = "변경된 뉴스"
+        stale.content_hash = "backfill-stale-changed-hash"
+        db.commit()
+
+    response = client.post(
+        "/admin/rag/external-updates/backfill",
+        json={"artist_id": 1, "limit": 2},
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"processed": 3, "embedded": 2, "skipped": 1}
+    with get_session_factory()() as db:
+        chunks = {
+            item.external_id: db.scalar(
+                select(RagChunk).where(
+                    RagChunk.external_update_id == item.id,
+                    RagChunk.chunk_index == 0,
+                )
+            )
+            for item in db.scalars(select(ExternalUpdate)).all()
+            if item.external_id.startswith("backfill-")
+        }
+
+    assert set(chunks) == {"backfill-skip", "backfill-missing", "backfill-stale"}
+    assert all(chunk is not None for chunk in chunks.values())
+    assert "변경된 뉴스" in chunks["backfill-stale"].content
+
+
+def test_fetch_transcripts_batch_defaults_to_pending_only_and_force_includes_all(client, monkeypatch):
+    now = datetime.now(UTC)
+    calls: list[str] = []
+
+    with get_session_factory()() as db:
+        videos = [
+            _video("candidate-pending", published_at=now, status="pending"),
+            _video("candidate-failed", published_at=now - timedelta(minutes=1), status="failed"),
+            _video("candidate-unavailable", published_at=now - timedelta(minutes=2), status="unavailable"),
+            _video("candidate-fetched", published_at=now - timedelta(minutes=3), status="fetched"),
+        ]
+        _add_source_with_videos(db, videos)
+        db.commit()
+
+    def fake_fetch(video_id: str):
+        calls.append(video_id)
+        return "unavailable", "", []
+
+    monkeypatch.setattr("app.services.transcripts.fetch_video_transcript", fake_fetch)
+
+    with get_session_factory()() as db:
+        default_result = fetch_transcripts_batch(db, 1, limit=10)
+        db.commit()
+    default_calls = list(calls)
+    calls.clear()
+    with get_session_factory()() as db:
+        force_result = fetch_transcripts_batch(db, 1, limit=10, force=True)
+        db.commit()
+
+    assert default_result["processed"] == 1
+    assert default_calls == ["candidate-pending"]
+    assert force_result["processed"] == 4
+    assert set(calls) == {
+        "candidate-pending",
+        "candidate-failed",
+        "candidate-unavailable",
+        "candidate-fetched",
+    }
 
 
 def test_external_update_chunks_are_searchable_and_expose_naver_payload(client):
