@@ -6335,32 +6335,88 @@ a.embedCard {
   }
 
   .chatSourceGrid.ragSourceGrid {
+    gap: 10px;
     grid-template-columns: 1fr !important;
+    margin-top: 4px;
   }
 
   /* chat sources stay compact rows; the poster min-height clamp is for the rag results grid */
   .chatSourceGrid.ragSourceGrid .sourceCard,
   .chatSourceGrid.ragSourceGrid .sourceMainLink,
   .chatSourceGrid.ragSourceGrid > .sourceCard {
+    height: auto !important;
+    max-height: none !important;
     min-height: 0 !important;
+  }
+
+  .chatSourceGrid.ragSourceGrid .sourceCard {
+    border-radius: 8px;
+    display: block;
   }
 
   .chatSourceGrid.ragSourceGrid .sourceMainLink {
     align-items: stretch;
+    display: grid;
     grid-template-columns: 104px minmax(0, 1fr);
     grid-template-rows: none;
   }
 
   .chatSourceGrid.ragSourceGrid .sourceThumb {
     aspect-ratio: 1 / 1;
-    height: 100%;
-    min-height: 0 !important;
+    height: 104px !important;
+    max-height: 104px;
+    min-height: 104px !important;
     width: 104px;
   }
 
   .chatSourceGrid.ragSourceGrid .sourceBody {
+    align-self: stretch;
+    gap: 5px;
+    justify-content: start;
+    max-height: 104px;
     min-height: 0;
     padding: 10px 46px 10px 12px;
+  }
+
+  .chatSourceGrid.ragSourceGrid .sourceType {
+    display: block;
+    font-size: 12px;
+    font-weight: 850;
+    line-height: 1.1;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chatSourceGrid.ragSourceGrid .sourceBody strong {
+    font-size: 14px;
+    line-height: 1.28;
+    -webkit-line-clamp: 2;
+  }
+
+  .chatSourceGrid.ragSourceGrid .sourceBody small {
+    font-size: 11.5px;
+    line-height: 1.25;
+    -webkit-line-clamp: 2;
+  }
+
+  .chatSourceGrid.ragSourceGrid .sourceBody p {
+    display: none;
+  }
+
+  .chatSourceGrid.ragSourceGrid .sourceAppButton,
+  .chatSourceGrid.ragSourceGrid .sourceSaveButton {
+    height: 36px;
+    min-height: 36px;
+    min-width: 36px;
+    right: 8px;
+    top: 8px;
+    width: 36px;
+  }
+
+  .chatSourceGrid.ragSourceGrid .sourceSaveButton.belowApp {
+    top: 50px;
   }
 
   .chatComposer {
