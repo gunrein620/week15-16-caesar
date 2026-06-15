@@ -1420,8 +1420,7 @@ h2 {
   display: block;
 }
 
-.ragSourceGrid .sourceMainLink,
-.ragSourceGrid > .sourceCard {
+.ragSourceGrid .sourceMainLink {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   min-height: 258px;
@@ -1465,7 +1464,7 @@ h2 {
   line-height: 1.25;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
 }
 
 .ragSourceGrid .sourceBody small {
