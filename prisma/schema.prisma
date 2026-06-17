@@ -1,0 +1,358 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum PostStatus {
+  PUBLISHED
+  HIDDEN
+  DELETED
+}
+
+enum PostVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum CommentStatus {
+  PUBLISHED
+  DELETED
+  HIDDEN
+}
+
+enum VoteType {
+  INNOCENT
+  PROBATION
+  GUILTY_BUT_UNDERSTANDABLE
+  NOT_GUILTY_BY_CONTEXT
+  NEEDS_MORE_EXCUSE
+}
+
+enum MealPostType {
+  WEEKLY_TABLE
+  DAILY_MENU
+  UNKNOWN
+}
+
+enum MealType {
+  LUNCH
+  DINNER
+}
+
+enum AiVerdict {
+  INNOCENT
+  PROBATION
+  GUILTY_BUT_UNDERSTANDABLE
+  NEEDS_MORE_CONTEXT
+}
+
+enum NotificationType {
+  POST_CREATED
+  COMMENT_CREATED
+  VOTE_RECEIVED
+  AI_JUDGEMENT_READY
+  MEAL_UPDATED
+}
+
+enum PostImageStorageType {
+  LOCAL
+  REMOTE
+  EXTERNAL
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+
+  accounts      Account[]
+  sessions      Session[]
+  posts         Post[]
+  comments      Comment[]
+  commentLikes  CommentLike[]
+  votes         Vote[]
+  notifications NotificationEvent[]
+}
+
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String? @db.Text
+  access_token       String? @db.Text
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String? @db.Text
+  session_state      String?
+  oauth_token_secret String? @db.Text
+  oauth_token        String? @db.Text
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Post {
+  id         String         @id @default(cuid())
+  snackName  String
+  reason     String         @db.Text
+  ateLunch   Boolean        @default(false)
+  ateDinner  Boolean        @default(false)
+  authorId   String
+  status     PostStatus     @default(PUBLISHED)
+  visibility PostVisibility @default(PUBLIC)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  author       User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  images       PostImage[]
+  tags         PostTag[]
+  comments     Comment[]
+  votes        Vote[]
+  mealContext  PostMealContext?
+  aiJudgements AiJudgement[]
+
+  @@index([authorId])
+  @@index([createdAt])
+  @@index([status, visibility, createdAt])
+}
+
+model PostImage {
+  id          String               @id @default(cuid())
+  postId      String
+  url         String
+  filename    String
+  contentType String
+  size        Int
+  sortOrder   Int                  @default(0)
+  storageType PostImageStorageType @default(LOCAL)
+  storageKey  String?
+  sourceUrl   String?
+  altText     String?
+  width       Int?
+  height      Int?
+  metadata    Json?
+  createdAt   DateTime             @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([postId, sortOrder])
+  @@index([storageType])
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  posts PostTag[]
+}
+
+model PostTag {
+  postId    String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([postId, tagId])
+  @@index([tagId])
+}
+
+model Comment {
+  id        String        @id @default(cuid())
+  postId    String
+  authorId  String
+  parentId  String?
+  content   String        @db.Text
+  status    CommentStatus @default(PUBLISHED)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  post    Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author  User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent  Comment?      @relation("CommentReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  replies Comment[]     @relation("CommentReplies")
+  likes   CommentLike[]
+
+  @@index([postId, status, createdAt])
+  @@index([authorId])
+  @@index([parentId])
+}
+
+model CommentLike {
+  commentId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([commentId, userId])
+  @@index([userId])
+}
+
+model Vote {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  type      VoteType
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([userId])
+  @@index([postId, type])
+}
+
+model MealPost {
+  id          String       @id @default(cuid())
+  kakaoPostId String       @unique
+  title       String
+  permalink   String
+  imageUrl    String
+  rawJson     Json
+  postType    MealPostType @default(UNKNOWN)
+  publishedAt DateTime
+  crawledAt   DateTime     @default(now())
+
+  menus MealMenu[]
+
+  @@index([postType, crawledAt])
+  @@index([publishedAt])
+}
+
+model MealMenu {
+  id           String   @id @default(cuid())
+  mealDate     DateTime
+  mealType     MealType
+  menuText     String   @db.Text
+  imageUrl     String
+  sourcePostId String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sourcePost     MealPost?         @relation(fields: [sourcePostId], references: [id], onDelete: SetNull)
+  lunchContexts  PostMealContext[] @relation("LunchMealContext")
+  dinnerContexts PostMealContext[] @relation("DinnerMealContext")
+
+  @@unique([mealDate, mealType])
+  @@index([sourcePostId])
+  @@index([mealType])
+}
+
+model PostMealContext {
+  id           String   @id @default(cuid())
+  postId       String   @unique
+  lunchMenuId  String?
+  dinnerMenuId String?
+  ateLunch     Boolean  @default(false)
+  ateDinner    Boolean  @default(false)
+  mealNote     String?  @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  post       Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  lunchMenu  MealMenu? @relation("LunchMealContext", fields: [lunchMenuId], references: [id], onDelete: SetNull)
+  dinnerMenu MealMenu? @relation("DinnerMealContext", fields: [dinnerMenuId], references: [id], onDelete: SetNull)
+
+  @@index([lunchMenuId])
+  @@index([dinnerMenuId])
+}
+
+model AiJudgement {
+  id            String    @id @default(cuid())
+  postId        String
+  modelName     String
+  promptVersion String
+  verdict       AiVerdict
+  summary       String    @db.Text
+  reasoning     String    @db.Text
+  rawJson       Json
+  createdAt     DateTime  @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
+  @@index([verdict])
+}
+
+model RagDocument {
+  id         String   @id @default(cuid())
+  sourceType String
+  sourceId   String
+  title      String
+  content    String   @db.Text
+  metadata   Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  embeddings RagEmbedding[]
+
+  @@unique([sourceType, sourceId])
+  @@index([createdAt])
+}
+
+model RagEmbedding {
+  id            String   @id @default(cuid())
+  documentId    String
+  modelName     String
+  dimensions    Int
+  embeddingJson Json
+  createdAt     DateTime @default(now())
+
+  document RagDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, modelName])
+  @@index([modelName, dimensions])
+}
+
+model NotificationEvent {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String           @db.Text
+  readAt    DateTime?
+  metadata  Json
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@index([type])
+}

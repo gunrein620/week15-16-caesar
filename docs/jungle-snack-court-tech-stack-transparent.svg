@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="2400" height="1350" viewBox="0 0 2400 1350" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="14" flood-color="#0F172A" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 1.5 1.5 L 8.5 5 L 1.5 8.5 z" fill="#1f2937"/>
+    </marker>
+    <style>
+      .shadow { filter: url(#softShadow); }
+    </style>
+  </defs>
+
+  <g>
+    <text x="115" y="105" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="72" font-weight="900" fill="#111827" text-anchor="start">정글 간식재판소</text>
+    <text x="118" y="154" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="31" font-weight="800" fill="#036B46" text-anchor="start">기술 스택 구조 · AI 판결 게시판</text>
+    <text x="118" y="205" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="27" font-weight="700" fill="#5f6b7a" text-anchor="start">Next.js App Router 기반 SNS 피드 + Prisma/PostgreSQL + Auth.js + OpenAI RAG</text>
+
+    
+    <rect x="118" y="252" width="160" height="46" rx="23" fill="#FFFFFF" fill-opacity="0.95" stroke="#2563EB" stroke-width="3"/>
+    <text x="198" y="283" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="21" font-weight="900" fill="#2563EB" text-anchor="middle">React 19</text>
+  
+    
+    <rect x="270" y="252" width="190" height="46" rx="23" fill="#FFFFFF" fill-opacity="0.95" stroke="#111827" stroke-width="3"/>
+    <text x="365" y="283" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="21" font-weight="900" fill="#111827" text-anchor="middle">Next.js 16</text>
+  
+    
+    <rect x="450" y="252" width="190" height="46" rx="23" fill="#FFFFFF" fill-opacity="0.95" stroke="#2563EB" stroke-width="3"/>
+    <text x="545" y="283" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="21" font-weight="900" fill="#2563EB" text-anchor="middle">TypeScript</text>
+  
+    
+    <rect x="650" y="252" width="220" height="46" rx="23" fill="#FFFFFF" fill-opacity="0.95" stroke="#0EA5A4" stroke-width="3"/>
+    <text x="760" y="283" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="21" font-weight="900" fill="#0EA5A4" text-anchor="middle">Tailwind CSS</text>
+  
+    
+    <rect x="875" y="252" width="130" height="46" rx="23" fill="#FFFFFF" fill-opacity="0.95" stroke="#036B46" stroke-width="3"/>
+    <text x="940" y="283" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="21" font-weight="900" fill="#036B46" text-anchor="middle">Prisma</text>
+  
+    
+    <rect x="1022" y="252" width="190" height="46" rx="23" fill="#FFFFFF" fill-opacity="0.95" stroke="#036B46" stroke-width="3"/>
+    <text x="1117" y="283" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="21" font-weight="900" fill="#036B46" text-anchor="middle">PostgreSQL</text>
+  
+    
+    <rect x="1216" y="252" width="145" height="46" rx="23" fill="#FFFFFF" fill-opacity="0.95" stroke="#7C3AED" stroke-width="3"/>
+    <text x="1288.5" y="283" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="21" font-weight="900" fill="#7C3AED" text-anchor="middle">Auth.js</text>
+  
+    
+    <rect x="1368" y="252" width="130" height="46" rx="23" fill="#FFFFFF" fill-opacity="0.95" stroke="#F59E0B" stroke-width="3"/>
+    <text x="1433" y="283" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="21" font-weight="900" fill="#F59E0B" text-anchor="middle">OpenAI</text>
+  
+    
+    <rect x="1528" y="252" width="128" height="46" rx="23" fill="#FFFFFF" fill-opacity="0.95" stroke="#DB2777" stroke-width="3"/>
+    <text x="1592" y="283" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="21" font-weight="900" fill="#DB2777" text-anchor="middle">RAG</text>
+  
+  </g>
+
+  <g class="shadow">
+    
+    <rect x="115" y="330" width="535" height="480" rx="28" fill="#FFFFFF" fill-opacity="0.96" stroke="#2563EB" stroke-width="4"/>
+    <circle cx="159" cy="378" r="20" fill="#2563EB" fill-opacity="0.16" stroke="#2563EB" stroke-width="3"/>
+    <circle cx="159" cy="378" r="8" fill="#2563EB"/>
+    <text x="195" y="372" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="20" font-weight="900" fill="#2563EB" text-anchor="start">CLIENT</text>
+    <text x="195" y="412" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="36" font-weight="900" fill="#111827" text-anchor="start">Frontend / 게시판 UI</text>
+    <text x="157" y="472" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">Next.js App Router</text>
+<text x="157" y="510" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">React 19 + TypeScript</text>
+<text x="157" y="548" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">Tailwind CSS v4 + lucide-react</text>
+<text x="157" y="586" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">메인 / 판례 날짜 탭</text>
+<text x="157" y="624" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">검색, 이미지 슬라이더, 댓글 UI</text>
+    <rect x="155" y="698" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#2563EB" stroke-opacity="0.45" stroke-width="2"/>
+<text x="245" y="726" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#2563EB" text-anchor="middle">피드</text>
+<rect x="360" y="698" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#2563EB" stroke-opacity="0.45" stroke-width="2"/>
+<text x="450" y="726" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#2563EB" text-anchor="middle">작성 페이지</text>
+<rect x="155" y="756" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#2563EB" stroke-opacity="0.45" stroke-width="2"/>
+<text x="245" y="784" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#2563EB" text-anchor="middle">투표</text>
+<rect x="360" y="756" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#2563EB" stroke-opacity="0.45" stroke-width="2"/>
+<text x="450" y="784" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#2563EB" text-anchor="middle">알림 버튼</text>
+  
+
+    
+    <rect x="930" y="330" width="575" height="480" rx="28" fill="#FFFFFF" fill-opacity="0.96" stroke="#7C3AED" stroke-width="4"/>
+    <circle cx="974" cy="378" r="20" fill="#7C3AED" fill-opacity="0.16" stroke="#7C3AED" stroke-width="3"/>
+    <circle cx="974" cy="378" r="8" fill="#7C3AED"/>
+    <text x="1010" y="372" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="20" font-weight="900" fill="#7C3AED" text-anchor="start">SERVER</text>
+    <text x="1010" y="412" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="36" font-weight="900" fill="#111827" text-anchor="start">Backend / API Layer</text>
+    <text x="972" y="472" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">Next.js Route Handlers</text>
+<text x="972" y="510" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">Node.js runtime</text>
+<text x="972" y="548" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">Auth.js / NextAuth social login</text>
+<text x="972" y="586" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">Google · Kakao · Naver providers</text>
+<text x="972" y="624" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">Posts · Comments · Votes · Meals · AI APIs</text>
+    <rect x="970" y="698" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#7C3AED" stroke-opacity="0.45" stroke-width="2"/>
+<text x="1060" y="726" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#7C3AED" text-anchor="middle">REST API</text>
+<rect x="1175" y="698" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#7C3AED" stroke-opacity="0.45" stroke-width="2"/>
+<text x="1265" y="726" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#7C3AED" text-anchor="middle">Prisma Adapter</text>
+<rect x="970" y="756" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#7C3AED" stroke-opacity="0.45" stroke-width="2"/>
+<text x="1060" y="784" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#7C3AED" text-anchor="middle">Server-only AI</text>
+<rect x="1175" y="756" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#7C3AED" stroke-opacity="0.45" stroke-width="2"/>
+<text x="1265" y="784" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#7C3AED" text-anchor="middle">Validation</text>
+  
+
+    
+    <rect x="1760" y="330" width="520" height="480" rx="28" fill="#FFFFFF" fill-opacity="0.96" stroke="#036B46" stroke-width="4"/>
+    <circle cx="1804" cy="378" r="20" fill="#036B46" fill-opacity="0.16" stroke="#036B46" stroke-width="3"/>
+    <circle cx="1804" cy="378" r="8" fill="#036B46"/>
+    <text x="1840" y="372" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="20" font-weight="900" fill="#036B46" text-anchor="start">DATA</text>
+    <text x="1840" y="412" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="36" font-weight="900" fill="#111827" text-anchor="start">Database</text>
+    <text x="1802" y="472" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">PostgreSQL</text>
+<text x="1802" y="510" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">Prisma ORM + @prisma/adapter-pg</text>
+<text x="1802" y="548" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">User · Account · Session</text>
+<text x="1802" y="586" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">Post · Image · Tag · Comment · Vote</text>
+<text x="1802" y="624" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">Meal · AiJudgement · RagDocument</text>
+    <rect x="1800" y="698" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#036B46" stroke-opacity="0.45" stroke-width="2"/>
+<text x="1890" y="726" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#036B46" text-anchor="middle">Schema</text>
+<rect x="2005" y="698" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#036B46" stroke-opacity="0.45" stroke-width="2"/>
+<text x="2095" y="726" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#036B46" text-anchor="middle">Migration</text>
+<rect x="1800" y="756" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#036B46" stroke-opacity="0.45" stroke-width="2"/>
+<text x="1890" y="784" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#036B46" text-anchor="middle">Seed</text>
+<rect x="2005" y="756" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#036B46" stroke-opacity="0.45" stroke-width="2"/>
+<text x="2095" y="784" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#036B46" text-anchor="middle">Mock data</text>
+  
+
+    
+    <rect x="215" y="875" width="565" height="420" rx="28" fill="#FFFFFF" fill-opacity="0.96" stroke="#F59E0B" stroke-width="4"/>
+    <circle cx="259" cy="923" r="20" fill="#F59E0B" fill-opacity="0.16" stroke="#F59E0B" stroke-width="3"/>
+    <circle cx="259" cy="923" r="8" fill="#F59E0B"/>
+    <text x="295" y="917" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="20" font-weight="900" fill="#F59E0B" text-anchor="start">SOURCE</text>
+    <text x="295" y="957" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="36" font-weight="900" fill="#111827" text-anchor="start">Data / Storage</text>
+    <text x="257" y="1017" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">Kakao channel meal fetch/cache</text>
+<text x="257" y="1055" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">MealPost · MealMenu</text>
+<text x="257" y="1093" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">Local uploads: public/uploads/posts</text>
+<text x="257" y="1131" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">seed / mock / external RAG scripts</text>
+    <rect x="255" y="1183" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#F59E0B" stroke-opacity="0.45" stroke-width="2"/>
+<text x="345" y="1211" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#F59E0B" text-anchor="middle">식단 캐시</text>
+<rect x="460" y="1183" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#F59E0B" stroke-opacity="0.45" stroke-width="2"/>
+<text x="550" y="1211" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#F59E0B" text-anchor="middle">이미지 저장</text>
+<rect x="255" y="1241" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#F59E0B" stroke-opacity="0.45" stroke-width="2"/>
+<text x="345" y="1269" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#F59E0B" text-anchor="middle">목업 포스트</text>
+<rect x="460" y="1241" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#F59E0B" stroke-opacity="0.45" stroke-width="2"/>
+<text x="550" y="1269" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#F59E0B" text-anchor="middle">RAG 문서</text>
+  
+
+    
+    <rect x="1015" y="875" width="555" height="420" rx="28" fill="#FFFFFF" fill-opacity="0.96" stroke="#DB2777" stroke-width="4"/>
+    <circle cx="1059" cy="923" r="20" fill="#DB2777" fill-opacity="0.16" stroke="#DB2777" stroke-width="3"/>
+    <circle cx="1059" cy="923" r="8" fill="#DB2777"/>
+    <text x="1095" y="917" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="20" font-weight="900" fill="#DB2777" text-anchor="start">AI</text>
+    <text x="1095" y="957" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="36" font-weight="900" fill="#111827" text-anchor="start">AI / RAG</text>
+    <text x="1057" y="1017" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">OpenAI SDK, server-side only</text>
+<text x="1057" y="1055" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">AI 판결 JSON output</text>
+<text x="1057" y="1093" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">내부 판례 우선 검색</text>
+<text x="1057" y="1131" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">외부 스낵/운동 문서 fallback</text>
+    <rect x="1055" y="1183" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#DB2777" stroke-opacity="0.45" stroke-width="2"/>
+<text x="1145" y="1211" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#DB2777" text-anchor="middle">Prompt v2</text>
+<rect x="1260" y="1183" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#DB2777" stroke-opacity="0.45" stroke-width="2"/>
+<text x="1350" y="1211" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#DB2777" text-anchor="middle">Precedents</text>
+<rect x="1055" y="1241" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#DB2777" stroke-opacity="0.45" stroke-width="2"/>
+<text x="1145" y="1269" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#DB2777" text-anchor="middle">RagDocument</text>
+<rect x="1260" y="1241" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#DB2777" stroke-opacity="0.45" stroke-width="2"/>
+<text x="1350" y="1269" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#DB2777" text-anchor="middle">pgvector 예정</text>
+  
+
+    
+    <rect x="1760" y="875" width="520" height="420" rx="28" fill="#FFFFFF" fill-opacity="0.96" stroke="#0EA5A4" stroke-width="4"/>
+    <circle cx="1804" cy="923" r="20" fill="#0EA5A4" fill-opacity="0.16" stroke="#0EA5A4" stroke-width="3"/>
+    <circle cx="1804" cy="923" r="8" fill="#0EA5A4"/>
+    <text x="1840" y="917" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="20" font-weight="900" fill="#0EA5A4" text-anchor="start">BROWSER</text>
+    <text x="1840" y="957" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="36" font-weight="900" fill="#111827" text-anchor="start">Browser Capability</text>
+    <text x="1802" y="1017" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">Notifications API</text>
+<text x="1802" y="1055" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">탭이 열려 있을 때만 알림</text>
+<text x="1802" y="1093" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">Service Worker / Web Push 미구현</text>
+<text x="1802" y="1131" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#5f6b7a" text-anchor="start">VAPID / subscription 저장 없음</text>
+    <rect x="1800" y="1183" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#0EA5A4" stroke-opacity="0.45" stroke-width="2"/>
+<text x="1890" y="1211" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#0EA5A4" text-anchor="middle">권한 상태</text>
+<rect x="2005" y="1183" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#0EA5A4" stroke-opacity="0.45" stroke-width="2"/>
+<text x="2095" y="1211" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#0EA5A4" text-anchor="middle">테스트 알림</text>
+<rect x="1800" y="1241" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#0EA5A4" stroke-opacity="0.45" stroke-width="2"/>
+<text x="1890" y="1269" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#0EA5A4" text-anchor="middle">작성 완료</text>
+<rect x="2005" y="1241" width="180" height="42" rx="14" fill="#F7FAF9" stroke="#0EA5A4" stroke-opacity="0.45" stroke-width="2"/>
+<text x="2095" y="1269" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="19" font-weight="800" fill="#0EA5A4" text-anchor="middle">AI 완료</text>
+  
+  </g>
+
+  <g>
+    
+    <path d="M 650 560 L 930 560" stroke="#1f2937" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+    <rect x="680" y="512" width="220" height="42" rx="18" fill="#FFFFFF" fill-opacity="0.9"/>
+    <text x="790" y="542" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#1f2937" text-anchor="middle">HTTP / fetch</text>
+  
+    
+    <path d="M 1505 560 L 1760 560" stroke="#1f2937" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+    <rect x="1522.5" y="512" width="220" height="42" rx="18" fill="#FFFFFF" fill-opacity="0.9"/>
+    <text x="1632.5" y="542" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#1f2937" text-anchor="middle">Prisma + SQL</text>
+  
+    
+    <path d="M 1760 660 L 1505 660" stroke="#1f2937" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+    <rect x="1522.5" y="612" width="220" height="42" rx="18" fill="#FFFFFF" fill-opacity="0.9"/>
+    <text x="1632.5" y="642" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#1f2937" text-anchor="middle">JSON 응답</text>
+  
+    
+    <path d="M 1215 810 L 1215 875" stroke="#DB2777" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+    <rect x="1105" y="808.5" width="220" height="42" rx="18" fill="#FFFFFF" fill-opacity="0.9"/>
+    <text x="1215" y="838.5" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#DB2777" text-anchor="middle">AI 판결 요청</text>
+  
+    
+    <path d="M 780 1070 L 1015 1070" stroke="#F59E0B" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+    <rect x="787.5" y="1022" width="220" height="42" rx="18" fill="#FFFFFF" fill-opacity="0.9"/>
+    <text x="897.5" y="1052" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#F59E0B" text-anchor="middle">캐시 / 문서</text>
+  
+    
+    <path d="M 1505 735 L 1760 970" stroke="#0EA5A4" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+    <rect x="1522.5" y="816.5" width="220" height="42" rx="18" fill="#FFFFFF" fill-opacity="0.9"/>
+    <text x="1632.5" y="846.5" font-family="Malgun Gothic, Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#0EA5A4" text-anchor="middle">브라우저 알림</text>
+  
+  </g>
+</svg>

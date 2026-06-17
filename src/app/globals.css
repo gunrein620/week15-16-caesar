@@ -1,0 +1,204 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --jungle-mint: #05d182;
+  --jungle-green: #02b86f;
+  --jungle-deep: #09323d;
+  --jungle-purple: #4b53bc;
+  --jungle-bg: #f2f4f8;
+  --jungle-border: #e5e7eb;
+  --background: var(--jungle-bg);
+  --foreground: #111827;
+  --surface: #ffffff;
+  --surface-muted: #f8fafc;
+  --surface-soft: #f3f5f7;
+  --border-soft: #e5e7eb;
+  --text-strong: #111827;
+  --text-body: #374151;
+  --text-muted: #6b7280;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-app-sans);
+  --font-mono: var(--font-app-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    Pretendard,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+::selection {
+  background: var(--jungle-mint);
+  color: var(--jungle-deep);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --jungle-bg: #071113;
+    --jungle-border: #26353a;
+    --background: var(--jungle-bg);
+    --foreground: #e6edf0;
+    --surface: #101c20;
+    --surface-muted: #162327;
+    --surface-soft: #1d2b30;
+    --border-soft: #26353a;
+    --text-strong: #f3f7f8;
+    --text-body: #d4dee2;
+    --text-muted: #91a0a7;
+  }
+
+  body {
+    background:
+      radial-gradient(circle at 20% -10%, rgba(5, 209, 130, 0.12), transparent 32rem),
+      var(--background);
+    color: var(--foreground);
+  }
+
+  ::selection {
+    background: rgba(5, 209, 130, 0.34);
+    color: #effff9;
+  }
+
+  .bg-white {
+    background-color: var(--surface) !important;
+  }
+
+  [class~="bg-white/85"] {
+    background-color: rgba(16, 28, 32, 0.88) !important;
+  }
+
+  [class~="bg-white/80"] {
+    background-color: rgba(16, 28, 32, 0.84) !important;
+  }
+
+  [class~="bg-white/70"] {
+    background-color: rgba(16, 28, 32, 0.72) !important;
+  }
+
+  .bg-zinc-50,
+  .bg-zinc-100,
+  [class~="bg-[#f8f9fa]"],
+  [class~="bg-[#fbfbf8]"],
+  [class~="bg-[#f6fbf7]"],
+  [class~="bg-[#f7fcf8]"],
+  [class~="bg-[#fbfcf8]"] {
+    background-color: var(--surface-muted) !important;
+  }
+
+  [class~="bg-[#f3f5fa]"] {
+    background-color: var(--surface-soft) !important;
+  }
+
+  [class~="bg-[#e6faf4]"],
+  [class~="bg-[#e8f8ef]"],
+  [class~="bg-[#effbf6]"] {
+    background-color: rgba(5, 209, 130, 0.14) !important;
+  }
+
+  [class~="bg-[#eef0ff]"] {
+    background-color: rgba(108, 120, 255, 0.16) !important;
+  }
+
+  [class~="bg-[#fff4cf]"],
+  [class~="bg-[#fff7d7]"],
+  [class~="bg-[#fff7d9]"],
+  [class~="bg-[#fffaf0]"] {
+    background-color: rgba(241, 190, 88, 0.16) !important;
+  }
+
+  [class~="bg-[#fff0f5]"] {
+    background-color: rgba(239, 100, 134, 0.16) !important;
+  }
+
+  [class~="bg-[linear-gradient(135deg,#f7fcf8,#fffaf0)]"] {
+    background-image: linear-gradient(135deg, rgba(5, 209, 130, 0.12), rgba(241, 190, 88, 0.12)) !important;
+  }
+
+  .text-zinc-950,
+  .text-zinc-900,
+  .text-zinc-800 {
+    color: var(--text-strong) !important;
+  }
+
+  .text-zinc-700,
+  .text-zinc-600 {
+    color: var(--text-body) !important;
+  }
+
+  .text-zinc-500,
+  .text-zinc-400 {
+    color: var(--text-muted) !important;
+  }
+
+  [class~="text-[var(--jungle-deep)]"],
+  [class~="text-[#10674f]"],
+  [class~="text-[#1d8a6b]"] {
+    color: #8af5c9 !important;
+  }
+
+  [class~="text-[#8a5b00]"],
+  [class~="text-[#7a5200]"] {
+    color: #f4cf81 !important;
+  }
+
+  [class~="text-[#ad315c]"],
+  [class~="text-[#d93663]"] {
+    color: #ff9ab5 !important;
+  }
+
+  [class~="text-[#3345a3]"],
+  [class~="text-[var(--jungle-purple)]"] {
+    color: #b8c2ff !important;
+  }
+
+  .border-zinc-100,
+  .border-zinc-200,
+  [class~="border-[#cde7d8]"],
+  [class~="border-[#ccf5e9]"],
+  [class~="border-[#d8eadf]"],
+  [class~="border-[#e3eadf]"],
+  [class~="border-[#f3d27d]"] {
+    border-color: var(--border-soft) !important;
+  }
+
+  .ring-zinc-200,
+  [class~="ring-[#99ebd3]"],
+  [class~="ring-[#b9e5d7]"],
+  [class~="ring-[#c3c8ff]"],
+  [class~="ring-[#f1cf73]"],
+  [class~="ring-[#f3a9bf]"] {
+    --tw-ring-color: var(--border-soft) !important;
+  }
+
+  .placeholder\:text-zinc-400::placeholder {
+    color: #7f9097 !important;
+  }
+
+  input,
+  textarea {
+    color: var(--text-strong);
+  }
+}
