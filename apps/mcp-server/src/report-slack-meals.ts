@@ -1,0 +1,9 @@
+import { writeSlackMealCandidateReportFile } from "./slack-meal-report.ts";
+
+try {
+  const report = await writeSlackMealCandidateReportFile();
+  console.log(JSON.stringify(report.summary, null, 2));
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+}

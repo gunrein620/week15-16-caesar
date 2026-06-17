@@ -1,0 +1,29 @@
+{
+  "name": "@junglebob/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "seed:demo-reviews": "node --experimental-strip-types src/seed-demo-reviews.ts",
+    "embed:chunks": "node --experimental-strip-types src/embed-chunks.ts",
+    "rag:check": "node --experimental-strip-types src/rag-check.ts",
+    "test": "node --test --experimental-strip-types src/**/*.test.ts",
+    "lint": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@junglebob/ai": "workspace:*",
+    "@junglebob/db": "workspace:*",
+    "next": "^16.2.7",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^6.0.3"
+  }
+}

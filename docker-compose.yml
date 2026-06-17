@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: junglebob-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: junglebob
+      POSTGRES_USER: junglebob
+      POSTGRES_PASSWORD: junglebob
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  postgres-data:

@@ -1,0 +1,232 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum MealType {
+  LUNCH
+  DINNER
+}
+
+enum SourceType {
+  SLACK
+  KAKAO
+  MANUAL
+}
+
+enum MenuImageType {
+  WEEKLY_SHEET
+  MEAL_PHOTO
+  NONE
+}
+
+enum SpicyTolerance {
+  NONE
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum RecommendationLevel {
+  GOOD
+  CAUTION
+  AVOID
+}
+
+enum RunStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+enum StepStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+model User {
+  id             String          @id @default(cuid())
+  email          String          @unique
+  name           String
+  passwordHash   String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  sessions       Session[]
+  foodPreference FoodPreference?
+  reviews        Review[]
+  comments       Comment[]
+  agentRuns      AgentRun[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model FoodPreference {
+  id              String          @id @default(cuid())
+  userId          String          @unique
+  allergyFoods    String[]        @default([])
+  favoriteFoods   String[]        @default([])
+  dislikedFoods   String[]        @default([])
+  spicyTolerance  SpicyTolerance  @default(MEDIUM)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model MenuArchive {
+  id         String     @id @default(cuid())
+  date       DateTime   @db.Date
+  mealType   MealType
+  items      String[]   @default([])
+  rawText    String?
+  imageUrl   String?
+  imageType  MenuImageType @default(NONE)
+  sourceType SourceType @default(MANUAL)
+  sourceId   String?
+  imageHash  String?
+  syncedAt   DateTime?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  reviews Review[]
+
+  @@unique([date, mealType])
+  @@index([imageType])
+  @@index([sourceType, sourceId])
+  @@index([imageHash])
+}
+
+model Review {
+  id            String   @id @default(cuid())
+  authorId      String
+  menuArchiveId String?
+  title         String
+  content       String
+  rating        Int?
+  imageUrl      String?
+  menuNames     String[] @default([])
+  helpfulCount  Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  author      User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  menuArchive MenuArchive?  @relation(fields: [menuArchiveId], references: [id], onDelete: SetNull)
+  comments    Comment[]
+  tags        ReviewTag[]
+  chunks      ReviewChunk[]
+
+  @@index([authorId])
+  @@index([menuArchiveId])
+  @@index([createdAt])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  reviewId  String
+  authorId  String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  review Review        @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  author User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  chunks ReviewChunk[]
+
+  @@index([reviewId])
+  @@index([authorId])
+}
+
+model Tag {
+  id        String      @id @default(cuid())
+  name      String      @unique
+  createdAt DateTime    @default(now())
+  reviews   ReviewTag[]
+}
+
+model ReviewTag {
+  reviewId String
+  tagId    String
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([reviewId, tagId])
+}
+
+model ReviewChunk {
+  id        String                    @id @default(cuid())
+  reviewId  String?
+  commentId String?
+  content   String
+  embedding Float[]  @default([])
+  metadata  Json?
+  createdAt DateTime                  @default(now())
+
+  review  Review?  @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  comment Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId])
+  @@index([commentId])
+}
+
+model AgentRun {
+  id                  String               @id @default(cuid())
+  userId              String
+  question            String
+  recommendationLevel RecommendationLevel?
+  finalMessage        String?
+  status              RunStatus            @default(RUNNING)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  steps AgentStep[]
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model AgentStep {
+  id         String     @id @default(cuid())
+  agentRunId String
+  stepName   String
+  status     StepStatus @default(RUNNING)
+  input      Json?
+  output     Json?
+  error      String?
+  createdAt  DateTime   @default(now())
+
+  agentRun AgentRun @relation(fields: [agentRunId], references: [id], onDelete: Cascade)
+
+  @@index([agentRunId])
+}
+
+model McpCallLog {
+  id        String     @id @default(cuid())
+  toolName  String
+  status    StepStatus @default(RUNNING)
+  input     Json?
+  output    Json?
+  error     String?
+  createdAt DateTime   @default(now())
+
+  @@index([toolName])
+  @@index([createdAt])
+}

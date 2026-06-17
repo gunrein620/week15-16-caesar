@@ -1,0 +1,27 @@
+{
+  "name": "@junglebob/mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc --noEmit -p tsconfig.json",
+    "collect:slack-meals": "tsx src/collect-slack-meals.ts",
+    "import:slack-meals": "tsx src/import-slack-meals.ts",
+    "parse:slack-meals": "tsx src/parse-slack-meals.ts",
+    "report:slack-meals": "tsx src/report-slack-meals.ts",
+    "sync:weekly-menu": "tsx src/sync-weekly-menu.ts",
+    "sync:daily-menu": "tsx src/sync-daily-menu.ts",
+    "start": "tsx src/index.ts",
+    "test": "node --test --experimental-strip-types src/*.test.ts",
+    "lint": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@junglebob/db": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.2",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}
