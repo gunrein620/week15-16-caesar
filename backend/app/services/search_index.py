@@ -45,18 +45,25 @@ def _json_list(value: str | None) -> list[str]:
 
 
 def _content_source_for_youtube_source(db: Session, source: YoutubeSource) -> ContentSource:
-    existing = db.scalar(
+    original_match = db.scalar(
         select(ContentSource).where(ContentSource.original_youtube_source_id == source.id)
     )
-    if existing is None:
-        existing = db.scalar(
-            select(ContentSource).where(
-                ContentSource.artist_id == source.artist_id,
-                ContentSource.platform == "youtube",
-                ContentSource.source_type == source.source_type,
-                ContentSource.source_value == source.source_value,
-            )
+    identity_match = db.scalar(
+        select(ContentSource).where(
+            ContentSource.artist_id == source.artist_id,
+            ContentSource.platform == "youtube",
+            ContentSource.source_type == source.source_type,
+            ContentSource.source_value == source.source_value,
         )
+    )
+    if (
+        original_match is not None
+        and identity_match is not None
+        and original_match.id != identity_match.id
+    ):
+        original_match.original_youtube_source_id = None
+        db.flush()
+    existing = identity_match or original_match
     if existing is None:
         existing = ContentSource(
             artist_id=source.artist_id,

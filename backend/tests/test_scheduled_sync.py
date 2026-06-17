@@ -1,4 +1,7 @@
 from datetime import UTC, datetime, timedelta
+import asyncio
+
+import pytest
 
 from app.core.db import get_session_factory
 from app.services.scheduled_sync import run_due_syncs_once
@@ -42,3 +45,33 @@ def test_scheduled_sync_runs_due_jobs_on_separate_intervals(client, monkeypatch)
     assert fourth["ran"] == ["member", "fan", "naver", "keyword"]
     assert fifth["ran"] == ["official", "fan", "naver"]
     assert sixth["ran"] == ["official", "member", "fan", "curated", "naver", "keyword"]
+
+
+@pytest.mark.asyncio
+async def test_scheduled_sync_loop_runs_blocking_iteration_in_worker_thread(client, monkeypatch):
+    from app.services import scheduled_sync
+
+    stop_event = asyncio.Event()
+    thread_calls: list[str] = []
+
+    async def fake_sleep(_delay):
+        return None
+
+    async def fake_to_thread(fn, *args, **kwargs):
+        thread_calls.append(fn.__name__)
+        stop_event.set()
+        return None
+
+    async def fake_wait_for(awaitable, *, timeout):
+        if hasattr(awaitable, "close"):
+            awaitable.close()
+        stop_event.set()
+        return None
+
+    monkeypatch.setattr(scheduled_sync.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(scheduled_sync.asyncio, "to_thread", fake_to_thread)
+    monkeypatch.setattr(scheduled_sync.asyncio, "wait_for", fake_wait_for)
+
+    await scheduled_sync._scheduled_sync_loop(stop_event)
+
+    assert thread_calls == ["_run_scheduled_iteration"]

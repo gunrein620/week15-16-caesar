@@ -122,21 +122,27 @@ def run_due_workflows_once(
     return {"ran": ran}
 
 
+def _run_scheduled_iteration() -> tuple[dict[str, list[str]], dict[str, list[str]]] | None:
+    with get_session_factory()() as db:
+        if infra_hard_stop_active(db):
+            return None
+        return run_due_syncs_once(db), run_due_workflows_once(db)
+
+
 async def _scheduled_sync_loop(stop_event: asyncio.Event) -> None:
     await asyncio.sleep(1)
     while not stop_event.is_set():
         try:
-            with get_session_factory()() as db:
-                if not infra_hard_stop_active(db):
-                    result = run_due_syncs_once(db)
-                    workflow_result = run_due_workflows_once(db)
-                    if result["ran"]:
-                        logger.info("scheduled sync ran: %s", ",".join(result["ran"]))
-                    if workflow_result["ran"]:
-                        logger.info(
-                            "scheduled workflows ran: %s",
-                            ",".join(workflow_result["ran"]),
-                        )
+            iteration = await asyncio.to_thread(_run_scheduled_iteration)
+            if iteration is not None:
+                result, workflow_result = iteration
+                if result["ran"]:
+                    logger.info("scheduled sync ran: %s", ",".join(result["ran"]))
+                if workflow_result["ran"]:
+                    logger.info(
+                        "scheduled workflows ran: %s",
+                        ",".join(workflow_result["ran"]),
+                    )
         except Exception:
             logger.exception("scheduled sync failed")
         try:

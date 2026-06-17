@@ -13,7 +13,10 @@ from app.models import (
 )
 from app.services.catalog_search import SearchFilters, search_catalog
 from app.services.rag import refresh_video_chunks
-from app.services.search_index import upsert_youtube_video_search_item
+from app.services.search_index import (
+    upsert_youtube_source_content_source,
+    upsert_youtube_video_search_item,
+)
 from tests.conftest import signup
 
 
@@ -79,6 +82,52 @@ def test_youtube_backfill_creates_search_item_sources_and_links_rag_chunks(clien
     assert item.youtube_video_id == "search-index-video"
     assert source_types == ["keyword_search", "official_channel"]
     assert chunk_item_id == item.id
+
+
+def test_youtube_source_upsert_prefers_identity_over_stale_original_link(client):
+    with get_session_factory()() as db:
+        source = YoutubeSource(
+            artist_id=1,
+            source_type="official_channel",
+            source_value="UC-duplicate-production-source",
+            title="RESCENE Official Channel",
+        )
+        db.add(source)
+        db.flush()
+        source_id = source.id
+        identity_source = ContentSource(
+            artist_id=1,
+            platform="youtube",
+            source_type="official_channel",
+            source_value="UC-duplicate-production-source",
+            title="Existing official channel",
+            is_official=True,
+        )
+        stale_original_link = ContentSource(
+            artist_id=1,
+            platform="youtube",
+            source_type="keyword_search",
+            source_value="stale-original-link",
+            title="Stale source mapping",
+            is_official=False,
+            original_youtube_source_id=source.id,
+        )
+        db.add_all([identity_source, stale_original_link])
+        db.flush()
+
+        resolved = upsert_youtube_source_content_source(db, source)
+        resolved_id = resolved.id
+        resolved_original_youtube_source_id = resolved.original_youtube_source_id
+        identity_source_id = identity_source.id
+        db.commit()
+
+        stale = db.get(ContentSource, stale_original_link.id)
+        stale_original_youtube_source_id = stale.original_youtube_source_id if stale else None
+
+    assert resolved_id == identity_source_id
+    assert resolved_original_youtube_source_id == source_id
+    assert stale is not None
+    assert stale_original_youtube_source_id is None
 
 
 def test_catalog_search_filters_official_youtube_recent_first(client):
