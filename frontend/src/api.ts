@@ -109,7 +109,7 @@ export type ArtistKeyword = {
 export type ArtistArchiveTerm = {
   id: number
   artist_id: number
-  term_type: 'song' | 'album' | 'activity'
+  term_type: 'song' | 'album' | 'activity' | 'member'
   title: string
   aliases: string[]
 }
@@ -156,23 +156,41 @@ export type YoutubeVideo = {
   view_count: number | null
   like_count: number | null
   comment_count: number | null
+  thumbnail_analysis_status?: string
+  thumbnail_detected_members?: string[]
+  thumbnail_person_count?: number | null
+  thumbnail_analysis_confidence?: number | null
 }
 
 export type QaSource = {
   chunk_id: number | null
+  search_item_id?: number | null
   post_id: number | null
   youtube_video_id: string | null
+  external_update_id?: number | null
   source_type: 'post' | 'youtube' | 'briefing' | 'naver_news' | 'naver_blog'
   title: string
   url: string
   thumbnail_url: string
   channel_title: string
   source_label?: string
+  source_types?: string[]
+  primary_source_type?: string | null
+  source_title?: string | null
+  is_official?: boolean
+  member_names?: string[]
+  archive_terms?: { id: number; title: string }[]
+  has_transcript?: boolean
   published_at: string | null
   view_count: number | null
+  like_count?: number | null
   comment_count?: number | null
   content: string
   description?: string
+  thumbnail_analysis_status?: string
+  thumbnail_detected_members?: string[]
+  thumbnail_person_count?: number | null
+  thumbnail_analysis_confidence?: number | null
 }
 
 export type QaResponse = {
@@ -192,6 +210,9 @@ export type RagContextResponse = {
   summary: string
   sources: QaSource[]
   insert_text: string
+  suggested_members: string[]
+  suggested_archive_terms: { id: number; title: string; term_type: string }[]
+  suggested_collection_targets: { id: number | null; title: string; reason: string }[]
 }
 
 export type WritingAssistRequest = {
@@ -220,6 +241,10 @@ export type UpdateFeedItem = {
   comment_count: number | null
   matched_keywords: string[]
   member_names: string[]
+  thumbnail_analysis_status?: string
+  thumbnail_detected_members?: string[]
+  thumbnail_person_count?: number | null
+  thumbnail_analysis_confidence?: number | null
   tags: string[]
 }
 
@@ -305,6 +330,14 @@ export type RagEmbedYoutubeResult = {
   estimated_tokens: number
 }
 
+export type RagThumbnailAnalysisResult = {
+  processed: number
+  analyzed: number
+  unavailable: number
+  failed: number
+  remaining: number
+}
+
 export type RagEmbeddingJob = {
   id: number
   artist_id: number
@@ -346,6 +379,99 @@ export type SavedItem = {
   thumbnail_url: string
   source_label: string
   saved_at: string
+}
+
+export type UserSubscription = {
+  id: number
+  user_id: number
+  artist_id: number
+  name: string
+  content_types: string[]
+  source_types: string[]
+  member_names: string[]
+  archive_term_ids: number[]
+  enabled: boolean
+  last_checked_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type UserNotification = {
+  id: number
+  user_id: number
+  artist_id: number
+  subscription_id: number | null
+  search_item_id: number
+  notification_type: string
+  title: string
+  body: string
+  url: string
+  thumbnail_url: string
+  read_at: string | null
+  created_at: string
+}
+
+export type CollectionItem = {
+  id: number
+  collection_id: number
+  search_item_id: number
+  title: string
+  url: string
+  thumbnail_url: string
+  source_type: string
+  position: number
+  note: string
+  created_at: string
+}
+
+export type UserCollection = {
+  id: number
+  user_id: number
+  artist_id: number
+  title: string
+  description: string
+  visibility: 'private'
+  ai_summary: string
+  created_at: string
+  updated_at: string
+  items?: CollectionItem[]
+}
+
+export type DataQualityTask = {
+  id: number
+  artist_id: number
+  search_item_id: number
+  task_type: string
+  status: string
+  priority: number
+  error_message: string
+  resolved_at: string | null
+  title: string
+  source_type: string
+  created_at: string
+  updated_at: string
+}
+
+export type DataQualityBuildResult = {
+  created: number
+  pending: number
+}
+
+export type AgentRun = {
+  id: number
+  artist_id: number
+  user_id: number
+  status: string
+  briefing_type: string
+  briefing_date: string
+  preview_markdown: string
+  created_post_id: number | null
+  tool_calls: Record<string, unknown>[]
+}
+
+export type AutoBriefingDraftResponse = {
+  created: boolean
+  run: AgentRun
 }
 
 export type AnalyticsMetricRow = {

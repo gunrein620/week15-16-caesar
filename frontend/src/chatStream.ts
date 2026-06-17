@@ -4,7 +4,14 @@ export type ChatEvent =
   | { type: 'run'; run_id: number }
   | { type: 'tool_call'; name: string; arguments: Record<string, unknown> }
   | { type: 'tool_result'; name: string; count: number }
-  | { type: 'sources'; sources: ChatSource[] }
+  | {
+      type: 'sources'
+      sources: ChatSource[]
+      has_more?: boolean
+      next_offset?: number | null
+      search_intent?: Record<string, unknown> | null
+      source_question?: string
+    }
   | { type: 'delta'; text: string }
   | { type: 'suggestions'; items: string[] }
   | { type: 'done' }

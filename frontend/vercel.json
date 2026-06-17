@@ -37,6 +37,30 @@
       "destination": "https://backend-production-97eb4.up.railway.app/saved-items/:path*"
     },
     {
+      "source": "/subscriptions",
+      "destination": "https://backend-production-97eb4.up.railway.app/subscriptions"
+    },
+    {
+      "source": "/subscriptions/:path*",
+      "destination": "https://backend-production-97eb4.up.railway.app/subscriptions/:path*"
+    },
+    {
+      "source": "/notifications",
+      "destination": "https://backend-production-97eb4.up.railway.app/notifications"
+    },
+    {
+      "source": "/notifications/:path*",
+      "destination": "https://backend-production-97eb4.up.railway.app/notifications/:path*"
+    },
+    {
+      "source": "/collections",
+      "destination": "https://backend-production-97eb4.up.railway.app/collections"
+    },
+    {
+      "source": "/collections/:path*",
+      "destination": "https://backend-production-97eb4.up.railway.app/collections/:path*"
+    },
+    {
       "source": "/analytics/:path*",
       "destination": "https://backend-production-97eb4.up.railway.app/analytics/:path*"
     },

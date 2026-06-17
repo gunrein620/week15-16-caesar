@@ -16,12 +16,14 @@ def client(tmp_path, monkeypatch):
 
     from app.core.config import reset_settings_cache
     from app.core.db import Base, get_engine, get_session_factory, reset_engine
+    from app.core.rate_limit import limiter
     from app.main import create_app
     from app.services.seed import ensure_minimal_rag_seed
     import app.models  # noqa: F401
 
     reset_settings_cache()
     reset_engine()
+    limiter.reset()
     Base.metadata.create_all(get_engine())
     with get_session_factory()() as db:
         ensure_minimal_rag_seed(db)
@@ -31,6 +33,7 @@ def client(tmp_path, monkeypatch):
         yield test_client
 
     reset_engine()
+    limiter.reset()
     reset_settings_cache()
 
 

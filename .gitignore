@@ -21,3 +21,5 @@ build/
 *.tsbuildinfo
 frontend/vite.config.js
 frontend/vite.config.d.ts
+backend/_repro.py
+presentation/_check/

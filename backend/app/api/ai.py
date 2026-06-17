@@ -2,12 +2,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.rate_limit import limiter
 from app.dependencies import require_verified_user
-from app.models import Post, User
+from app.models import ArtistArchiveTerm, Collection, Member, Post, User
 from app.schemas import (
     ChatRequest,
     QaRequest,
@@ -24,9 +25,66 @@ from app.services.chat_agent import stream_chat_events
 from app.services.quota import ai_rate_limit_cost, consume_ai_quota
 from app.services.rag import answer_question, similar_posts
 from app.services.rag_context import build_rag_context, saved_summary_context
-from app.services.search_intent import intent_to_payload
+from app.services.search_intent import archive_alias_matches_text, intent_to_payload, normalize_search_text
+from app.services.updates import _contains_alias, _member_aliases
 
 router = APIRouter(prefix="/ai", tags=["ai"])
+
+
+def _writing_suggestions(
+    db: Session,
+    *,
+    user: User,
+    artist_id: int,
+    query: str,
+) -> tuple[list[str], list[dict], list[dict]]:
+    normalized_query = normalize_search_text(query)
+    members = db.scalars(select(Member).where(Member.artist_id == artist_id)).all()
+    suggested_members = [
+        member.name
+        for member in members
+        if any(_contains_alias(query, alias) for alias in _member_aliases(member.name))
+    ]
+
+    archive_terms: list[dict] = []
+    for term in db.scalars(
+        select(ArtistArchiveTerm)
+        .where(ArtistArchiveTerm.artist_id == artist_id)
+        .order_by(ArtistArchiveTerm.term_type.asc(), ArtistArchiveTerm.title.asc())
+    ).all():
+        aliases = tuple(dict.fromkeys([term.title, *(term.aliases or [])]))
+        if any(archive_alias_matches_text(query, alias, normalized_query) for alias in aliases):
+            archive_terms.append(
+                {
+                    "id": term.id,
+                    "title": term.title,
+                    "term_type": term.term_type,
+                }
+            )
+
+    collections = db.scalars(
+        select(Collection)
+        .where(Collection.user_id == user.id, Collection.artist_id == artist_id)
+        .order_by(Collection.updated_at.desc(), Collection.id.desc())
+        .limit(5)
+    ).all()
+    collection_targets = [
+        {
+            "id": collection.id,
+            "title": collection.title,
+            "reason": "이 글의 참고자료를 기존 컬렉션에 이어 담을 수 있습니다.",
+        }
+        for collection in collections
+    ]
+    if not collection_targets:
+        collection_targets.append(
+            {
+                "id": None,
+                "title": "참고자료 큐",
+                "reason": "글에 쓴 영상과 자료를 새 컬렉션으로 묶기 좋습니다.",
+            }
+        )
+    return suggested_members, archive_terms[:10], collection_targets
 
 
 @router.post("/qa", response_model=QaResponse)
@@ -95,7 +153,11 @@ def rag_context(
             mode=payload.mode,
             limit=payload.limit,
         )
-    return RagContextResponse(summary=result.summary, sources=result.sources, insert_text=result.insert_text)
+    return RagContextResponse(
+        summary=result.summary,
+        sources=result.sources,
+        insert_text=result.insert_text,
+    )
 
 
 @router.post("/saved-summary", response_model=RagContextResponse)
@@ -108,7 +170,11 @@ def saved_summary(
 ) -> RagContextResponse:
     consume_ai_quota(db, user, "saved_summary")
     result = saved_summary_context(db, user=user, artist_id=payload.artist_id, limit=payload.limit)
-    return RagContextResponse(summary=result.summary, sources=result.sources, insert_text=result.insert_text)
+    return RagContextResponse(
+        summary=result.summary,
+        sources=result.sources,
+        insert_text=result.insert_text,
+    )
 
 
 @router.post("/writing-assist", response_model=RagContextResponse)
@@ -128,7 +194,20 @@ def writing_assist(
         mode="writing_assist",
         limit=payload.limit,
     )
-    return RagContextResponse(summary=result.summary, sources=result.sources, insert_text=result.insert_text)
+    members, archive_terms, collection_targets = _writing_suggestions(
+        db,
+        user=user,
+        artist_id=payload.artist_id,
+        query=query,
+    )
+    return RagContextResponse(
+        summary=result.summary,
+        sources=result.sources,
+        insert_text=result.insert_text,
+        suggested_members=members,
+        suggested_archive_terms=archive_terms,
+        suggested_collection_targets=collection_targets,
+    )
 
 
 @router.post("/similar", response_model=list[PostRead])

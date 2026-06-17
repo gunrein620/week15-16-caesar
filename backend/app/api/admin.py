@@ -38,6 +38,8 @@ from app.schemas import (
     RagEmbedYoutubeResult,
     RagExternalUpdateBackfillRequest,
     RagExternalUpdateBackfillResult,
+    RagThumbnailAnalysisRequest,
+    RagThumbnailAnalysisResult,
     RagTranscriptBatchRequest,
     RagTranscriptBatchResult,
     RagTranscriptPendingRead,
@@ -66,6 +68,7 @@ from app.services.rag_admin import (
     latest_rag_embedding_job,
     process_rag_embedding_job_batch,
 )
+from app.services.thumbnail_analysis import analyze_thumbnail_batch
 from app.services.transcripts import (
     fetch_transcripts_batch,
     list_pending_transcript_videos,
@@ -393,6 +396,23 @@ def fetch_youtube_transcript_batch(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, int]:
     result = fetch_transcripts_batch(
+        db,
+        payload.artist_id,
+        limit=payload.limit,
+        days=payload.days,
+        force=payload.force,
+    )
+    db.commit()
+    return result
+
+
+@router.post("/rag/thumbnail-analysis", response_model=RagThumbnailAnalysisResult)
+def analyze_youtube_thumbnail_batch(
+    payload: RagThumbnailAnalysisRequest,
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, int]:
+    result = analyze_thumbnail_batch(
         db,
         payload.artist_id,
         limit=payload.limit,

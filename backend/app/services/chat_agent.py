@@ -24,6 +24,8 @@ SYSTEM_PROMPT = (
     "You are a RESCENE(리센느) girl group fan archive guide. Answer in Korean. "
     "You must gather evidence with tools before answering. If there is no evidence, say so honestly. "
     "Members: 원이, 리브, 미나미, 메이, 제나. Cite sources as [1], [2] using the order in the provided sources list. "
+    "For official/공식/공계 requests, pass content_source_types=['official_channel'] to search tools. "
+    "Search tools return ranked source order; when listing ranked items, keep the same order as the source cards. "
     "Start with the conclusion, answer with enough detail when needed, and do not list raw URLs because source cards are shown separately."
 )
 
@@ -41,12 +43,35 @@ CHAT_TOOLS: list[dict[str, Any]] = [
                     "media_type": {"type": "string", "enum": ["youtube"]},
                     "source_types": {
                         "type": "array",
+                        "description": "Content item types such as YouTube, posts, briefings, or cached Naver updates.",
                         "items": {
                             "type": "string",
                             "enum": ["youtube", "post", "briefing", "naver_news", "naver_blog"],
                         },
                     },
+                    "content_source_types": {
+                        "type": "array",
+                        "description": "Origin/source facet. Use official_channel for official, 공식, or 공계 YouTube requests.",
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "official_channel",
+                                "member_channel",
+                                "fan_channel",
+                                "curated_video",
+                                "keyword_search",
+                            ],
+                        },
+                    },
                     "include_terms": {"type": "array", "items": {"type": "string"}},
+                    "exclude_terms": {"type": "array", "items": {"type": "string"}},
+                    "member_count": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5,
+                        "description": "Exact number of members/persons identified in the video metadata.",
+                    },
+                    "offset": {"type": "integer", "minimum": 0, "default": 0},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 12, "default": 8},
                 },
                 "required": ["artist_id", "query"],
@@ -57,13 +82,56 @@ CHAT_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_recent_updates",
-            "description": "Fetch recent or today RESCENE updates from the cached update feed.",
+            "description": (
+                "Fetch RESCENE updates from the cached feed. Use this for recent/today questions, "
+                "date ranges, and popularity/view-count sorting."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "artist_id": {"type": "integer", "default": 1},
-                    "temporal": {"type": "string", "enum": ["today", "recent"], "default": "recent"},
+                    "temporal": {"type": "string", "enum": ["today", "recent", "custom"], "default": "recent"},
                     "source": {"type": "string", "enum": ["youtube"]},
+                    "source_types": {
+                        "type": "array",
+                        "description": "Content item types such as YouTube, posts, briefings, or cached Naver updates.",
+                        "items": {
+                            "type": "string",
+                            "enum": ["youtube", "post", "briefing", "naver_news", "naver_blog"],
+                        },
+                    },
+                    "content_source_types": {
+                        "type": "array",
+                        "description": "Origin/source facet. Use official_channel for official, 공식, or 공계 YouTube requests.",
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "official_channel",
+                                "member_channel",
+                                "fan_channel",
+                                "curated_video",
+                                "keyword_search",
+                            ],
+                        },
+                    },
+                    "published_after": {
+                        "type": "string",
+                        "description": "Inclusive ISO 8601 datetime with timezone for the start of a date range.",
+                    },
+                    "published_before": {
+                        "type": "string",
+                        "description": "Inclusive ISO 8601 datetime with timezone for the end of a date range.",
+                    },
+                    "include_terms": {"type": "array", "items": {"type": "string"}},
+                    "exclude_terms": {"type": "array", "items": {"type": "string"}},
+                    "sort": {"type": "string", "enum": ["latest", "popular", "relevance"]},
+                    "member_count": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5,
+                        "description": "Exact number of members/persons identified in the video metadata.",
+                    },
+                    "offset": {"type": "integer", "minimum": 0, "default": 0},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 12, "default": 8},
                 },
                 "required": ["artist_id"],
@@ -182,6 +250,23 @@ def _normalize_tool_arguments(name: str, arguments: dict[str, Any], artist_id: i
             normalized["limit"] = min(max(int(normalized.get("limit") or 8), 1), 12)
         except (TypeError, ValueError):
             normalized["limit"] = 8
+        try:
+            normalized["offset"] = max(int(normalized.get("offset") or 0), 0)
+        except (TypeError, ValueError):
+            normalized["offset"] = 0
+    if name == "get_recent_updates":
+        if normalized.get("sort") not in {"latest", "popular", "relevance"}:
+            normalized.pop("sort", None)
+    if name in {"search_archive", "get_recent_updates"} and "member_count" in normalized:
+        try:
+            parsed_member_count = int(normalized["member_count"])
+        except (TypeError, ValueError):
+            normalized.pop("member_count", None)
+        else:
+            if 1 <= parsed_member_count <= 5:
+                normalized["member_count"] = parsed_member_count
+            else:
+                normalized.pop("member_count", None)
     if name == "search_archive":
         query = str(normalized.get("query") or "").strip()
         normalized["query"] = query
@@ -274,6 +359,23 @@ def _tool_result_count(name: str, result: dict[str, Any]) -> int:
     return 0
 
 
+def _source_page_state(
+    name: str,
+    result: dict[str, Any],
+    arguments: dict[str, Any],
+    fallback_question: str,
+) -> dict[str, Any] | None:
+    if name not in {"search_archive", "get_recent_updates"}:
+        return None
+    source_question = arguments.get("query") if name == "search_archive" else fallback_question
+    return {
+        "has_more": bool(result.get("has_more")),
+        "next_offset": result.get("next_offset"),
+        "search_intent": result.get("search_intent"),
+        "source_question": str(source_question or fallback_question),
+    }
+
+
 def _source_type_label(source: dict[str, Any]) -> str:
     labels = {
         "youtube": "YouTube",
@@ -285,16 +387,29 @@ def _source_type_label(source: dict[str, Any]) -> str:
     return labels.get(str(source.get("source_type") or ""), str(source.get("source_type") or "source"))
 
 
+def _source_metadata_text(source: dict[str, Any]) -> str:
+    parts: list[str] = []
+    published_at = source.get("published_at")
+    if published_at:
+        parts.append(f"published_at: {published_at}")
+    if source.get("view_count") is not None:
+        parts.append(f"views: {source.get('view_count')}")
+    return f" | {' | '.join(parts)}" if parts else ""
+
+
 def _source_list_system_message(sources: list[dict[str, Any]]) -> dict[str, str]:
     if not sources:
         content = "No numbered sources were found. Do not invent citations."
     else:
         lines = [
-            f"[{index}] {source.get('title') or 'Untitled'} — {_source_type_label(source)}"
+            f"[{index}] {source.get('title') or 'Untitled'} — {_source_type_label(source)}{_source_metadata_text(source)}"
             for index, source in enumerate(sources, start=1)
         ]
         content = (
-            "Use only these numbered sources for citations. Match citation numbers exactly to this list:\n"
+            "The sources below are already in the order shown to the user and in ranked/result order. "
+            "Use only these numbered sources for citations. Match citation numbers exactly to this list. "
+            "When answering with multiple items, keep this exact order: first item cites [1], second cites [2], and so on. "
+            "Do not reorder by title, date, or views.\n"
             + "\n".join(lines)
         )
     return {"role": "system", "content": content}
@@ -380,12 +495,14 @@ def stream_chat_events(payload: ChatRequest, *, user_id: int) -> Iterator[str]:
 
             mcp = McpToolClient(db, agent_run_id=run.id)
             sources: list[dict[str, Any]] = []
+            page_state: dict[str, Any] | None = None
             if not settings.openai_api_key:
                 arguments = {"artist_id": payload.artist_id, "query": question, "limit": 8}
                 yield _sse({"type": "tool_call", "name": "search_archive", "arguments": arguments})
                 result = mcp.call_tool("search_archive", arguments)
                 db.commit()
                 sources.extend(_sources_from_tool_result("search_archive", result))
+                page_state = _source_page_state("search_archive", result, arguments, question)
                 yield _sse(
                     {
                         "type": "tool_result",
@@ -394,7 +511,7 @@ def stream_chat_events(payload: ChatRequest, *, user_id: int) -> Iterator[str]:
                     }
                 )
                 visible_sources = dedupe_sources(sources)[:12]
-                yield _sse({"type": "sources", "sources": visible_sources})
+                yield _sse({"type": "sources", "sources": visible_sources, **(page_state or {})})
                 fallback = "OpenAI 키가 설정되지 않아 검색 결과만 제공합니다."
                 answer_parts.append(fallback)
                 yield _sse({"type": "delta", "text": fallback})
@@ -432,6 +549,9 @@ def stream_chat_events(payload: ChatRequest, *, user_id: int) -> Iterator[str]:
                     result = mcp.call_tool(name, arguments)
                     db.commit()
                     sources.extend(_sources_from_tool_result(name, result))
+                    next_page_state = _source_page_state(name, result, arguments, question)
+                    if next_page_state is not None:
+                        page_state = next_page_state
                     yield _sse(
                         {
                             "type": "tool_result",
@@ -456,7 +576,7 @@ def stream_chat_events(payload: ChatRequest, *, user_id: int) -> Iterator[str]:
                 )
 
             visible_sources = dedupe_sources(sources)[:12]
-            yield _sse({"type": "sources", "sources": visible_sources})
+            yield _sse({"type": "sources", "sources": visible_sources, **(page_state or {})})
             if direct_content:
                 answer_parts.append(direct_content)
                 yield _sse({"type": "delta", "text": direct_content})

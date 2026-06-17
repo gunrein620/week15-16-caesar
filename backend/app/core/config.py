@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     chat_max_tool_iterations: int = 4
     chat_suggestions_enabled: bool = True
     rerank_model: str = "gpt-5.5-mini"
+    thumbnail_analysis_model: str = "gpt-5.4-mini"
     rerank_candidates: int = 30
     rerank_enabled: bool = True
 

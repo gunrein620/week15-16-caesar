@@ -486,6 +486,141 @@ def test_admin_rag_embed_youtube_processes_limited_missing_batch(client):
     assert "RESCENE 채널의 YouTube 영상" in chunks[0].content
 
 
+def test_admin_thumbnail_analysis_batch_updates_youtube_videos(client, monkeypatch):
+    admin_token = login(client, "admin@example.com", "admin-password")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    def fake_analyze_thumbnail_url(thumbnail_url, *, known_members):
+        assert "Woni" in known_members
+        return {
+            "status": "analyzed",
+            "person_count": 1,
+            "detected_members": ["Woni"],
+            "confidence": 0.82,
+            "error": "",
+            "model": "test-vision",
+        }
+
+    monkeypatch.setattr(
+        "app.services.thumbnail_analysis.analyze_thumbnail_url",
+        fake_analyze_thumbnail_url,
+    )
+    with get_session_factory()() as db:
+        source = YoutubeSource(
+            artist_id=1,
+            source_type="keyword_search",
+            source_value="thumbnail analysis",
+            title="thumbnail analysis source",
+        )
+        video = YoutubeVideo(
+            id="thumb-analysis-woni",
+            title="RESCENE WONI thumbnail",
+            description="썸네일 분석 대상",
+            channel_title="RESCENE",
+            published_at=datetime(2026, 6, 10, tzinfo=UTC),
+            thumbnail_url="https://img.youtube.com/vi/thumb-analysis-woni/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=thumb-analysis-woni",
+            view_count=100,
+            content_hash="thumb-analysis-woni-hash",
+        )
+        db.add_all([source, video])
+        db.flush()
+        db.add(YoutubeVideoSource(video_id=video.id, source_id=source.id))
+        db.commit()
+
+    response = client.post(
+        "/admin/rag/thumbnail-analysis",
+        json={"artist_id": 1, "limit": 1},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["processed"] == 1
+    assert response.json()["analyzed"] == 1
+    assert response.json()["failed"] == 0
+    with get_session_factory()() as db:
+        video = db.get(YoutubeVideo, "thumb-analysis-woni")
+        assert video.thumbnail_analysis_status == "analyzed"
+        assert video.thumbnail_person_count == 1
+        assert video.thumbnail_detected_members == '["Woni"]'
+        assert video.thumbnail_analysis_confidence == 0.82
+        assert video.thumbnail_analysis_model == "test-vision"
+
+
+def test_admin_thumbnail_analysis_skips_failed_without_force(client, monkeypatch):
+    admin_token = login(client, "admin@example.com", "admin-password")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    analyzed_ids: list[str] = []
+
+    def fake_analyze_thumbnail_url(thumbnail_url, *, known_members):
+        analyzed_ids.append(thumbnail_url.rsplit("/", 2)[-2])
+        return {
+            "status": "analyzed",
+            "person_count": 1,
+            "detected_members": ["Woni"],
+            "confidence": 0.7,
+            "error": "",
+            "model": "test-vision",
+        }
+
+    monkeypatch.setattr(
+        "app.services.thumbnail_analysis.analyze_thumbnail_url",
+        fake_analyze_thumbnail_url,
+    )
+    with get_session_factory()() as db:
+        source = YoutubeSource(
+            artist_id=1,
+            source_type="keyword_search",
+            source_value="thumbnail failed skip",
+            title="thumbnail failed skip source",
+        )
+        failed = YoutubeVideo(
+            id="thumb-analysis-failed",
+            title="RESCENE failed thumbnail",
+            description="이미 실패한 썸네일",
+            channel_title="RESCENE",
+            published_at=datetime(2026, 6, 11, tzinfo=UTC),
+            thumbnail_url="https://img.youtube.com/vi/thumb-analysis-failed/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=thumb-analysis-failed",
+            view_count=100,
+            content_hash="thumb-analysis-failed-hash",
+            thumbnail_analysis_status="failed",
+        )
+        pending = YoutubeVideo(
+            id="thumb-analysis-pending",
+            title="RESCENE pending thumbnail",
+            description="아직 분석 전 썸네일",
+            channel_title="RESCENE",
+            published_at=datetime(2026, 6, 10, tzinfo=UTC),
+            thumbnail_url="https://img.youtube.com/vi/thumb-analysis-pending/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=thumb-analysis-pending",
+            view_count=100,
+            content_hash="thumb-analysis-pending-hash",
+        )
+        db.add_all([source, failed, pending])
+        db.flush()
+        db.add_all(
+            [
+                YoutubeVideoSource(video_id=failed.id, source_id=source.id),
+                YoutubeVideoSource(video_id=pending.id, source_id=source.id),
+            ]
+        )
+        db.commit()
+
+    response = client.post(
+        "/admin/rag/thumbnail-analysis",
+        json={"artist_id": 1, "limit": 10},
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["processed"] == 1
+    assert analyzed_ids == ["thumb-analysis-pending"]
+    with get_session_factory()() as db:
+        assert db.get(YoutubeVideo, "thumb-analysis-failed").thumbnail_analysis_status == "failed"
+        assert db.get(YoutubeVideo, "thumb-analysis-pending").thumbnail_analysis_status == "analyzed"
+
+
 def test_admin_rag_job_processes_missing_and_stale_videos_without_duplicate_chunks(client):
     admin_token = login(client, "admin@example.com", "admin-password")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}

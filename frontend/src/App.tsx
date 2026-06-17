@@ -34,14 +34,16 @@ import {
   VolumeX,
   X,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   ArtistArchiveTerm,
-  ArtistKeyword,
   AnalyticsEvent,
   AnalyticsSummary,
+  AutoBriefingDraftResponse,
   AuthResponse,
   BriefingPreview,
+  DataQualityBuildResult,
+  DataQualityTask,
   Comment,
   EmailVerificationSendResponse,
   InfraCostSettings,
@@ -49,11 +51,13 @@ import {
   Post,
   PostEmbed,
   PostList,
+  QaResponse,
   QaSource,
   RagContextResponse,
   RagCleanupResult,
   RagCoverage,
   RagEmbeddingJob,
+  RagThumbnailAnalysisResult,
   SavedItem,
   SignupSettings,
   SyncSettings,
@@ -61,6 +65,9 @@ import {
   UpdateFeedItem,
   UpdateFeedResponse,
   User,
+  UserCollection,
+  UserNotification,
+  UserSubscription,
   YoutubeBackfillResult,
   YoutubeSource,
   YoutubeSourceType,
@@ -91,12 +98,13 @@ import {
   type AppPanel,
   type BoardMode,
 } from './boardNavigation'
-import { buildArchiveSourceDisplay } from './archiveSearch'
+import { buildArchiveSourceDisplay, mergeArchiveSourcePages } from './archiveSearch'
 import {
   appendReferenceText,
   buildWritingAssistQuery,
   shouldRequestWritingAssist,
 } from './ragContext'
+import { consumeRagInitialQuestion, nextRagInitialQuestionFromSubmit } from './ragNavigation'
 import { adminActivityEventsPath, adminActivitySummaryPath } from './adminAnalytics'
 import {
   parseBriefingContent,
@@ -120,6 +128,7 @@ import { buildYoutubeSourcePayload } from './youtubeSourceForm'
 import { MEMBER_COLORS, MEMBER_ORDER, memberColor, memberOn } from './memberColors'
 import { compactMemberNamesText, memberLabel, memberNamesText } from './memberDisplay'
 import { getPasswordRuleStatus, isStrongPassword, passwordRequirementText } from './passwordRules'
+import { chatScrollOptionsForUpdate, shouldAutoScrollChat } from './chatScroll'
 import { emailVerificationStatusText } from './emailVerification'
 
 type FeedSource = 'all' | 'youtube' | 'naver' | 'briefing' | 'post'
@@ -335,6 +344,7 @@ function memberNamesFromText(...parts: Array<string | null | undefined>) {
 function archiveTermTypeLabel(type: ArtistArchiveTerm['term_type']) {
   if (type === 'song') return '곡명'
   if (type === 'album') return '앨범'
+  if (type === 'member') return '멤버'
   return '활동'
 }
 
@@ -580,7 +590,7 @@ export default function App() {
       onLogin={() => setAuthOpen(true)}
       onLogout={logout}
       onSearchSubmit={(value) => {
-        setRagInitialQuestion(value)
+        setRagInitialQuestion(nextRagInitialQuestionFromSubmit(value))
         setPanel('rag')
       }}
     >
@@ -706,6 +716,9 @@ export default function App() {
             <RagPanel
               token={token}
               initialQuestion={ragInitialQuestion}
+              onInitialQuestionConsumed={() =>
+                setRagInitialQuestion((current) => consumeRagInitialQuestion(current))
+              }
               onRequireAuth={requireAuth}
               onRequireVerified={requireVerified}
               onOpenPost={openPost}
@@ -2554,6 +2567,10 @@ type ChatUiMessage = {
   role: 'user' | 'assistant'
   content: string
   sources?: QaSource[]
+  sourceQuestion?: string
+  sourceSearchIntent?: Record<string, unknown> | null
+  sourceHasMore?: boolean
+  sourceNextOffset?: number | null
   suggestions?: string[]
 }
 
@@ -2593,12 +2610,14 @@ function chatToolLabel(name: string) {
 function RagPanel({
   token,
   initialQuestion,
+  onInitialQuestionConsumed,
   onRequireAuth,
   onRequireVerified,
   onOpenPost,
 }: {
   token: string | null
   initialQuestion: string
+  onInitialQuestionConsumed: () => void
   onRequireAuth: () => void
   onRequireVerified: () => boolean
   onOpenPost: (postId: number) => void
@@ -2612,9 +2631,12 @@ function RagPanel({
   const [streamError, setStreamError] = useState('')
   const [pendingSavedKeys, setPendingSavedKeys] = useState<Set<string>>(() => new Set())
   const [saveError, setSaveError] = useState('')
+  const [loadMoreError, setLoadMoreError] = useState('')
+  const [loadingMoreMessageId, setLoadingMoreMessageId] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const lastAutoSearch = useRef('')
   const threadRef = useRef<HTMLDivElement | null>(null)
+  const shouldStickToBottomRef = useRef(true)
   const savedItemsQueryKey = ['saved-items', token] as const
   const savedItems = useQuery({
     queryKey: savedItemsQueryKey,
@@ -2687,9 +2709,16 @@ function RagPanel({
   useEffect(() => {
     window.localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages.slice(-30)))
   }, [messages])
-  useEffect(() => {
-    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages, toolStatus])
+  useLayoutEffect(() => {
+    const thread = threadRef.current
+    if (!thread || !shouldStickToBottomRef.current) return
+    thread.scrollTo(chatScrollOptionsForUpdate(thread.scrollHeight, isStreaming))
+  }, [messages, toolStatus, isStreaming])
+  const updateChatScrollPin = () => {
+    const thread = threadRef.current
+    if (!thread) return
+    shouldStickToBottomRef.current = shouldAutoScrollChat(thread)
+  }
   const updateAssistantMessage = (assistantId: string, updater: (message: ChatUiMessage) => ChatUiMessage) => {
     setMessages((current) => current.map((message) => (message.id === assistantId ? updater(message) : message)))
   }
@@ -2709,7 +2738,9 @@ function RagPanel({
       .map((message) => ({ role: message.role, content: message.content }))
     setDraft('')
     setStreamError('')
+    setLoadMoreError('')
     setToolStatus(null)
+    shouldStickToBottomRef.current = true
     setMessages((current) => [...current, userMessage, assistantMessage].slice(-30))
     setActiveAssistantId(assistantMessage.id)
     setIsStreaming(true)
@@ -2740,6 +2771,10 @@ function RagPanel({
             updateAssistantMessage(assistantMessage.id, (message) => ({
               ...message,
               sources: event.sources as QaSource[],
+              sourceQuestion: event.source_question || trimmed,
+              sourceSearchIntent: event.search_intent ?? null,
+              sourceHasMore: Boolean(event.has_more),
+              sourceNextOffset: typeof event.next_offset === 'number' ? event.next_offset : null,
             }))
             return
           }
@@ -2781,20 +2816,79 @@ function RagPanel({
       setActiveAssistantId(null)
     }
   }
+  const loadMoreSources = async (message: ChatUiMessage) => {
+    if (!message.sourceHasMore || message.sourceNextOffset === null || message.sourceNextOffset === undefined) return
+    if (loadingMoreMessageId) return
+    if (!token) {
+      onRequireAuth()
+      return
+    }
+    if (!onRequireVerified()) return
+    const sourceQuestion = (message.sourceQuestion || '').trim()
+    if (!sourceQuestion) return
+    setLoadMoreError('')
+    setLoadingMoreMessageId(message.id)
+    shouldStickToBottomRef.current = true
+    try {
+      const result = await api<QaResponse>(
+        '/ai/qa',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            question: sourceQuestion,
+            artist_id: 1,
+            limit: 10,
+            offset: message.sourceNextOffset,
+            include_answer: false,
+            search_intent: message.sourceSearchIntent ?? undefined,
+          }),
+        },
+        token,
+      )
+      setMessages((current) =>
+        current.map((item) =>
+          item.id === message.id
+            ? {
+                ...item,
+                sources: mergeArchiveSourcePages(item.sources ?? [], result.sources),
+                sourceQuestion,
+                sourceSearchIntent: result.search_intent ?? item.sourceSearchIntent ?? null,
+                sourceHasMore: result.has_more,
+                sourceNextOffset: result.next_offset,
+              }
+            : item,
+        ),
+      )
+      trackAnalyticsEvent({
+        eventName: 'archive_search_load_more',
+        panel: 'rag',
+        token,
+        metadata: { query: sourceQuestion, offset: message.sourceNextOffset },
+      })
+    } catch (error) {
+      setLoadMoreError(error instanceof Error ? error.message : '추가 결과를 불러오지 못했습니다.')
+    } finally {
+      setLoadingMoreMessageId(null)
+    }
+  }
   useEffect(() => {
     const trimmed = initialQuestion.trim()
     if (!trimmed || lastAutoSearch.current === trimmed) return
     lastAutoSearch.current = trimmed
     setDraft(trimmed)
+    onInitialQuestionConsumed()
     void sendQuestion(trimmed)
-  }, [initialQuestion, token])
+  }, [initialQuestion, token, onInitialQuestionConsumed])
   const resetChat = () => {
     abortRef.current?.abort()
     setMessages([])
     setDraft('')
     setStreamError('')
+    setLoadMoreError('')
     setToolStatus(null)
     setActiveAssistantId(null)
+    setLoadingMoreMessageId(null)
+    shouldStickToBottomRef.current = true
     window.localStorage.removeItem(CHAT_STORAGE_KEY)
   }
   return (
@@ -2809,7 +2903,7 @@ function RagPanel({
           새 대화
         </button>
       </div>
-      <div className="chatThread" ref={threadRef}>
+      <div className="chatThread" ref={threadRef} onScroll={updateChatScrollPin}>
         {!messages.length && (
           <div className="ragSearchEmpty chatEmpty">
             <Sparkles size={34} />
@@ -2842,33 +2936,45 @@ function RagPanel({
                 )}
               </div>
               {isAssistant && message.sources?.length ? (
-                <div className="sourceCards ragSourceGrid chatSourceGrid">
-                  {message.sources.map((source, index) => {
-                    const savedItem = findSavedSourceItem(savedItems.data, source)
-                    const itemKey = savedItem?.item_key ?? savedItemKeyFromSource(source)
-                    return (
-                      <SourceCard
-                        key={`${source.source_type}-${source.chunk_id ?? source.url}-${index}`}
-                        source={source}
-                        onOpenPost={onOpenPost}
-                        savedItem={savedItem}
-                        savePending={pendingSavedKeys.has(itemKey)}
-                        onToggleSave={() => {
-                          if (!token) {
-                            onRequireAuth()
-                            return
-                          }
-                          if (!onRequireVerified()) return
-                          if (savedItem) {
-                            removeSavedSource.mutate(savedItem)
-                            return
-                          }
-                          saveSource.mutate(source)
-                        }}
-                      />
-                    )
-                  })}
-                </div>
+                <>
+                  <div className="sourceCards ragSourceGrid chatSourceGrid">
+                    {message.sources.map((source, index) => {
+                      const savedItem = findSavedSourceItem(savedItems.data, source)
+                      const itemKey = savedItem?.item_key ?? savedItemKeyFromSource(source)
+                      return (
+                        <SourceCard
+                          key={`${source.source_type}-${source.chunk_id ?? source.url}-${index}`}
+                          source={source}
+                          onOpenPost={onOpenPost}
+                          savedItem={savedItem}
+                          savePending={pendingSavedKeys.has(itemKey)}
+                          onToggleSave={() => {
+                            if (!token) {
+                              onRequireAuth()
+                              return
+                            }
+                            if (!onRequireVerified()) return
+                            if (savedItem) {
+                              removeSavedSource.mutate(savedItem)
+                              return
+                            }
+                            saveSource.mutate(source)
+                          }}
+                        />
+                      )
+                    })}
+                  </div>
+                  {message.sourceHasMore && (
+                    <button
+                      type="button"
+                      className="loadMore sourceLoadMore"
+                      disabled={loadingMoreMessageId === message.id || isStreaming}
+                      onClick={() => void loadMoreSources(message)}
+                    >
+                      {loadingMoreMessageId === message.id ? '불러오는 중...' : '더 보기'}
+                    </button>
+                  )}
+                </>
               ) : null}
               {isAssistant && message.suggestions?.length ? (
                 <div className="chatSuggestionRow">
@@ -2890,6 +2996,7 @@ function RagPanel({
         })}
       </div>
       {streamError && <p className="error chatError">{streamError}</p>}
+      {loadMoreError && <p className="error chatError">{loadMoreError}</p>}
       {saveError && <p className="error">{saveError}</p>}
       <form
         className="chatComposer"
@@ -2961,6 +3068,46 @@ function WritingAssistPanel({
       {loading && <p className="muted">관련 자료를 찾는 중...</p>}
       {error && <p className="error">{error}</p>}
       {result?.summary && <p className="hint">{result.summary}</p>}
+      {result && (
+        <div className="assistSuggestionGrid">
+          {result.suggested_members.length > 0 && (
+            <div className="assistSuggestionGroup">
+              <span>멤버</span>
+              <div className="profileChipList">
+                {result.suggested_members.map((name) => (
+                  <span className="pill" key={name}>
+                    {name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {result.suggested_archive_terms.length > 0 && (
+            <div className="assistSuggestionGroup">
+              <span>아카이브</span>
+              <div className="profileChipList">
+                {result.suggested_archive_terms.map((term) => (
+                  <span className="pill" key={term.id}>
+                    {term.title}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {result.suggested_collection_targets.length > 0 && (
+            <div className="assistSuggestionGroup">
+              <span>컬렉션</span>
+              <div className="profileChipList">
+                {result.suggested_collection_targets.map((target) => (
+                  <span className="pill" key={`${target.id ?? 'new'}-${target.title}`}>
+                    {target.title}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       {result?.sources.length ? (
         <div className="sourceCards compactSourceCards ragSourceGrid">
           {result.sources.map((source, index) => (
@@ -2987,10 +3134,23 @@ function archiveSourceTypeLabel(source: QaSource) {
 }
 
 function savedItemKeyFromSource(source: QaSource) {
+  if (source.search_item_id) return `search:${source.search_item_id}`
   if (source.youtube_video_id) return source.youtube_video_id
   if (source.post_id) return String(source.post_id)
+  if (source.external_update_id) return `external:${source.external_update_id}`
   if (source.chunk_id) return String(source.chunk_id)
   return source.url
+}
+
+function savedItemKeysFromSource(source: QaSource) {
+  return [
+    savedItemKeyFromSource(source),
+    source.youtube_video_id,
+    source.post_id ? String(source.post_id) : null,
+    source.external_update_id ? `external:${source.external_update_id}` : null,
+    source.chunk_id ? String(source.chunk_id) : null,
+    source.url,
+  ].filter((key): key is string => Boolean(key))
 }
 
 function savedItemPayloadFromSource(source: QaSource) {
@@ -3023,8 +3183,8 @@ function optimisticSavedItemFromSource(
 }
 
 function findSavedSourceItem(savedItems: SavedItem[] | undefined, source: QaSource): SavedItem | null {
-  const itemKey = savedItemKeyFromSource(source)
-  return savedItems?.find((item) => item.item_type === source.source_type && item.item_key === itemKey) ?? null
+  const itemKeys = new Set(savedItemKeysFromSource(source))
+  return savedItems?.find((item) => item.item_type === source.source_type && itemKeys.has(item.item_key)) ?? null
 }
 
 function SourceCard({
@@ -3601,11 +3761,90 @@ function ProfilePanel({
   const [editOpen, setEditOpen] = useState(false)
   const [pendingRemoveKeys, setPendingRemoveKeys] = useState<Set<string>>(() => new Set())
   const [removeError, setRemoveError] = useState('')
+  const [subscriptionName, setSubscriptionName] = useState('공식 YouTube 업데이트')
+  const [subscriptionMember, setSubscriptionMember] = useState('')
+  const [collectionTitle, setCollectionTitle] = useState('')
   const savedItemsQueryKey = ['saved-items', token] as const
+  const subscriptionsQueryKey = ['subscriptions', token] as const
+  const notificationsQueryKey = ['notifications', token] as const
+  const collectionsQueryKey = ['collections', token] as const
   const savedItems = useQuery({
     queryKey: savedItemsQueryKey,
     queryFn: () => api<SavedItem[]>('/saved-items', {}, token),
     enabled: Boolean(token && user),
+  })
+  const subscriptions = useQuery({
+    queryKey: subscriptionsQueryKey,
+    queryFn: () => api<UserSubscription[]>('/subscriptions', {}, token),
+    enabled: Boolean(token && user),
+  })
+  const notifications = useQuery({
+    queryKey: notificationsQueryKey,
+    queryFn: () => api<UserNotification[]>('/notifications?limit=10', {}, token),
+    enabled: Boolean(token && user),
+  })
+  const collections = useQuery({
+    queryKey: collectionsQueryKey,
+    queryFn: () => api<UserCollection[]>('/collections', {}, token),
+    enabled: Boolean(token && user),
+  })
+  const createSubscription = useMutation({
+    mutationFn: () =>
+      api<UserSubscription>(
+        '/subscriptions',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            artist_id: 1,
+            name: subscriptionName.trim() || '공식 YouTube 업데이트',
+            content_types: ['youtube'],
+            source_types: ['official_channel'],
+            member_names: subscriptionMember.trim() ? [subscriptionMember.trim()] : [],
+          }),
+        },
+        token,
+      ),
+    onSuccess: () => {
+      setSubscriptionMember('')
+      void queryClient.invalidateQueries({ queryKey: subscriptionsQueryKey })
+    },
+  })
+  const markNotificationRead = useMutation({
+    mutationFn: (notificationId: number) =>
+      api<UserNotification>(`/notifications/${notificationId}/read`, { method: 'POST' }, token),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: notificationsQueryKey })
+    },
+  })
+  const createCollection = useMutation({
+    mutationFn: () =>
+      api<UserCollection>(
+        '/collections',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            artist_id: 1,
+            title: collectionTitle.trim(),
+            description: '',
+          }),
+        },
+        token,
+      ),
+    onSuccess: () => {
+      setCollectionTitle('')
+      void queryClient.invalidateQueries({ queryKey: collectionsQueryKey })
+    },
+  })
+  const summarizeCollection = useMutation({
+    mutationFn: (collectionId: number) =>
+      api<{ collection_id: number; ai_summary: string }>(
+        `/collections/${collectionId}/summary`,
+        { method: 'POST' },
+        token,
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: collectionsQueryKey })
+    },
   })
   const remove = useMutation({
     mutationFn: (item: SavedItem) => api<void>(`/saved-items/${item.id}`, { method: 'DELETE' }, token),
@@ -3673,6 +3912,108 @@ function ProfilePanel({
           <Bookmark size={18} />
           저장
         </button>
+      </section>
+      <section className="profileWorkflowGrid" aria-label="개인 workflow">
+        <article className="profileWorkflowPanel">
+          <div className="profileWorkflowHead">
+            <strong>알림</strong>
+            <span>{formatNumber(notifications.data?.filter((item) => !item.read_at).length ?? 0)} unread</span>
+          </div>
+          <div className="profileWorkflowList">
+            {notifications.data?.slice(0, 5).map((notification) => (
+              <div className="profileWorkflowRow" key={notification.id}>
+                <div>
+                  <strong>{notification.title}</strong>
+                  <small>{formatDate(notification.created_at)}</small>
+                </div>
+                {!notification.read_at && (
+                  <button
+                    className="secondary"
+                    type="button"
+                    onClick={() => markNotificationRead.mutate(notification.id)}
+                  >
+                    읽음
+                  </button>
+                )}
+              </div>
+            ))}
+            {!notifications.isLoading && notifications.data?.length === 0 && (
+              <p className="muted">조건에 맞는 새 자료가 생기면 알림이 표시됩니다.</p>
+            )}
+          </div>
+        </article>
+        <article className="profileWorkflowPanel">
+          <div className="profileWorkflowHead">
+            <strong>구독 조건</strong>
+            <span>{formatNumber(subscriptions.data?.length ?? 0)} active</span>
+          </div>
+          <div className="workflowForm compactWorkflowForm">
+            <input
+              value={subscriptionName}
+              onChange={(event) => setSubscriptionName(event.target.value)}
+              placeholder="구독 이름"
+            />
+            <input
+              value={subscriptionMember}
+              onChange={(event) => setSubscriptionMember(event.target.value)}
+              placeholder="멤버명 optional"
+            />
+            <button
+              className="secondary"
+              type="button"
+              disabled={createSubscription.isPending}
+              onClick={() => createSubscription.mutate()}
+            >
+              추가
+            </button>
+          </div>
+          <div className="profileChipList">
+            {subscriptions.data?.slice(0, 6).map((subscription) => (
+              <span className="pill" key={subscription.id}>
+                {subscription.name}
+              </span>
+            ))}
+          </div>
+        </article>
+        <article className="profileWorkflowPanel">
+          <div className="profileWorkflowHead">
+            <strong>컬렉션</strong>
+            <span>{formatNumber(collections.data?.length ?? 0)} sets</span>
+          </div>
+          <div className="workflowForm">
+            <input
+              value={collectionTitle}
+              onChange={(event) => setCollectionTitle(event.target.value)}
+              placeholder="새 컬렉션 이름"
+            />
+            <button
+              className="secondary"
+              type="button"
+              disabled={!collectionTitle.trim() || createCollection.isPending}
+              onClick={() => createCollection.mutate()}
+            >
+              생성
+            </button>
+          </div>
+          <div className="profileWorkflowList">
+            {collections.data?.slice(0, 4).map((collection) => (
+              <div className="profileWorkflowRow" key={collection.id}>
+                <div>
+                  <strong>{collection.title}</strong>
+                  <small>{collection.ai_summary || collection.description || '요약 대기'}</small>
+                </div>
+                <button
+                  className="secondary"
+                  type="button"
+                  disabled={summarizeCollection.isPending}
+                  onClick={() => summarizeCollection.mutate(collection.id)}
+                >
+                  요약
+                </button>
+              </div>
+            ))}
+          </div>
+        </article>
       </section>
       <div className="profileSavedGrid">
         {savedItems.data?.map((item) => {
@@ -3910,11 +4251,6 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
     queryFn: () => api<SyncSettings>('/admin/settings/sync', {}, token),
     enabled: Boolean(token && user?.role === 'admin'),
   })
-  const keywords = useQuery({
-    queryKey: ['artist-keywords', 1],
-    queryFn: () => api<ArtistKeyword[]>('/artists/1/keywords'),
-    enabled: Boolean(token && user?.role === 'admin'),
-  })
   const archiveTerms = useQuery({
     queryKey: ['artist-archive-terms', 1],
     queryFn: () => api<ArtistArchiveTerm[]>('/artists/1/archive-terms'),
@@ -3940,6 +4276,11 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
     queryFn: () => api<RagEmbeddingJob | null>('/admin/rag/jobs/current', {}, token),
     enabled: Boolean(token && user?.role === 'admin'),
   })
+  const dataQualityTasks = useQuery({
+    queryKey: ['data-quality-tasks', token],
+    queryFn: () => api<DataQualityTask[]>('/admin/data-quality/tasks?artist_id=1', {}, token),
+    enabled: Boolean(token && user?.role === 'admin'),
+  })
   const [analyticsDays, setAnalyticsDays] = useState<1 | 7 | 30>(7)
   const analyticsSummary = useQuery({
     queryKey: ['analytics-summary', token, analyticsDays],
@@ -3953,7 +4294,6 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
   })
   const [form, setForm] = useState<InfraCostSettings | null>(null)
   const [syncForm, setSyncForm] = useState<SyncSettings | null>(null)
-  const [keywordInput, setKeywordInput] = useState('')
   const [termType, setTermType] = useState<ArtistArchiveTerm['term_type']>('song')
   const [termTitle, setTermTitle] = useState('')
   const [termAliases, setTermAliases] = useState('')
@@ -3973,29 +4313,6 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
   useEffect(() => {
     if (syncSettings.data) setSyncForm(syncSettings.data)
   }, [syncSettings.data])
-  const addKeyword = useMutation({
-    mutationFn: () =>
-      api<ArtistKeyword>(
-        '/artists/1/keywords',
-        {
-          method: 'POST',
-          body: JSON.stringify({ keyword: keywordInput }),
-        },
-        token,
-      ),
-    onSuccess: () => {
-      setKeywordInput('')
-      void queryClient.invalidateQueries({ queryKey: ['artist-keywords', 1] })
-      void queryClient.invalidateQueries({ queryKey: ['updates'] })
-    },
-  })
-  const deleteKeyword = useMutation({
-    mutationFn: (keywordId: number) => api<void>(`/artist-keywords/${keywordId}`, { method: 'DELETE' }, token),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['artist-keywords', 1] })
-      void queryClient.invalidateQueries({ queryKey: ['updates'] })
-    },
-  })
   const saveArchiveTerm = useMutation({
     mutationFn: () => {
       const payload = {
@@ -4201,6 +4518,61 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
       void queryClient.invalidateQueries({ queryKey: ['rag-coverage', token] })
     },
   })
+  const analyzeThumbnails = useMutation({
+    mutationFn: () =>
+      api<RagThumbnailAnalysisResult>(
+        '/admin/rag/thumbnail-analysis',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            artist_id: 1,
+            limit: 20,
+            force: false,
+          }),
+        },
+        token,
+      ),
+    onSuccess: (data) => {
+      setRagActionResult(
+        `썸네일 분석: 분석 ${formatNumber(data.analyzed)}, 없음 ${formatNumber(
+          data.unavailable,
+        )}, 실패 ${formatNumber(data.failed)}, 남은 후보 ${formatNumber(data.remaining)}`,
+      )
+      void queryClient.invalidateQueries({ queryKey: ['updates'] })
+      void queryClient.invalidateQueries({ queryKey: ['videos', 1] })
+      void queryClient.invalidateQueries({ queryKey: ['rag-coverage', token] })
+    },
+  })
+  const buildDataQualityQueue = useMutation({
+    mutationFn: () =>
+      api<DataQualityBuildResult>('/admin/data-quality/tasks/build?artist_id=1', { method: 'POST' }, token),
+    onSuccess: (data) => {
+      setRagActionResult(
+        `품질 큐 생성: 신규 ${formatNumber(data.created)}, 대기 ${formatNumber(data.pending)}`,
+      )
+      void queryClient.invalidateQueries({ queryKey: ['data-quality-tasks', token] })
+    },
+  })
+  const runDataQualityTask = useMutation({
+    mutationFn: (taskId: number) =>
+      api<DataQualityTask>(`/admin/data-quality/tasks/${taskId}/run`, { method: 'POST' }, token),
+    onSuccess: (task) => {
+      setRagActionResult(`품질 작업 ${task.id}: ${task.status}`)
+      void queryClient.invalidateQueries({ queryKey: ['data-quality-tasks', token] })
+      void queryClient.invalidateQueries({ queryKey: ['rag-coverage', token] })
+    },
+  })
+  const runAutoBriefingDraft = useMutation({
+    mutationFn: () =>
+      api<AutoBriefingDraftResponse>('/admin/briefing/auto-drafts/run?artist_id=1', { method: 'POST' }, token),
+    onSuccess: (data) => {
+      setRagActionResult(
+        data.created
+          ? `자동 브리핑 초안 생성: ${data.run.briefing_date}`
+          : `이미 생성된 자동 초안: ${data.run.briefing_date}`,
+      )
+    },
+  })
   if (user?.role !== 'admin') {
     return (
       <div className="emptyState">
@@ -4218,6 +4590,14 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
   }
   const ratio = Math.round(form.budget_ratio * 100)
   const currentRagJob = ragJob.data
+  const ragActionsPending =
+    cleanupRag.isPending ||
+    startRagJob.isPending ||
+    runRagJob.isPending ||
+    analyzeThumbnails.isPending ||
+    buildDataQualityQueue.isPending ||
+    runDataQualityTask.isPending ||
+    runAutoBriefingDraft.isPending
   const selectedAdminSourceOption = youtubeSourceOptions.find((option) => option.value === adminSourceType)
   const keywordSearchSources = (youtubeSources.data ?? []).filter((source) => source.source_type === 'keyword_search')
   const userPasswordRules = getPasswordRuleStatus(userPassword)
@@ -4227,6 +4607,57 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
       : isStrongPassword(userPassword)
   return (
     <div className="stack">
+      <section className="adminBudget">
+        <div className="postHead">
+          <div>
+            <h2>Workflow Ops</h2>
+            <p className="muted">알림, 품질 큐, 자동 브리핑 초안을 운영합니다.</p>
+          </div>
+          <div className="adminActionRow">
+            <button
+              className="secondary"
+              type="button"
+              disabled={buildDataQualityQueue.isPending}
+              onClick={() => buildDataQualityQueue.mutate()}
+            >
+              <Gauge size={16} />
+              품질 큐 생성
+            </button>
+            <button
+              className="secondary"
+              type="button"
+              disabled={runAutoBriefingDraft.isPending}
+              onClick={() => runAutoBriefingDraft.mutate()}
+            >
+              <Sparkles size={16} />
+              자동 초안
+            </button>
+          </div>
+        </div>
+        <div className="dataQualityList">
+          {(dataQualityTasks.data ?? []).slice(0, 6).map((task) => (
+            <div className="dataQualityRow" key={task.id}>
+              <div>
+                <strong>{task.title || `Search item ${task.search_item_id}`}</strong>
+                <small>
+                  {task.task_type} · {task.source_type} · {task.status}
+                </small>
+              </div>
+              <button
+                className="secondary"
+                type="button"
+                disabled={task.status === 'resolved' || runDataQualityTask.isPending}
+                onClick={() => runDataQualityTask.mutate(task.id)}
+              >
+                실행
+              </button>
+            </div>
+          ))}
+          {!dataQualityTasks.isLoading && dataQualityTasks.data?.length === 0 && (
+            <p className="muted">대기 중인 품질 작업이 없습니다.</p>
+          )}
+        </div>
+      </section>
       <section className="adminBudget">
         <div className="postHead">
           <div>
@@ -4414,48 +4845,6 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
       <section className="adminBudget">
         <div className="postHead">
           <div>
-            <h2>Home keywords</h2>
-            <p className="muted">홈 필터에 노출할 리센느 키워드를 관리합니다.</p>
-          </div>
-        </div>
-        <form
-          className="inlineForm keywordAdminForm"
-          onSubmit={(event) => {
-            event.preventDefault()
-            addKeyword.mutate()
-          }}
-        >
-          <input
-            value={keywordInput}
-            onChange={(event) => setKeywordInput(event.target.value)}
-            placeholder="예: 컴백, 라디오, Love Attack"
-          />
-          <button className="primary" disabled={!keywordInput.trim() || addKeyword.isPending}>
-            <Save size={17} />
-            추가
-          </button>
-        </form>
-        <div className="sourceList">
-          {keywords.data?.map((item) => (
-            <span key={item.id}>
-              {item.keyword}
-              <button
-                className="chipButton"
-                onClick={() => deleteKeyword.mutate(item.id)}
-                disabled={deleteKeyword.isPending}
-                title="키워드 삭제"
-              >
-                <Trash2 size={13} />
-              </button>
-            </span>
-          ))}
-        </div>
-        {addKeyword.error && <p className="error">{addKeyword.error.message}</p>}
-        {deleteKeyword.error && <p className="error">{deleteKeyword.error.message}</p>}
-      </section>
-      <section className="adminBudget">
-        <div className="postHead">
-          <div>
             <h2>Archive search dictionary</h2>
             <p className="muted">곡명, 앨범명, 활동명 alias를 관리합니다. 아카이브 검색 결과 필터에 사용됩니다.</p>
           </div>
@@ -4476,6 +4865,7 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
               <option value="song">곡명</option>
               <option value="album">앨범</option>
               <option value="activity">활동명</option>
+              <option value="member">멤버</option>
             </select>
           </label>
           <label>
@@ -4662,7 +5052,7 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
             type="button"
             className="secondary"
             onClick={() => cleanupRag.mutate()}
-            disabled={cleanupRag.isPending || startRagJob.isPending || runRagJob.isPending}
+            disabled={ragActionsPending}
           >
             Stale 정리
           </button>
@@ -4670,7 +5060,7 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
             type="button"
             className="primary"
             onClick={() => startRagJob.mutate({ scope: 'recent_90d' })}
-            disabled={cleanupRag.isPending || startRagJob.isPending || runRagJob.isPending}
+            disabled={ragActionsPending}
           >
             최근 90일 작업 시작
           </button>
@@ -4678,16 +5068,25 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
             type="button"
             className="secondary"
             onClick={() => startRagJob.mutate({ scope: 'all' })}
-            disabled={cleanupRag.isPending || startRagJob.isPending || runRagJob.isPending}
+            disabled={ragActionsPending}
           >
             전체 작업 시작
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => analyzeThumbnails.mutate()}
+            disabled={ragActionsPending}
+          >
+            <Sparkles size={17} />
+            전체 썸네일 분석 20개
           </button>
           {currentRagJob && currentRagJob.status !== 'completed' && (
             <button
               type="button"
               className="secondary"
               onClick={() => runRagJob.mutate(currentRagJob.id)}
-              disabled={cleanupRag.isPending || startRagJob.isPending || runRagJob.isPending}
+              disabled={ragActionsPending}
             >
               다음 배치 실행
             </button>
@@ -4700,6 +5099,7 @@ function AdminPanel({ token, user }: { token: string | null; user?: User }) {
         {cleanupRag.error && <p className="error">{cleanupRag.error.message}</p>}
         {startRagJob.error && <p className="error">{startRagJob.error.message}</p>}
         {runRagJob.error && <p className="error">{runRagJob.error.message}</p>}
+        {analyzeThumbnails.error && <p className="error">{analyzeThumbnails.error.message}</p>}
       </section>
       <section className="adminBudget">
         <div className="postHead">

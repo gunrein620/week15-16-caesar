@@ -46,7 +46,7 @@ YOUTUBE_SOURCE_TYPES = {
     "curated_video",
     "keyword_search",
 }
-ARCHIVE_TERM_TYPES = {"song", "album", "activity"}
+ARCHIVE_TERM_TYPES = {"song", "album", "activity", "member"}
 
 
 def _validated_source_payload(payload: YoutubeSourceCreate) -> tuple[str, str, str]:
@@ -93,13 +93,17 @@ def list_artists(db: Annotated[Session, Depends(get_db)]) -> list[Artist]:
 def list_videos(artist_id: int, db: Annotated[Session, Depends(get_db)]) -> list[YoutubeVideo]:
     if db.get(Artist, artist_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
-    return db.scalars(
-        select(YoutubeVideo)
-        .join(YoutubeVideoSource)
-        .join(YoutubeSource)
-        .where(YoutubeSource.artist_id == artist_id)
-        .order_by(YoutubeVideo.published_at.desc().nullslast())
-    ).unique().all()
+    return (
+        db.scalars(
+            select(YoutubeVideo)
+            .join(YoutubeVideoSource)
+            .join(YoutubeSource)
+            .where(YoutubeSource.artist_id == artist_id)
+            .order_by(YoutubeVideo.published_at.desc().nullslast())
+        )
+        .unique()
+        .all()
+    )
 
 
 @router.get("/artists/{artist_id}/updates", response_model=UpdateFeedResponse)
@@ -399,7 +403,9 @@ def update_archive_term(
         )
     )
     if conflict is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Archive term already exists")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Archive term already exists"
+        )
     term.term_type = term_type
     term.title = title
     term.aliases = aliases

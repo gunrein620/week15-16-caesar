@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.models import RagChunk, YoutubeSource, YoutubeVideo, YoutubeVideoSource
+from app.models import RagChunk, SearchItem, YoutubeSource, YoutubeVideo, YoutubeVideoSource
 from app.services.rag import embed_texts
 from app.services.text import content_hash
 
@@ -180,18 +180,24 @@ def replace_video_transcript_chunks(
     hashed = content_hash(transcript_text)
     contents = [f"{_timestamp_label(start)} {text}" for start, text in windows]
     embeddings = embed_texts(contents)
+    search_item_id = db.scalar(
+        select(SearchItem.id).where(SearchItem.youtube_video_id == video.id)
+    )
     db.add_all(
         [
             RagChunk(
                 artist_id=artist_id,
                 youtube_video_id=video.id,
+                search_item_id=search_item_id,
+                chunk_type="transcript",
+                start_seconds=float(start),
                 chunk_index=index,
                 content=content,
                 content_hash=hashed,
                 embedding=embedding,
             )
-            for index, (content, embedding) in enumerate(
-                zip(contents, embeddings, strict=True),
+            for index, ((start, _text), content, embedding) in enumerate(
+                zip(windows, contents, embeddings, strict=True),
                 start=1,
             )
         ]
@@ -241,6 +247,9 @@ def upload_video_transcript(
         video.transcript_status = "unavailable"
         video.transcript_fetched_at = datetime.now(UTC)
         db.flush()
+        from app.services.search_index import upsert_youtube_video_search_item
+
+        upsert_youtube_video_search_item(db, video, artist_id=_artist_id_for_video(db, video.id))
         return {"video_id": video.id, "created_chunks": 0, "status": "unavailable"}
 
     artist_id = _artist_id_for_video(db, video.id)
@@ -249,6 +258,9 @@ def upload_video_transcript(
     video.transcript_lang = lang.strip()
     video.transcript_fetched_at = datetime.now(UTC)
     db.flush()
+    from app.services.search_index import upsert_youtube_video_search_item
+
+    upsert_youtube_video_search_item(db, video, artist_id=artist_id)
     return {"video_id": video.id, "created_chunks": created_chunks, "status": "fetched"}
 
 
@@ -335,6 +347,9 @@ def fetch_transcripts_batch(
             video.transcript_fetched_at = datetime.now(UTC)
             stats[status] += 1
             db.flush()
+            from app.services.search_index import upsert_youtube_video_search_item
+
+            upsert_youtube_video_search_item(db, video, artist_id=artist_id)
         except Exception:
             video.transcript_status = "failed"
             video.transcript_lang = ""

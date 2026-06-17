@@ -20,6 +20,11 @@ from app.services.app_settings import (
 )
 from app.services.external_updates import sync_external_updates
 from app.services.infra_budget import infra_hard_stop_active
+from app.services.product_workflows import (
+    build_data_quality_tasks,
+    create_auto_briefing_draft,
+    generate_subscription_notifications,
+)
 from app.services.youtube import sync_artist_videos
 
 logger = logging.getLogger(__name__)
@@ -92,14 +97,46 @@ def run_due_syncs_once(db: Session, artist_id: int = 1, now: datetime | None = N
     return {"ran": ran}
 
 
+def run_due_workflows_once(
+    db: Session,
+    artist_id: int = 1,
+    now: datetime | None = None,
+) -> dict[str, list[str]]:
+    now = now or datetime.now(UTC)
+    ran: list[str] = []
+    notifications = generate_subscription_notifications(db, artist_id=artist_id, now=now)
+    if notifications["created"]:
+        ran.append("notifications")
+
+    quality = build_data_quality_tasks(db, artist_id=artist_id)
+    if quality["created"]:
+        ran.append("data_quality")
+
+    try:
+        _, created = create_auto_briefing_draft(db, artist_id=artist_id, now=now)
+    except RuntimeError:
+        created = False
+    if created:
+        ran.append("auto_briefing")
+    db.commit()
+    return {"ran": ran}
+
+
 async def _scheduled_sync_loop(stop_event: asyncio.Event) -> None:
+    await asyncio.sleep(1)
     while not stop_event.is_set():
         try:
             with get_session_factory()() as db:
                 if not infra_hard_stop_active(db):
                     result = run_due_syncs_once(db)
+                    workflow_result = run_due_workflows_once(db)
                     if result["ran"]:
                         logger.info("scheduled sync ran: %s", ",".join(result["ran"]))
+                    if workflow_result["ran"]:
+                        logger.info(
+                            "scheduled workflows ran: %s",
+                            ",".join(workflow_result["ran"]),
+                        )
         except Exception:
             logger.exception("scheduled sync failed")
         try:

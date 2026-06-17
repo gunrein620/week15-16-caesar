@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.db import is_postgres
-from app.models import ExternalUpdate, Post, RagChunk, YoutubeVideo
+from app.models import ExternalUpdate, Member, Post, RagChunk, YoutubeVideo
 from app.services.search_intent import (
     SearchIntent,
+    archive_alias_matches_text,
     normalize_search_text,
     parse_search_intent,
 )
 from app.services.text import cosine_similarity
+from app.services.updates import _matches_youtube_members, _member_filter_matches
 
 
 @dataclass(frozen=True)
@@ -21,9 +24,37 @@ class _ChunkSource:
     title: str
     tags: tuple[str, ...]
     source_type: str
+    member_names: tuple[str, ...] = ()
+    thumbnail_member_names: tuple[str, ...] = ()
+    thumbnail_person_count: int | None = None
+    thumbnail_analyzed: bool = False
 
 
-def _source_for_chunk(db: Session, chunk: RagChunk) -> _ChunkSource | None:
+def _thumbnail_members(value: str | None) -> tuple[str, ...]:
+    if not value:
+        return ()
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return ()
+    if not isinstance(parsed, list):
+        return ()
+    return tuple(item for item in parsed if isinstance(item, str) and item.strip())
+
+
+def _effective_member_names(source: _ChunkSource) -> tuple[str, ...]:
+    if source.thumbnail_analyzed and source.thumbnail_member_names:
+        return source.thumbnail_member_names
+    return source.member_names
+
+
+def _effective_member_count(source: _ChunkSource) -> int:
+    if source.thumbnail_analyzed and source.thumbnail_person_count is not None:
+        return source.thumbnail_person_count
+    return len(set(_effective_member_names(source)))
+
+
+def _source_for_chunk(db: Session, chunk: RagChunk, members: list[str]) -> _ChunkSource | None:
     if chunk.youtube_video_id:
         video = chunk.youtube_video or db.get(YoutubeVideo, chunk.youtube_video_id)
         if video is None:
@@ -33,6 +64,17 @@ def _source_for_chunk(db: Session, chunk: RagChunk) -> _ChunkSource | None:
             title=video.title,
             tags=(),
             source_type="youtube",
+            member_names=tuple(
+                _matches_youtube_members(
+                    video.title,
+                    video.description,
+                    video.channel_title,
+                    members,
+                )
+            ),
+            thumbnail_member_names=_thumbnail_members(video.thumbnail_detected_members),
+            thumbnail_person_count=video.thumbnail_person_count,
+            thumbnail_analyzed=video.thumbnail_analysis_status == "analyzed",
         )
 
     if chunk.post_id:
@@ -61,21 +103,33 @@ def _source_for_chunk(db: Session, chunk: RagChunk) -> _ChunkSource | None:
 def _matches_archive_terms(source: _ChunkSource, intent: SearchIntent) -> bool:
     if not intent.archive_terms:
         return True
-    primary_text = normalize_search_text(" ".join([source.title, *source.tags]))
+    primary_raw_text = " ".join([source.title, *source.tags])
+    primary_text = normalize_search_text(primary_raw_text)
     return any(
-        any(alias in primary_text for alias in term.aliases)
+        any(
+            archive_alias_matches_text(primary_raw_text, alias, primary_text)
+            for alias in term.raw_aliases
+        )
         for term in intent.archive_terms
     )
 
 
 def _matches_structured_terms(source: _ChunkSource, chunk: RagChunk, intent: SearchIntent) -> bool:
-    if not intent.include_terms and not intent.exclude_terms:
+    if not intent.include_terms and not intent.exclude_terms and intent.member_count is None:
         return True
+    if intent.member_count is not None and _effective_member_count(source) != intent.member_count:
+        return False
     haystack = normalize_search_text(" ".join([source.title, *source.tags, chunk.content]))
-    includes = [normalize_search_text(term) for term in intent.include_terms if normalize_search_text(term)]
-    excludes = [normalize_search_text(term) for term in intent.exclude_terms if normalize_search_text(term)]
-    return all(term in haystack for term in includes) and not any(
-        term in haystack for term in excludes
+    member_names = list(_effective_member_names(source))
+
+    def term_matches(raw_term: str) -> bool:
+        normalized = normalize_search_text(raw_term)
+        if not normalized:
+            return True
+        return normalized in haystack or _member_filter_matches(member_names, raw_term)
+
+    return all(term_matches(term) for term in intent.include_terms) and not any(
+        term_matches(term) for term in intent.exclude_terms
     )
 
 
@@ -87,12 +141,27 @@ def _source_type_matches(source: _ChunkSource, intent: SearchIntent) -> bool:
     return True
 
 
+def _content_source_type_matches(chunk: RagChunk, intent: SearchIntent) -> bool:
+    if not intent.content_source_types:
+        return True
+    if chunk.search_item is None:
+        return False
+    return any(
+        link.source is not None and link.source.source_type in intent.content_source_types
+        for link in chunk.search_item.sources
+    )
+
+
 def _source_boost(source: _ChunkSource, intent: SearchIntent) -> float:
     boost = 0.0
-    primary_text = normalize_search_text(" ".join([source.title, *source.tags]))
+    primary_raw_text = " ".join([source.title, *source.tags])
+    primary_text = normalize_search_text(primary_raw_text)
     archive_boost = 0.0
     for term in intent.archive_terms:
-        if any(alias in primary_text for alias in term.aliases):
+        if any(
+            archive_alias_matches_text(primary_raw_text, alias, primary_text)
+            for alias in term.raw_aliases
+        ):
             archive_boost += 0.10
             if term.term_type == "song":
                 archive_boost += 0.02
@@ -161,8 +230,10 @@ def search_archive_candidates(
     intent: SearchIntent | None = None,
 ) -> list[RagChunk]:
     from app.services.rag import embed_text
+    from app.services.search_index import ensure_search_index_for_artist
 
     intent = intent or parse_search_intent(question, artist_id=artist_id, db=db)
+    ensure_search_index_for_artist(db, artist_id)
     query_embedding = embed_text(_embedding_query(question, intent))
     fetch_limit = max((limit + offset) * 8, 120)
     if is_postgres():
@@ -184,12 +255,17 @@ def search_archive_candidates(
             .limit(fetch_limit)
         ).all()
         chunks = list({chunk.id: chunk for chunk in [*chunks, *lexical_chunks]}.values())
+    members = [
+        item.name for item in db.scalars(select(Member).where(Member.artist_id == artist_id)).all()
+    ]
     ranked: list[tuple[float, RagChunk, _ChunkSource]] = []
     for chunk in chunks:
-        source = _source_for_chunk(db, chunk)
+        source = _source_for_chunk(db, chunk, members)
         if source is None:
             continue
         if not _source_type_matches(source, intent):
+            continue
+        if not _content_source_type_matches(chunk, intent):
             continue
         if not _matches_archive_terms(source, intent):
             continue

@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta, timezone
 from html import unescape
+import json
 import re
 
 from sqlalchemy import delete, select
@@ -8,14 +9,32 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models import ArtistKeyword, ExternalUpdate, Member, Post, RagChunk, YoutubeVideo
 from app.schemas import UpdateFeedItem
-from app.services.search_intent import SearchIntent, intent_from_payload, parse_search_intent
+from app.services.catalog_search import SearchFilters, search_catalog
+from app.services.search_intent import (
+    SearchIntent,
+    archive_alias_matches_text,
+    expand_source_types,
+    intent_from_payload,
+    normalize_search_text,
+    parse_search_intent,
+)
 from app.services.text import chunk_text, content_hash, cosine_similarity, deterministic_embedding
-from app.services.updates import _matches_keywords, _matches_youtube_members, get_artist_updates
+from app.services.updates import (
+    _keyword_filter_matches,
+    _matches_keywords,
+    _matches_youtube_members,
+    _member_filter_matches,
+    get_artist_updates,
+)
+
+BRIEFING_POST_CATEGORY = "브리핑"
 
 
 KST = timezone(timedelta(hours=9))
 TAG_RE = re.compile(r"<[^>]+>")
-YOUTUBE_TIMESTAMP_RE = re.compile(r"^\[(?:(?P<hours>\d+):)?(?P<minutes>\d{1,2}):(?P<seconds>\d{2})\]")
+YOUTUBE_TIMESTAMP_RE = re.compile(
+    r"^\[(?:(?P<hours>\d+):)?(?P<minutes>\d{1,2}):(?P<seconds>\d{2})\]"
+)
 
 
 def embed_text(text: str) -> list[float]:
@@ -52,6 +71,7 @@ def refresh_post_chunks(db: Session, post: Post) -> None:
             RagChunk(
                 artist_id=post.artist_id,
                 post_id=post.id,
+                chunk_type="metadata" if index == 0 else "body",
                 chunk_index=index,
                 content=chunk,
                 content_hash=hashed,
@@ -59,6 +79,9 @@ def refresh_post_chunks(db: Session, post: Post) -> None:
             )
         )
     db.flush()
+    from app.services.search_index import upsert_post_search_item
+
+    upsert_post_search_item(db, post)
 
 
 def _published_at_text(value: datetime | None) -> str:
@@ -82,10 +105,14 @@ def _clean_html_text(value: str | None) -> str:
 
 
 def build_video_embedding_text(db: Session, video: YoutubeVideo, artist_id: int) -> str:
-    members = [item.name for item in db.scalars(select(Member).where(Member.artist_id == artist_id)).all()]
+    members = [
+        item.name for item in db.scalars(select(Member).where(Member.artist_id == artist_id)).all()
+    ]
     keywords = [
         item.keyword
-        for item in db.scalars(select(ArtistKeyword).where(ArtistKeyword.artist_id == artist_id)).all()
+        for item in db.scalars(
+            select(ArtistKeyword).where(ArtistKeyword.artist_id == artist_id)
+        ).all()
     ]
     description = video.description or ""
     matched_members = _matches_youtube_members(
@@ -155,6 +182,7 @@ def refresh_video_chunks(db: Session, video: YoutubeVideo, artist_id: int) -> in
         RagChunk(
             artist_id=artist_id,
             youtube_video_id=video.id,
+            chunk_type="metadata",
             chunk_index=0,
             content=body,
             content_hash=hashed,
@@ -162,6 +190,9 @@ def refresh_video_chunks(db: Session, video: YoutubeVideo, artist_id: int) -> in
         )
     )
     db.flush()
+    from app.services.search_index import upsert_youtube_video_search_item
+
+    upsert_youtube_video_search_item(db, video, artist_id=artist_id)
     return 1
 
 
@@ -177,6 +208,7 @@ def refresh_external_update_chunks(db: Session, item: ExternalUpdate) -> int:
         RagChunk(
             artist_id=item.artist_id,
             external_update_id=item.id,
+            chunk_type="metadata",
             chunk_index=0,
             content=body,
             content_hash=hashed,
@@ -184,6 +216,9 @@ def refresh_external_update_chunks(db: Session, item: ExternalUpdate) -> int:
         )
     )
     db.flush()
+    from app.services.search_index import upsert_external_update_search_item
+
+    upsert_external_update_search_item(db, item)
     return 1
 
 
@@ -215,6 +250,21 @@ def _chunk_source_payload(db: Session, chunk: RagChunk) -> dict:
         "external_update_id": chunk.external_update_id,
         "content": chunk.content,
     }
+    if chunk.search_item is not None:
+        from app.services.catalog_search import search_item_to_source_payload
+
+        indexed_payload = search_item_to_source_payload(chunk.search_item)
+        indexed_payload.update(base)
+        if chunk.youtube_video_id and chunk.chunk_index >= 1:
+            timestamp_seconds = _timestamp_seconds_from_content(chunk.content)
+            if timestamp_seconds is not None:
+                url = indexed_payload.get("url") or ""
+                if url:
+                    separator = "&" if "?" in url else "?"
+                    indexed_payload["url"] = f"{url}{separator}t={timestamp_seconds}s"
+                indexed_payload["timestamp_seconds"] = timestamp_seconds
+                indexed_payload["snippet"] = chunk.content
+        return indexed_payload
     if chunk.youtube_video_id:
         video = chunk.youtube_video or db.get(YoutubeVideo, chunk.youtube_video_id)
         url = video.url if video else ""
@@ -236,8 +286,16 @@ def _chunk_source_payload(db: Session, chunk: RagChunk) -> dict:
             "thumbnail_url": video.thumbnail_url if video else "",
             "channel_title": video.channel_title if video else "",
             "source_label": "YouTube",
-            "published_at": video.published_at.isoformat() if video and video.published_at else None,
+            "published_at": video.published_at.isoformat()
+            if video and video.published_at
+            else None,
             "view_count": video.view_count if video else None,
+            "thumbnail_analysis_status": video.thumbnail_analysis_status if video else "pending",
+            "thumbnail_detected_members": _thumbnail_members(video.thumbnail_detected_members)
+            if video
+            else [],
+            "thumbnail_person_count": video.thumbnail_person_count if video else None,
+            "thumbnail_analysis_confidence": video.thumbnail_analysis_confidence if video else None,
             **extra,
         }
     if chunk.external_update_id:
@@ -254,17 +312,30 @@ def _chunk_source_payload(db: Session, chunk: RagChunk) -> dict:
             "view_count": None,
         }
     post = chunk.post or (db.get(Post, chunk.post_id) if chunk.post_id else None)
+    is_briefing = post is not None and post.category == BRIEFING_POST_CATEGORY
     return {
         **base,
-        "source_type": "post",
+        "source_type": "briefing" if is_briefing else "post",
         "title": post.title if post else "Board post",
         "url": f"/posts/{post.id}" if post else "",
         "thumbnail_url": "",
         "channel_title": "",
-        "source_label": "Fan post",
+        "source_label": "Briefing" if is_briefing else "Fan post",
         "published_at": post.created_at.isoformat() if post and post.created_at else None,
         "view_count": None,
     }
+
+
+def _thumbnail_members(value: str | None) -> list[str]:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [item for item in parsed if isinstance(item, str) and item.strip()]
 
 
 def _timestamp_seconds_from_content(content: str) -> int | None:
@@ -329,6 +400,10 @@ def _update_source_payload(item: UpdateFeedItem) -> dict:
         "published_at": item.published_at.isoformat(),
         "view_count": item.view_count,
         "comment_count": item.comment_count,
+        "thumbnail_analysis_status": item.thumbnail_analysis_status,
+        "thumbnail_detected_members": item.thumbnail_detected_members,
+        "thumbnail_person_count": item.thumbnail_person_count,
+        "thumbnail_analysis_confidence": item.thumbnail_analysis_confidence,
         "content": item.description,
         "description": item.description,
     }
@@ -337,25 +412,51 @@ def _update_source_payload(item: UpdateFeedItem) -> dict:
 def _matches_temporal_archive_terms(item: UpdateFeedItem, intent: SearchIntent) -> bool:
     if not intent.archive_terms:
         return True
-    from app.services.search_intent import normalize_search_text
-
-    haystack = normalize_search_text(
-        " ".join([item.title, item.description, *item.tags, *item.matched_keywords])
-    )
+    raw_haystack = " ".join([item.title, item.description, *item.tags, *item.matched_keywords])
+    haystack = normalize_search_text(raw_haystack)
     return any(
-        any(alias in haystack for alias in term.aliases)
+        any(archive_alias_matches_text(raw_haystack, alias, haystack) for alias in term.raw_aliases)
         for term in intent.archive_terms
     )
 
 
-def _matches_structured_terms(item: UpdateFeedItem, intent: SearchIntent) -> bool:
-    if not intent.include_terms and not intent.exclude_terms and not intent.source_types:
-        return True
-    if intent.source_types and item.item_type not in intent.source_types:
-        return False
+def _intent_source_types(intent: SearchIntent) -> frozenset[str] | None:
+    if not intent.source_types:
+        return None
+    return expand_source_types(intent.source_types)
+
+
+def _catalog_content_types(intent: SearchIntent) -> tuple[str, ...]:
+    if intent.source_types:
+        return tuple(expand_source_types(intent.source_types))
+    if intent.media_type == "youtube":
+        return ("youtube",)
+    return ()
+
+
+def _catalog_member_names(db: Session, intent: SearchIntent) -> tuple[str, ...]:
+    if not intent.include_terms:
+        return ()
+    members = db.scalars(select(Member).where(Member.artist_id == intent.artist_id)).all()
+    matched: list[str] = []
+    for member in members:
+        if any(_member_filter_matches([member.name], term) for term in intent.include_terms):
+            matched.append(member.name)
+    return tuple(dict.fromkeys(matched))
+
+
+def _catalog_published_after(intent: SearchIntent) -> datetime | None:
+    if intent.published_after is not None:
+        return intent.published_after
+    if intent.temporal == "today":
+        return _temporal_cutoff(intent)
+    return None
+
+
+def _structured_haystack(item: UpdateFeedItem) -> str:
     from app.services.search_intent import normalize_search_text
 
-    haystack = normalize_search_text(
+    return normalize_search_text(
         " ".join(
             [
                 item.title,
@@ -364,14 +465,89 @@ def _matches_structured_terms(item: UpdateFeedItem, intent: SearchIntent) -> boo
                 *item.tags,
                 *item.matched_keywords,
                 *item.member_names,
+                *item.thumbnail_detected_members,
             ]
         )
     )
-    includes = [normalize_search_text(term) for term in intent.include_terms if normalize_search_text(term)]
-    excludes = [normalize_search_text(term) for term in intent.exclude_terms if normalize_search_text(term)]
-    return all(term in haystack for term in includes) and not any(
-        term in haystack for term in excludes
-    )
+
+
+def _effective_member_names(item: UpdateFeedItem) -> list[str]:
+    if item.thumbnail_analysis_status == "analyzed" and item.thumbnail_detected_members:
+        return item.thumbnail_detected_members
+    return item.member_names
+
+
+def _effective_member_count(item: UpdateFeedItem) -> int:
+    if item.thumbnail_analysis_status == "analyzed" and item.thumbnail_person_count is not None:
+        return item.thumbnail_person_count
+    return len(set(_effective_member_names(item)))
+
+
+def _passes_type_and_exclude_terms(item: UpdateFeedItem, intent: SearchIntent) -> bool:
+    allowed_types = _intent_source_types(intent)
+    if allowed_types is not None and item.item_type not in allowed_types:
+        return False
+    if intent.member_count is not None and _effective_member_count(item) != intent.member_count:
+        return False
+    if not intent.exclude_terms:
+        return True
+    from app.services.search_intent import normalize_search_text
+
+    haystack = _structured_haystack(item)
+    excludes = [
+        normalize_search_text(term) for term in intent.exclude_terms if normalize_search_text(term)
+    ]
+    return not any(term in haystack for term in excludes)
+
+
+def _include_term_hits(item: UpdateFeedItem, intent: SearchIntent) -> tuple[int, int]:
+    from app.services.search_intent import normalize_search_text
+
+    title_text = normalize_search_text(item.title)
+    haystack = _structured_haystack(item)
+    member_names = _effective_member_names(item)
+    title_hits = 0
+    total_hits = 0
+    for term in intent.include_terms:
+        normalized = normalize_search_text(term)
+        if not normalized:
+            continue
+        if _member_filter_matches(member_names, term):
+            title_hits += 1
+            total_hits += 1
+            continue
+        if normalized in title_text:
+            title_hits += 1
+            total_hits += 1
+            continue
+        if normalized in haystack or _keyword_filter_matches(
+            [*item.matched_keywords, *item.tags], term
+        ):
+            total_hits += 1
+    return title_hits, total_hits
+
+
+def _required_include_count(intent: SearchIntent) -> int:
+    from app.services.search_intent import normalize_search_text
+
+    return sum(1 for term in intent.include_terms if normalize_search_text(term))
+
+
+def _matches_structured_terms(item: UpdateFeedItem, intent: SearchIntent) -> bool:
+    if (
+        not intent.include_terms
+        and not intent.exclude_terms
+        and not intent.source_types
+        and intent.member_count is None
+    ):
+        return True
+    if not _passes_type_and_exclude_terms(item, intent):
+        return False
+    required = _required_include_count(intent)
+    if required == 0:
+        return True
+    _, total_hits = _include_term_hits(item, intent)
+    return total_hits >= required
 
 
 def _sort_temporal_items(items: list[UpdateFeedItem], intent: SearchIntent) -> list[UpdateFeedItem]:
@@ -407,18 +583,44 @@ def _temporal_update_sources(
     limit: int = 10,
     offset: int = 0,
 ) -> list[dict]:
+    result = search_catalog(
+        db,
+        SearchFilters(
+            artist_id=intent.artist_id,
+            content_types=_catalog_content_types(intent),
+            source_types=intent.content_source_types,
+            member_names=_catalog_member_names(db, intent),
+            member_count=intent.member_count,
+            archive_term_ids=tuple(term.id for term in intent.archive_terms),
+            published_after=_catalog_published_after(intent),
+            published_before=intent.published_before,
+            sort=intent.sort or "latest",
+            include_terms=intent.include_terms,
+            exclude_terms=intent.exclude_terms,
+            limit=limit,
+            offset=offset,
+        ),
+    )
+    if result.sources:
+        return result.sources
+
     source = "youtube" if intent.media_type == "youtube" else None
-    response = get_artist_updates(db, intent.artist_id, source=source, limit=max(80, limit + offset + 10))
+    response = get_artist_updates(
+        db,
+        intent.artist_id,
+        source=source,
+        source_types=_intent_source_types(intent),
+        published_after=intent.published_after,
+        published_before=intent.published_before,
+        sort=intent.sort,
+        limit=max(80, limit + offset + 10),
+    )
     cutoff = _temporal_cutoff(intent)
     items = response.items
     if cutoff is not None:
         items = [item for item in items if _aware_utc(item.published_at) >= cutoff]
     if intent.published_before is not None:
-        items = [
-            item
-            for item in items
-            if _aware_utc(item.published_at) <= intent.published_before
-        ]
+        items = [item for item in items if _aware_utc(item.published_at) <= intent.published_before]
     items = [item for item in items if _matches_temporal_archive_terms(item, intent)]
     items = [item for item in items if _matches_structured_terms(item, intent)]
     items = _sort_temporal_items(items, intent)
@@ -430,6 +632,8 @@ def _temporal_answer(intent: SearchIntent, sources: list[dict]) -> str:
         if intent.temporal == "today":
             return "오늘 올라온 캐시 업데이트를 아직 찾지 못했습니다. 관리자 동기화 후 다시 확인해 주세요."
         return "최근 캐시 업데이트를 아직 찾지 못했습니다. 관리자 동기화 후 다시 확인해 주세요."
+    if intent.sort == "popular":
+        return "조건에 맞는 업데이트를 조회수 높은 순으로 찾았습니다. 아래 카드에서 영상, 글, 뉴스 원문을 바로 확인해 주세요."
     label = "오늘" if intent.temporal == "today" else "최근"
     return f"{label} 업데이트를 시간순으로 찾았습니다. 아래 카드에서 영상, 글, 뉴스 원문을 바로 확인해 주세요."
 
@@ -442,6 +646,7 @@ def format_context_for_answer(payloads: list[dict]) -> str:
             f"source_type: {source.get('source_type') or ''}",
             f"title: {source.get('title') or ''}",
             f"published_at: {source.get('published_at') or ''}",
+            f"view_count: {source.get('view_count') if source.get('view_count') is not None else ''}",
             f"url: {source.get('url') or ''}",
             f"content: {source.get('content') or source.get('description') or ''}",
         ]
@@ -495,9 +700,7 @@ def answer_question(
             if ranking is not None:
                 chunk_by_id = {chunk.id: chunk for chunk in chunks}
                 ranked_chunks = [
-                    chunk_by_id[chunk_id]
-                    for chunk_id in ranking
-                    if chunk_id in chunk_by_id
+                    chunk_by_id[chunk_id] for chunk_id in ranking if chunk_id in chunk_by_id
                 ]
                 ranked_ids = {chunk.id for chunk in ranked_chunks}
                 chunks = [
@@ -534,7 +737,9 @@ def answer_question(
                     "role": "system",
                     "content": (
                         "Answer in Korean using only the provided RESCENE community context. "
-                        "Keep it to two short sentences and do not list raw URLs because source cards are shown separately."
+                        "The context is already in result order; if listing multiple items, keep source 1, source 2 order "
+                        "and cite them as [1], [2]. Keep it to two short sentences and do not list raw URLs because "
+                        "source cards are shown separately."
                     ),
                 },
                 {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"},

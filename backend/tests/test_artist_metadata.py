@@ -61,14 +61,22 @@ def test_archive_terms_can_be_managed_by_admin(client):
 
     seeded = client.get("/artists/1/archive-terms")
     assert seeded.status_code == 200
-    assert "Love Attack" in {item["title"] for item in seeded.json()}
+    seeded_terms = {(item["term_type"], item["title"]) for item in seeded.json()}
+    assert {
+        ("song", "Love Attack"),
+        ("song", "Runaway"),
+        ("album", "lip bomb"),
+        ("member", "Zena"),
+    } <= seeded_terms
+    zena_term = next(item for item in seeded.json() if item["title"] == "Zena")
+    assert "신라공주" in zena_term["aliases"]
 
     blocked = client.post(
         "/artists/1/archive-terms",
         json={
-            "term_type": "song",
-            "title": "Dream Signal",
-            "aliases": ["드림시그널"],
+            "term_type": "member",
+            "title": "TestMember",
+            "aliases": ["테스트멤버"],
         },
         headers=user_headers,
     )

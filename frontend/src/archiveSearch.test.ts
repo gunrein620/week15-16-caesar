@@ -5,6 +5,7 @@ import {
   archiveSearchHintForQuestion,
   buildArchiveAnswerPreview,
   buildArchiveSourceDisplay,
+  mergeArchiveSourcePages,
 } from './archiveSearch.ts'
 
 test('buildArchiveAnswerPreview collapses long generated answers', () => {
@@ -41,5 +42,40 @@ test('archiveSearchHintForQuestion separates live updates from archive search', 
   assert.match(
     archiveSearchHintForQuestion('러브어택 요약해줘'),
     /곡명/,
+  )
+})
+
+test('mergeArchiveSourcePages appends new source cards without duplicates', () => {
+  const current = [
+    { source_type: 'youtube', youtube_video_id: 'video-1', post_id: null, chunk_id: 1, url: 'https://youtube.example/1' },
+    { source_type: 'post', youtube_video_id: null, post_id: 2, chunk_id: 2, url: '/posts/2' },
+  ]
+  const next = [
+    { source_type: 'youtube', youtube_video_id: 'video-1', post_id: null, chunk_id: 3, url: 'https://youtube.example/1' },
+    { source_type: 'youtube', youtube_video_id: 'video-3', post_id: null, chunk_id: 4, url: 'https://youtube.example/3' },
+  ]
+
+  const merged = mergeArchiveSourcePages(current, next)
+
+  assert.deepEqual(
+    merged.map((source) => source.youtube_video_id ?? source.post_id),
+    ['video-1', 2, 'video-3'],
+  )
+})
+
+test('mergeArchiveSourcePages prefers search item id for stable source identity', () => {
+  const current = [
+    { search_item_id: 7, source_type: 'youtube', youtube_video_id: 'video-1', chunk_id: 11, url: 'https://youtube.example/1' },
+  ]
+  const next = [
+    { search_item_id: 7, source_type: 'youtube', youtube_video_id: 'video-1', chunk_id: 12, url: 'https://youtube.example/1&t=30s' },
+    { search_item_id: 8, source_type: 'youtube', youtube_video_id: 'video-2', chunk_id: 13, url: 'https://youtube.example/2' },
+  ]
+
+  const merged = mergeArchiveSourcePages(current, next)
+
+  assert.deepEqual(
+    merged.map((source) => source.search_item_id),
+    [7, 8],
   )
 })

@@ -8,7 +8,12 @@ from app.models import McpCallLog, RagChunk, YoutubeSource, YoutubeVideo, Youtub
 from app.services.archive_search import search_archive_candidates
 from app.services.naver import naver_news_search
 from app.services.rag import _chunk_source_payload, _temporal_update_sources
-from app.services.search_intent import SearchIntent, _load_archive_terms
+from app.services.search_intent import (
+    SearchIntent,
+    _load_archive_terms,
+    intent_from_payload,
+    intent_to_payload,
+)
 from app.services.youtube import sync_artist_videos
 
 
@@ -18,6 +23,22 @@ def _limit(value: int, *, default: int = 8, maximum: int = 12) -> int:
     except (TypeError, ValueError):
         parsed = default
     return max(1, min(parsed, maximum))
+
+
+def _offset(value: int | None) -> int:
+    try:
+        parsed = int(value or 0)
+    except (TypeError, ValueError):
+        parsed = 0
+    return max(0, parsed)
+
+
+def _member_count(value: int | str | None) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if 1 <= parsed <= 5 else None
 
 
 def _string_tuple(value: list[str] | tuple[str, ...] | str | None) -> tuple[str, ...]:
@@ -123,27 +144,43 @@ class McpToolClient:
         query: str,
         media_type: str | None = None,
         source_types: list[str] | tuple[str, ...] | str | None = None,
+        content_source_types: list[str] | tuple[str, ...] | str | None = None,
         include_terms: list[str] | tuple[str, ...] | str | None = None,
+        exclude_terms: list[str] | tuple[str, ...] | str | None = None,
+        member_count: int | None = None,
         limit: int = 8,
+        offset: int = 0,
     ) -> dict:
         capped_limit = _limit(limit)
+        capped_offset = _offset(offset)
         intent = SearchIntent(
             question=query,
             artist_id=artist_id,
             route="archive",
             media_type="youtube" if media_type == "youtube" else None,
             source_types=_string_tuple(source_types),
+            content_source_types=_string_tuple(content_source_types),
             include_terms=_string_tuple(include_terms),
+            exclude_terms=_string_tuple(exclude_terms),
+            member_count=_member_count(member_count),
             archive_terms=_load_archive_terms(self.db, artist_id, query),
         )
         chunks = search_archive_candidates(
             self.db,
             query,
             artist_id=artist_id,
-            limit=capped_limit,
+            limit=capped_limit + 1,
+            offset=capped_offset,
             intent=intent,
         )
-        return {"sources": [_chunk_source_payload(self.db, chunk) for chunk in chunks]}
+        has_more = len(chunks) > capped_limit
+        visible = chunks[:capped_limit]
+        return {
+            "sources": [_chunk_source_payload(self.db, chunk) for chunk in visible],
+            "has_more": has_more,
+            "next_offset": capped_offset + capped_limit if has_more else None,
+            "search_intent": intent_to_payload(intent),
+        }
 
     def get_recent_updates(
         self,
@@ -151,16 +188,58 @@ class McpToolClient:
         temporal: str = "recent",
         source: str | None = None,
         limit: int = 8,
+        offset: int = 0,
+        published_after: str | None = None,
+        published_before: str | None = None,
+        include_terms: list[str] | tuple[str, ...] | str | None = None,
+        exclude_terms: list[str] | tuple[str, ...] | str | None = None,
+        source_types: list[str] | tuple[str, ...] | str | None = None,
+        content_source_types: list[str] | tuple[str, ...] | str | None = None,
+        sort: str | None = None,
+        member_count: int | None = None,
     ) -> dict:
         capped_limit = _limit(limit)
-        intent = SearchIntent(
+        capped_offset = _offset(offset)
+        payload = {
+            "route": "updates",
+            "temporal": temporal if temporal in {"today", "recent", "custom"} else "recent",
+            "media_type": "youtube" if source == "youtube" else None,
+            "published_after": published_after,
+            "published_before": published_before,
+            "include_terms": list(_string_tuple(include_terms)),
+            "exclude_terms": list(_string_tuple(exclude_terms)),
+            "source_types": list(_string_tuple(source_types)),
+            "content_source_types": list(_string_tuple(content_source_types)),
+            "sort": sort,
+            "member_count": _member_count(member_count),
+        }
+        intent = intent_from_payload(
+            payload,
             question="recent updates",
             artist_id=artist_id,
-            route="updates",
-            temporal=temporal if temporal in {"today", "recent"} else "recent",
-            media_type="youtube" if source == "youtube" else None,
+            db=self.db,
         )
-        return {"sources": _temporal_update_sources(self.db, intent, limit=capped_limit)}
+        if intent is None:
+            intent = SearchIntent(
+                question="recent updates",
+                artist_id=artist_id,
+                route="updates",
+                temporal=temporal if temporal in {"today", "recent"} else "recent",
+                media_type="youtube" if source == "youtube" else None,
+            )
+        sources = _temporal_update_sources(
+            self.db,
+            intent,
+            limit=capped_limit + 1,
+            offset=capped_offset,
+        )
+        has_more = len(sources) > capped_limit
+        return {
+            "sources": sources[:capped_limit],
+            "has_more": has_more,
+            "next_offset": capped_offset + capped_limit if has_more else None,
+            "search_intent": intent_to_payload(intent),
+        }
 
     def get_video_detail(self, video_id: str) -> dict:
         video = self.db.get(YoutubeVideo, video_id)

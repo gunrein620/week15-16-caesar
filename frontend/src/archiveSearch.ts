@@ -8,8 +8,28 @@ export type ArchiveSourceDisplay = {
   description: string | null
 }
 
+type ArchiveSourceKeyInput = {
+  search_item_id?: number | null
+  source_type?: string
+  youtube_video_id?: string | null
+  post_id?: number | null
+  chunk_id?: number | null
+  external_update_id?: number | null
+  url?: string
+  title?: string
+}
+
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, ' ').trim()
+}
+
+function archiveSourceKey(source: ArchiveSourceKeyInput): string {
+  if (source.search_item_id) return `search:${source.search_item_id}`
+  if (source.youtube_video_id) return `youtube:${source.youtube_video_id}`
+  if (source.post_id) return `post:${source.post_id}`
+  if (source.external_update_id) return `external:${source.external_update_id}`
+  if (source.chunk_id) return `chunk:${source.chunk_id}`
+  return `${source.source_type ?? 'source'}:${source.url || source.title || ''}`
 }
 
 export function archiveSearchHintForQuestion(question: string): string {
@@ -39,4 +59,16 @@ export function buildArchiveSourceDisplay(source: {
     title: normalizeWhitespace(source.title),
     description: null,
   }
+}
+
+export function mergeArchiveSourcePages<T extends ArchiveSourceKeyInput>(current: T[], next: T[]): T[] {
+  const merged: T[] = []
+  const seen = new Set<string>()
+  for (const source of [...current, ...next]) {
+    const key = archiveSourceKey(source)
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(source)
+  }
+  return merged
 }

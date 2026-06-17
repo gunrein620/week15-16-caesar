@@ -27,6 +27,89 @@ def test_parse_today_after_time_intent(client):
     assert intent.time_after == time(12, 0)
 
 
+def test_parse_korean_date_range_popular_video_intent_without_llm(client, monkeypatch):
+    import app.services.search_intent as search_intent
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = datetime(2026, 6, 15, 12, tzinfo=UTC)
+            return value.astimezone(tz) if tz is not None else value.replace(tzinfo=None)
+
+    monkeypatch.setattr(search_intent, "_llm_payload", lambda question, archive_terms: None)
+    monkeypatch.setattr(search_intent, "datetime", FixedDatetime)
+
+    with get_session_factory()() as db:
+        intent = search_intent.parse_search_intent(
+            "10일부터 15일 사이 가장 높은 조회수 영상 내림차순으로 찾아줘",
+            artist_id=1,
+            db=db,
+        )
+
+    assert intent.route == "updates"
+    assert intent.temporal == "custom"
+    assert intent.media_type == "youtube"
+    assert intent.source_types == ("youtube",)
+    assert intent.sort == "popular"
+    assert intent.published_after == datetime(2026, 6, 9, 15, tzinfo=UTC)
+    assert intent.published_before == datetime(2026, 6, 15, 15, tzinfo=UTC)
+
+
+def test_parse_specific_member_only_video_intent_without_llm(client, monkeypatch):
+    import app.services.search_intent as search_intent
+
+    monkeypatch.setattr(search_intent, "_llm_payload", lambda question, archive_terms: None)
+
+    with get_session_factory()() as db:
+        intent = search_intent.parse_search_intent(
+            "원이만 나오는 영상 찾아줘",
+            artist_id=1,
+            db=db,
+        )
+
+    assert intent.route == "updates"
+    assert intent.media_type == "youtube"
+    assert intent.source_types == ("youtube",)
+    assert intent.include_terms == ("Woni",)
+    assert intent.member_count == 1
+
+
+def test_parse_member_nickname_video_intent_without_llm(client, monkeypatch):
+    import app.services.search_intent as search_intent
+
+    monkeypatch.setattr(search_intent, "_llm_payload", lambda question, archive_terms: None)
+
+    with get_session_factory()() as db:
+        intent = search_intent.parse_search_intent(
+            "신라공주만 나오는 영상 찾아줘",
+            artist_id=1,
+            db=db,
+        )
+
+    assert intent.route == "updates"
+    assert intent.media_type == "youtube"
+    assert intent.include_terms == ("Zena",)
+    assert intent.member_count == 1
+    assert any(term.term_type == "member" and term.title == "Zena" for term in intent.archive_terms)
+
+
+def test_short_latin_member_alias_does_not_match_inside_live(client, monkeypatch):
+    import app.services.search_intent as search_intent
+
+    monkeypatch.setattr(search_intent, "_llm_payload", lambda question, archive_terms: None)
+
+    with get_session_factory()() as db:
+        intent = search_intent.parse_search_intent(
+            "live 영상 찾아줘",
+            artist_id=1,
+            db=db,
+        )
+
+    assert intent.media_type == "youtube"
+    assert intent.include_terms == ()
+    assert all(term.title != "Liv" for term in intent.archive_terms)
+
+
 def test_parse_archive_song_video_intent(client):
     from app.services.search_intent import parse_search_intent
 
@@ -319,6 +402,253 @@ def test_llm_intent_filters_updates_with_structured_conditions(client, monkeypat
     assert "llm-excluded-shorts" not in ids
 
 
+def test_date_range_popular_video_search_ranks_high_view_video_outside_latest_window(
+    client, monkeypatch
+):
+    token = signup(client, "popular-range@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    monkeypatch.setattr(
+        "app.services.search_intent._llm_payload",
+        lambda question, archive_terms: {
+            "route": "updates",
+            "temporal": "custom",
+            "media_type": "youtube",
+            "published_after": "2026-06-10T00:00:00+09:00",
+            "published_before": "2026-06-16T00:00:00+09:00",
+            "include_terms": [],
+            "boost_terms": [],
+            "exclude_terms": [],
+            "source_types": ["youtube"],
+            "sort": "popular",
+        },
+    )
+
+    with get_session_factory()() as db:
+        source = YoutubeSource(
+            artist_id=1,
+            source_type="keyword_search",
+            source_value="popular-range",
+            title="popular range source",
+        )
+        db.add(source)
+        db.flush()
+        high_view = YoutubeVideo(
+            id="popular-range-high",
+            title="저희도 리센느입니다",
+            description="10일부터 15일 사이 조회수 최상위 영상",
+            channel_title="RESCENE",
+            thumbnail_url="https://img.youtube.com/vi/popular-range-high/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=popular-range-high",
+            published_at=datetime(2026, 6, 12, 10, tzinfo=UTC),
+            view_count=4_580_229,
+            like_count=10,
+            comment_count=1,
+            content_hash="popular-range-high-hash",
+        )
+        db.add(high_view)
+        db.flush()
+        db.add(YoutubeVideoSource(video_id=high_view.id, source_id=source.id))
+        refresh_video_chunks(db, high_view, artist_id=1)
+        for index in range(220):
+            video = YoutubeVideo(
+                id=f"popular-range-low-{index:03d}",
+                title=f"RESCENE newer low view {index:03d}",
+                description="날짜 범위 안이지만 조회수는 낮은 영상",
+                channel_title="RESCENE",
+                thumbnail_url=f"https://img.youtube.com/vi/popular-range-low-{index:03d}/hqdefault.jpg",
+                url=f"https://www.youtube.com/watch?v=popular-range-low-{index:03d}",
+                published_at=datetime(2026, 6, 15, 8, tzinfo=UTC) - timedelta(minutes=index),
+                view_count=1_000 + index,
+                like_count=10,
+                comment_count=1,
+                content_hash=f"popular-range-low-hash-{index:03d}",
+            )
+            db.add(video)
+            db.flush()
+            db.add(YoutubeVideoSource(video_id=video.id, source_id=source.id))
+            refresh_video_chunks(db, video, artist_id=1)
+        db.commit()
+
+    response = client.post(
+        "/ai/qa",
+        json={
+            "question": "10일부터 15일 사이 가장 높은 조회수 영상 내림차순으로 찾아줘",
+            "artist_id": 1,
+            "include_answer": False,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    sources = response.json()["sources"]
+    assert sources[0]["youtube_video_id"] == "popular-range-high"
+    assert sources[0]["view_count"] == 4_580_229
+
+
+def test_temporal_popular_answer_describes_view_order():
+    from app.services.rag import _temporal_answer
+    from app.services.search_intent import SearchIntent
+
+    answer = _temporal_answer(
+        SearchIntent(
+            question="조회수 높은 영상 찾아줘",
+            artist_id=1,
+            route="updates",
+            temporal="custom",
+            media_type="youtube",
+            sort="popular",
+        ),
+        [{"title": "저희도 리센느입니다"}],
+    )
+
+    assert "조회수 높은 순" in answer
+    assert "시간순" not in answer
+
+
+def test_specific_member_only_video_search_filters_multi_member_matches(client, monkeypatch):
+    token = signup(client, "member-only-search@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    monkeypatch.setattr(
+        "app.services.search_intent._llm_payload", lambda question, archive_terms: None
+    )
+
+    with get_session_factory()() as db:
+        source = YoutubeSource(
+            artist_id=1,
+            source_type="keyword_search",
+            source_value="member-only",
+            title="member only source",
+        )
+        db.add(source)
+        db.flush()
+        for video_id, title, description, published_at in [
+            (
+                "member-only-woni",
+                "RESCENE WONI solo focus",
+                "원이만 나오는 개인 직캠 영상",
+                datetime(2026, 6, 15, 10, tzinfo=UTC),
+            ),
+            (
+                "member-only-woni-liv",
+                "RESCENE WONI LIV unit focus",
+                "원이와 리브가 같이 나오는 영상",
+                datetime(2026, 6, 15, 11, tzinfo=UTC),
+            ),
+            (
+                "member-only-unknown",
+                "RESCENE group behind",
+                "멤버명이 없는 단체 비하인드",
+                datetime(2026, 6, 15, 12, tzinfo=UTC),
+            ),
+        ]:
+            video = YoutubeVideo(
+                id=video_id,
+                title=title,
+                description=description,
+                channel_title="RESCENE",
+                thumbnail_url=f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
+                url=f"https://www.youtube.com/watch?v={video_id}",
+                published_at=published_at,
+                view_count=100,
+                like_count=10,
+                comment_count=1,
+                content_hash=f"{video_id}-hash",
+            )
+            db.add(video)
+            db.flush()
+            db.add(YoutubeVideoSource(video_id=video.id, source_id=source.id))
+            refresh_video_chunks(db, video, artist_id=1)
+        db.commit()
+
+    response = client.post(
+        "/ai/qa",
+        json={
+            "question": "원이만 나오는 영상 찾아줘",
+            "artist_id": 1,
+            "include_answer": False,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    ids = [source["youtube_video_id"] for source in response.json()["sources"]]
+    assert ids == ["member-only-woni"]
+
+
+def test_member_only_search_uses_thumbnail_analysis_when_available(client, monkeypatch):
+    token = signup(client, "thumbnail-member-only@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    monkeypatch.setattr(
+        "app.services.search_intent._llm_payload", lambda question, archive_terms: None
+    )
+
+    with get_session_factory()() as db:
+        source = YoutubeSource(
+            artist_id=1,
+            source_type="keyword_search",
+            source_value="thumbnail-member-only",
+            title="thumbnail member source",
+        )
+        db.add(source)
+        db.flush()
+        included = YoutubeVideo(
+            id="thumbnail-member-woni-single",
+            title="RESCENE WONI LIV unit focus",
+            description="제목에는 둘 다 있지만 썸네일 텍스트는 원이 단독으로 잡힌 영상",
+            channel_title="RESCENE",
+            thumbnail_url="https://img.youtube.com/vi/thumbnail-member-woni-single/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=thumbnail-member-woni-single",
+            published_at=datetime(2026, 6, 15, 12, tzinfo=UTC),
+            view_count=200,
+            content_hash="thumbnail-member-woni-single-hash",
+            thumbnail_analysis_status="analyzed",
+            thumbnail_detected_members='["Woni"]',
+            thumbnail_person_count=1,
+            thumbnail_analysis_confidence=0.78,
+        )
+        excluded = YoutubeVideo(
+            id="thumbnail-member-woni-group",
+            title="RESCENE WONI solo focus",
+            description="제목은 원이 단독처럼 보이지만 썸네일은 2명으로 잡힌 영상",
+            channel_title="RESCENE",
+            thumbnail_url="https://img.youtube.com/vi/thumbnail-member-woni-group/hqdefault.jpg",
+            url="https://www.youtube.com/watch?v=thumbnail-member-woni-group",
+            published_at=datetime(2026, 6, 15, 13, tzinfo=UTC),
+            view_count=300,
+            content_hash="thumbnail-member-woni-group-hash",
+            thumbnail_analysis_status="analyzed",
+            thumbnail_detected_members='["Woni", "Liv"]',
+            thumbnail_person_count=2,
+            thumbnail_analysis_confidence=0.81,
+        )
+        db.add_all([included, excluded])
+        db.flush()
+        db.add_all(
+            [
+                YoutubeVideoSource(video_id=included.id, source_id=source.id),
+                YoutubeVideoSource(video_id=excluded.id, source_id=source.id),
+            ]
+        )
+        refresh_video_chunks(db, included, artist_id=1)
+        refresh_video_chunks(db, excluded, artist_id=1)
+        db.commit()
+
+    response = client.post(
+        "/ai/qa",
+        json={
+            "question": "원이만 나오는 영상 찾아줘",
+            "artist_id": 1,
+            "include_answer": False,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    ids = [source["youtube_video_id"] for source in response.json()["sources"]]
+    assert "thumbnail-member-woni-single" in ids
+    assert "thumbnail-member-woni-group" not in ids
+
+
 def test_load_more_reuses_search_intent_without_llm_reparse(client, monkeypatch):
     token = signup(client, "intent-reuse@example.com")
     headers = {"Authorization": f"Bearer {token}"}
@@ -459,9 +789,9 @@ def test_qa_returns_ten_sources_and_supports_offset_without_new_answer(client):
     assert first_body["next_offset"] == 10
     assert second_body["answer"] == ""
     assert len(second_body["sources"]) >= 2
-    assert not {
-        source["youtube_video_id"] for source in first_body["sources"]
-    } & {source["youtube_video_id"] for source in second_body["sources"]}
+    assert not {source["youtube_video_id"] for source in first_body["sources"]} & {
+        source["youtube_video_id"] for source in second_body["sources"]
+    }
 
 
 def test_answer_context_includes_metadata(client):

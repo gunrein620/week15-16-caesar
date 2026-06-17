@@ -13,6 +13,7 @@ from app.core.config import get_settings
 from app.core.db import is_postgres
 from app.models import ArtistKeyword, YoutubeSource, YoutubeVideo, YoutubeVideoSource
 from app.services.rag import refresh_video_chunks
+from app.services.search_index import upsert_youtube_video_search_item
 from app.services.text import content_hash
 
 YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
@@ -364,6 +365,9 @@ def _store_source_video(
         linked = 1
     if refresh_chunks and should_refresh:
         refresh_video_chunks(db, video, artist_id)
+    else:
+        db.flush()
+        upsert_youtube_video_search_item(db, video, artist_id=artist_id)
     return created, updated, linked
 
 

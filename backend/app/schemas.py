@@ -238,6 +238,9 @@ class RagContextResponse(BaseModel):
     summary: str
     sources: list[dict]
     insert_text: str = ""
+    suggested_members: list[str] = Field(default_factory=list)
+    suggested_archive_terms: list[dict[str, Any]] = Field(default_factory=list)
+    suggested_collection_targets: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SavedSummaryRequest(BaseModel):
@@ -382,6 +385,21 @@ class RagTranscriptBatchResult(BaseModel):
     created_chunks: int
 
 
+class RagThumbnailAnalysisRequest(BaseModel):
+    artist_id: int = 1
+    limit: int = Field(default=20, ge=1, le=100)
+    days: int | None = Field(default=None, ge=1, le=3650)
+    force: bool = False
+
+
+class RagThumbnailAnalysisResult(BaseModel):
+    processed: int
+    analyzed: int
+    unavailable: int
+    failed: int
+    remaining: int
+
+
 class RagTranscriptUploadSegment(BaseModel):
     start: float = Field(ge=0)
     text: str = Field(max_length=2000)
@@ -520,6 +538,10 @@ class UpdateFeedItem(BaseModel):
     comment_count: int | None = None
     matched_keywords: list[str] = Field(default_factory=list)
     member_names: list[str] = Field(default_factory=list)
+    thumbnail_analysis_status: str = "pending"
+    thumbnail_detected_members: list[str] = Field(default_factory=list)
+    thumbnail_person_count: int | None = None
+    thumbnail_analysis_confidence: float | None = None
     tags: list[str] = Field(default_factory=list)
 
 
@@ -573,6 +595,138 @@ class SavedItemRead(BaseModel):
     thumbnail_url: str
     source_label: str
     saved_at: datetime
+
+
+class UserSubscriptionCreate(BaseModel):
+    artist_id: int = 1
+    name: str = Field(min_length=1, max_length=120)
+    content_types: list[str] = Field(default_factory=list, max_length=10)
+    source_types: list[str] = Field(default_factory=list, max_length=10)
+    member_names: list[str] = Field(default_factory=list, max_length=10)
+    archive_term_ids: list[int] = Field(default_factory=list, max_length=20)
+    enabled: bool = True
+
+
+class UserSubscriptionUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    content_types: list[str] | None = Field(default=None, max_length=10)
+    source_types: list[str] | None = Field(default=None, max_length=10)
+    member_names: list[str] | None = Field(default=None, max_length=10)
+    archive_term_ids: list[int] | None = Field(default=None, max_length=20)
+    enabled: bool | None = None
+
+
+class UserSubscriptionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    artist_id: int
+    name: str
+    content_types: list[str]
+    source_types: list[str]
+    member_names: list[str]
+    archive_term_ids: list[int]
+    enabled: bool
+    last_checked_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class UserNotificationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    artist_id: int
+    subscription_id: int | None
+    search_item_id: int
+    notification_type: str
+    title: str
+    body: str
+    url: str
+    thumbnail_url: str
+    read_at: datetime | None
+    created_at: datetime
+
+
+class CollectionCreate(BaseModel):
+    artist_id: int = 1
+    title: str = Field(min_length=1, max_length=160)
+    description: str = Field(default="", max_length=2000)
+
+
+class CollectionUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    description: str | None = Field(default=None, max_length=2000)
+
+
+class CollectionItemCreate(BaseModel):
+    search_item_id: int
+    note: str = Field(default="", max_length=2000)
+
+
+class CollectionItemRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    collection_id: int
+    search_item_id: int
+    title: str
+    url: str
+    thumbnail_url: str
+    source_type: str
+    position: int
+    note: str
+    created_at: datetime
+
+
+class CollectionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    artist_id: int
+    title: str
+    description: str
+    visibility: str
+    ai_summary: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class CollectionDetailRead(CollectionRead):
+    items: list[CollectionItemRead] = Field(default_factory=list)
+
+
+class CollectionSummaryRead(BaseModel):
+    collection_id: int
+    ai_summary: str
+
+
+class DataQualityTaskRead(BaseModel):
+    id: int
+    artist_id: int
+    search_item_id: int
+    task_type: str
+    status: str
+    priority: int
+    error_message: str
+    resolved_at: datetime | None
+    title: str
+    source_type: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class DataQualityBuildResult(BaseModel):
+    created: int
+    pending: int
+
+
+class AutoBriefingDraftResponse(BaseModel):
+    created: bool
+    run: AgentRunRead
 
 
 AnalyticsEventName = Literal[

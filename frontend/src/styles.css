@@ -3286,6 +3286,102 @@ h2 {
   color: var(--text);
 }
 
+.profileWorkflowGrid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  margin: 22px auto 0;
+  max-width: 1260px;
+}
+
+.profileWorkflowPanel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.profileWorkflowHead,
+.profileWorkflowRow {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.profileWorkflowHead span,
+.profileWorkflowRow small {
+  color: var(--text-faint);
+  font-size: 0.82rem;
+}
+
+.profileWorkflowList {
+  display: grid;
+  gap: 10px;
+}
+
+.profileWorkflowRow {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.profileWorkflowRow div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.profileWorkflowRow strong,
+.profileWorkflowRow small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflowForm {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.compactWorkflowForm {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) auto;
+}
+
+.workflowForm input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  min-height: 40px;
+  min-width: 0;
+  padding: 0 10px;
+}
+
+.profileChipList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pill {
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-soft);
+  display: inline-flex;
+  font-size: 0.82rem;
+  font-weight: 750;
+  min-height: 28px;
+  padding: 0 10px;
+}
+
 .profileSavedGrid {
   display: grid;
   gap: 16px;
@@ -4292,6 +4388,27 @@ textarea {
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
 }
 
+.assistSuggestionGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.assistSuggestionGroup {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.assistSuggestionGroup > span {
+  color: var(--text-faint);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
 .assistSource {
   background: #000;
   border-radius: 8px;
@@ -4346,6 +4463,49 @@ textarea {
   color: var(--text-soft);
   min-height: 40px;
   padding: 10px;
+}
+
+.adminActionRow {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.dataQualityList {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.dataQualityRow {
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 10px;
+}
+
+.dataQualityRow div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dataQualityRow strong,
+.dataQualityRow small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dataQualityRow small {
+  color: var(--text-faint);
+  font-size: 0.82rem;
 }
 
 .analyticsGrid {
@@ -4429,14 +4589,6 @@ textarea {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-}
-
-.keywordAdminForm {
-  margin: 12px 0;
-}
-
-.keywordAdminForm input {
-  border: 1px solid var(--border);
 }
 
 .archiveTermForm {
@@ -4969,6 +5121,23 @@ button:disabled {
 }
 
 @media (max-width: 560px) {
+  .workflowForm,
+  .compactWorkflowForm {
+    grid-template-columns: 1fr;
+  }
+
+  .profileWorkflowRow,
+  .dataQualityRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .profileWorkflowRow .secondary,
+  .dataQualityRow .secondary {
+    justify-content: center;
+    width: 100%;
+  }
+
   .wordmark {
     font-size: 21px;
   }
