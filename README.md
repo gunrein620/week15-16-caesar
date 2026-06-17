@@ -179,6 +179,3 @@ pnpm --filter @junglebob/web dev   # http://localhost:3000
 - 후기 사진 첨부, 트렌드 리포트, 다국어 검색 등 확장
 
 ---
-
-## 문서
-- [결정 사항](docs/DECISIONS.md) · [아키텍처](docs/ARCHITECTURE.md) · [변경 기록](docs/CHANGES-2026-06-09.md)
